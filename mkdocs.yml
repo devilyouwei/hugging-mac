@@ -1,0 +1,87 @@
+site_name: hugging-mac
+site_description: Apple Silicon 模型 Demo、评估、训练与模型 SDK 设计文档
+docs_dir: doc
+site_dir: site
+use_directory_urls: true
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: 切换到深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: 切换到浅色模式
+
+plugins:
+  - search:
+      lang:
+        - zh
+        - en
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+nav:
+  - 设计主页: README.md
+  - 产品与架构:
+      - 产品边界与原则: 00-vision-and-principles.md
+      - 总体架构: 01-architecture.md
+      - 模型 SDK: 02-model-sdk.md
+      - 模型目录与能力: 03-model-catalog.md
+      - 模型资源管理: 04-resource-management.md
+  - 产品能力:
+      - Demo 平台: 05-demo-platform.md
+      - 评估体系: 06-evaluation.md
+      - 训练体系: 07-training.md
+      - YOLOv8 SDK: 14-yolov8-sdk.md
+  - 应用与工程:
+      - 前后端与 API: 08-frontend-backend.md
+      - Web 应用层与 Index: 15-web-application-architecture.md
+      - App Blueprint 规范: 16-app-blueprint-specification.md
+      - Platform Python 后端: 17-platform-backend.md
+      - Vue 与 Object Detection: 18-web-frontend-and-object-detection.md
+      - 数据与存储: 09-data-and-storage.md
+      - 工程规范: 10-engineering.md
+  - 规划与决策:
+      - 路线图: 11-roadmap.md
+      - 架构决策记录: 12-architecture-decisions.md
+      - 模型转换: 13-model-conversion.md
+
+strict: true

@@ -1,0 +1,1 @@
+"""Cross-App backend infrastructure."""

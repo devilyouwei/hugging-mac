@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Environments and package managers
+.venv/
+venv/
+node_modules/
+npm-debug.log*
+.python-version.local
+
+# Build and distribution
+build/
+dist/
+site/
+
+# Editors and macOS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+configs/local/
+
+# Model weights and caches
+models/*
+!models/.gitkeep
+*.ckpt
+*.safetensors
+*.gguf
+*.mlmodel
+*.mlpackage/
+*.onnx
+*.pth
+*.pt
+huggingface/
+.cache/
+
+# Datasets and generated artifacts
+data/*
+!data/.gitkeep
+artifacts/*
+!artifacts/.gitkeep
+runs/
+wandb/
+mlruns/
+
+# Logs and temporary files
+logs/
+*.log
+tmp/

@@ -1,0 +1,132 @@
+[project]
+name = "hugging-mac"
+version = "0.0.0"
+description = "Run neural network models on your Mac."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = []
+dependencies = [
+  "httpx>=0.28,<1",
+  "huggingface-hub>=0.33,<2",
+  "numpy>=2.0,<3",
+  "pillow>=11,<13",
+  "platformdirs>=4.3,<5",
+  "psutil>=7,<8",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+  "pyyaml>=6,<7",
+  "rich>=14,<15",
+  "safetensors>=0.5,<1",
+  "structlog>=25,<26",
+  "typer>=0.16,<1",
+]
+
+[project.urls]
+Repository = "https://github.com/devilyouwei/hugging-mac"
+Documentation = "https://github.com/devilyouwei/hugging-mac/tree/main/doc"
+Issues = "https://github.com/devilyouwei/hugging-mac/issues"
+
+[project.optional-dependencies]
+apple = [
+  "coremltools>=8,<10; sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "mlx>=0.27,<1; sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "mlx-lm>=0.26,<1; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+vision = [
+  "einops>=0.8,<1",
+  "opencv-python>=4.11,<5",
+  "timm>=1,<2",
+  "torch>=2.7,<3",
+  "torchvision>=0.22,<1",
+  "transformers>=4.53,<6",
+  "ultralytics>=8.3,<9",
+]
+llm = [
+  "accelerate>=1.8,<2",
+  "sentencepiece>=0.2,<1",
+  "tokenizers>=0.21,<1",
+  "torch>=2.7,<3",
+  "transformers>=4.53,<6",
+]
+api = [
+  "fastapi>=0.116,<1",
+  "python-multipart>=0.0.20,<1",
+  "uvicorn[standard]>=0.35,<1",
+]
+training = [
+  "datasets>=4,<5",
+  "lightning>=2.5,<3",
+  "tensorboard>=2.19,<3",
+  "torch>=2.7,<3",
+  "torchvision>=0.22,<1",
+]
+evaluation = [
+  "evaluate>=0.4,<1",
+  "matplotlib>=3.10,<4",
+  "pandas>=2.3,<3",
+  "scikit-learn>=1.7,<2",
+  "seaborn>=0.13,<1",
+  "torchmetrics>=1.7,<2",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.16,<2",
+  "pre-commit>=4.2,<5",
+  "pytest>=8.4,<9",
+  "pytest-asyncio>=1,<2",
+  "pytest-cov>=6.2,<7",
+  "ruff>=0.12,<1",
+  "types-psutil>=7,<8",
+]
+docs = [
+  "mkdocs>=1.6,<2",
+  "mkdocs-material>=9.6,<10",
+]
+
+[tool.uv]
+package = false
+default-groups = ["dev"]
+
+[tool.uv.workspace]
+members = [
+  "apps/web/backend",
+  "packages/hugging_mac_sdk",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["models", "data", "artifacts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+pythonpath = [
+  "apps/web/backend/src",
+  "packages/hugging_mac_sdk/src",
+]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+exclude = ["models/", "data/", "artifacts/"]
+
+[tool.coverage.run]
+branch = true
+source = ["packages", "apps"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

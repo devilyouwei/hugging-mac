@@ -1,0 +1,46 @@
+"""Shared platform dependencies."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from hugging_mac_sdk import ModelSdk, RuntimePolicy
+from hugging_mac_sdk.converters import ConverterRegistry
+from hugging_mac_sdk.models.yolov8 import register_yolov8
+
+from hugging_mac_web.app_registry import AppRegistry
+from hugging_mac_web.config import WebSettings
+from hugging_mac_web.shared.cache import LocalCache
+from hugging_mac_web.shared.storage import TinyDocumentStore
+
+
+@dataclass(slots=True)
+class PlatformContext:
+    settings: WebSettings
+    models: ModelSdk
+    converters: ConverterRegistry
+    apps: AppRegistry
+    documents: TinyDocumentStore
+    cache: LocalCache
+
+    def close(self) -> None:
+        self.documents.close()
+
+
+def create_context(settings: WebSettings) -> PlatformContext:
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    settings.cache_dir.mkdir(parents=True, exist_ok=True)
+    models = ModelSdk(
+        runtime_policy=RuntimePolicy(settings.runtime_preferences),
+    )
+    converters = ConverterRegistry()
+    register_yolov8(models.registry, converters)
+    documents = TinyDocumentStore(settings.resolved_database_path)
+    return PlatformContext(
+        settings=settings,
+        models=models,
+        converters=converters,
+        apps=AppRegistry(),
+        documents=documents,
+        cache=LocalCache(settings.cache_dir, documents),
+    )
