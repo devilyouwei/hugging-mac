@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import shutil
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Literal
 
 from hugging_mac_sdk.errors import (
     ResourceIntegrityError,
@@ -114,6 +117,22 @@ class YoloV8AssetResolver:
             )
         )
 
+    async def delete(self, *, runtime: str | None = None) -> None:
+        """Delete one runtime artifact or this revision's complete model directory."""
+
+        if runtime is None:
+            targets = (self._model_root(),)
+        elif runtime == "pytorch-mps":
+            targets = (self._config.source_path or self._default_source_path(),)
+        elif runtime == "coreml":
+            targets = (self._config.artifact_path or self._default_coreml_path(),)
+        else:
+            raise UnsupportedRuntimeError(
+                f"YOLOv8 does not support runtime {runtime}",
+                details={"model_id": "ultralytics/yolov8n", "runtime": runtime},
+            )
+        await asyncio.to_thread(self._delete_targets, targets)
+
     def status(self, *, revision: str) -> ModelResourceStatus:
         source_path = self._config.source_path or self._default_source_path()
         coreml_path = self._config.artifact_path or self._default_coreml_path()
@@ -132,6 +151,7 @@ class YoloV8AssetResolver:
                     ArtifactFormat.COREML,
                     coreml_path,
                     runtime="coreml",
+                    provisioning="convert",
                 ),
             ),
         )
@@ -144,6 +164,22 @@ class YoloV8AssetResolver:
 
     def _model_root(self) -> Path:
         return self._config.model_home / "ultralytics" / "yolov8n" / self._source.revision
+
+    def _delete_targets(self, targets: tuple[Path, ...]) -> None:
+        root = self._model_root().expanduser().resolve(strict=False)
+        for target in targets:
+            resolved = target.expanduser().resolve(strict=False)
+            if resolved != root and not resolved.is_relative_to(root):
+                raise ResourceIntegrityError(
+                    "Refusing to delete a YOLOv8 artifact outside its model directory",
+                    details={"model_id": "ultralytics/yolov8n"},
+                )
+            if resolved.is_symlink() or resolved.is_file():
+                resolved.unlink(missing_ok=True)
+            elif resolved.is_dir():
+                shutil.rmtree(resolved)
+        if root.exists():
+            _prune_empty_directories(root)
 
 
 class YoloV8ResourceProvider:
@@ -191,6 +227,16 @@ class YoloV8ResourceProvider:
         await resolver.convert_coreml(overwrite=overwrite)
         return resolver.status(revision=self._revision)
 
+    async def delete(
+        self,
+        options: Mapping[str, object] | None = None,
+        *,
+        runtime: str | None = None,
+    ) -> ModelResourceStatus:
+        resolver = self._resolver(options)
+        await resolver.delete(runtime=runtime)
+        return resolver.status(revision=self._revision)
+
     def _resolver(
         self,
         options: Mapping[str, object] | None,
@@ -205,6 +251,7 @@ def _artifact_status(
     path: Path,
     *,
     runtime: str | None,
+    provisioning: Literal["download", "convert"] = "download",
 ) -> ModelArtifactStatus:
     available = path.is_file() if artifact_format is ArtifactFormat.PYTORCH else path.is_dir()
     size = None
@@ -214,6 +261,24 @@ def _artifact_status(
         artifact_id=artifact_id,
         format=artifact_format.value,
         runtime=runtime,
+        provisioning=provisioning,
         available=available,
         size_bytes=size,
     )
+
+
+def _prune_empty_directories(root: Path) -> None:
+    directories = sorted(
+        (path for path in root.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for directory in directories:
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+    try:
+        root.rmdir()
+    except OSError:
+        pass

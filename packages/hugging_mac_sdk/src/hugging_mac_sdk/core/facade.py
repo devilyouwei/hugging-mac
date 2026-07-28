@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import TypeVar
 
 from hugging_mac_sdk.core.catalog import ModelCatalogService
-from hugging_mac_sdk.core.instance import BaseModelInstance
+from hugging_mac_sdk.core.instance import BaseModelInstance, ModelInstanceInfo, ModelState
 from hugging_mac_sdk.core.manager import InstanceManager, ReusePolicy
 from hugging_mac_sdk.core.registry import ModelRegistry
 from hugging_mac_sdk.core.resources import ModelResourceService
@@ -35,6 +35,16 @@ class ModelHandle:
     def require(self, capability: type[CapabilityT]) -> CapabilityT:
         return self._instance.require(capability)
 
+    def supports(self, capability: type[object]) -> bool:
+        return self._instance.supports(capability)
+
+    def info(self) -> ModelInstanceInfo:
+        return self._instance.info()
+
+    @property
+    def state(self) -> ModelState:
+        return self._instance.state
+
     async def close(self) -> None:
         if self._closed:
             return
@@ -62,7 +72,7 @@ class ModelSdk:
     ) -> None:
         self.registry = registry or ModelRegistry()
         self.runtime_policy = runtime_policy or RuntimePolicy()
-        self.instances = instances or InstanceManager(self.registry)
+        self.instances = instances or InstanceManager(self.registry, self.runtime_policy)
         self.resources = ModelResourceService(self.registry)
         self.catalog = ModelCatalogService(
             self.registry,
@@ -76,16 +86,16 @@ class ModelSdk:
         *,
         revision: str | None = None,
         runtime: str | None = None,
+        device: str | None = None,
         options: Mapping[str, object] | None = None,
         reuse: ReusePolicy = ReusePolicy.SHARED,
         load: bool = True,
     ) -> ModelHandle:
-        manifest = self.registry.get(model_id, revision).manifest
-        selected_runtime = runtime or self.runtime_policy.select(manifest)
         instance = await self.instances.create(
             model_id,
-            revision=manifest.revision,
-            runtime=selected_runtime,
+            revision=revision,
+            runtime=runtime,
+            device=device,
             options=options,
             reuse=reuse,
         )
@@ -93,7 +103,7 @@ class ModelSdk:
         await self.instances.retain(instance_id)
         try:
             if load:
-                await instance.load()
+                await self.instances.ensure_loaded(instance_id)
         except BaseException:
             await self.instances.release(instance_id)
             if reuse is ReusePolicy.DEDICATED:
@@ -104,3 +114,33 @@ class ModelSdk:
             self.instances,
             unload_on_close=reuse is ReusePolicy.DEDICATED,
         )
+
+    async def load(
+        self,
+        model_id: str,
+        *,
+        revision: str | None = None,
+        runtime: str | None = "auto",
+        device: str | None = None,
+        options: Mapping[str, object] | None = None,
+        reuse: ReusePolicy = ReusePolicy.SHARED,
+        warmup: bool = False,
+    ) -> ModelHandle:
+        """Convenient application-facing alias with optional warmup."""
+
+        handle = await self.acquire(
+            model_id,
+            revision=revision,
+            runtime=runtime,
+            device=device,
+            options=options,
+            reuse=reuse,
+            load=True,
+        )
+        if warmup:
+            try:
+                await handle.instance.warmup()
+            except BaseException:
+                await handle.close()
+                raise
+        return handle

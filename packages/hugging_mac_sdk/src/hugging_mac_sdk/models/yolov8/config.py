@@ -12,6 +12,10 @@ YOLOV8_REPO_ID: Final = "Ultralytics/YOLOv8"
 YOLOV8_REPO_REVISION: Final = "8a9e1a5"
 YOLOV8N_FILENAME: Final = "yolov8n.pt"
 YOLOV8N_SHA256: Final = "31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95"
+YOLOV8_MODEL_ID: Final = "ultralytics/yolov8n"
+YOLOV8_MODEL_REVISION: Final = (
+    f"{YOLOV8_REPO_REVISION}-{YOLOV8N_FILENAME.removesuffix('.pt')}"
+)
 
 
 class YoloV8CoreMlConfig(BaseModel):
@@ -45,4 +49,9 @@ class YoloV8InstanceConfig(BaseModel):
     imgsz: int = Field(default=640, gt=0)
     device: str | None = None
     allow_cpu_fallback: bool = False
-    compute_units: Literal["all"] = "all"
+    compute_units: Literal[
+        "all",
+        "cpu-only",
+        "cpu-and-gpu",
+        "cpu-and-neural-engine",
+    ] = "all"

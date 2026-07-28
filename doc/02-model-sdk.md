@@ -15,6 +15,52 @@
 
 这使同一模型可以创建多个实例，例如相同 LLM 分别使用不同量化、system prompt、adapter 或生成参数。
 
+## 当前落地的分层
+
+SDK 当前将“模型是什么”“文件在哪里”“如何创建某个 runtime”“实例是否已加载”拆成四个对象：
+
+```mermaid
+flowchart LR
+    Config["model.yaml<br/>Manifest + Artifact"]
+    Registry["ModelRegistry<br/>查询，不加载"]
+    Definition["ModelDefinition<br/>runtime → factory"]
+    Manager["InstanceManager<br/>create/load/switch/unload"]
+    Instance["ModelInstance<br/>生命周期 + capability"]
+    Backend["RuntimeBackend<br/>session 扩展点"]
+    Storage["Model Storage<br/>不进入 Git"]
+
+    Config --> Definition
+    Definition --> Registry
+    Registry --> Manager
+    Manager --> Instance
+    Instance --> Backend
+    Definition --> Storage
+```
+
+- `ModelManifest` 描述模型、能力以及可用 runtime；
+- `ModelArtifact` 描述各 runtime 所需的文件或目录，可表示 ONNX、Core ML、PyTorch、
+  safetensors、GGUF、MLX、RKNN、TFLite 和 OpenVINO；
+- `runtime_factories` 必须为 manifest 中每一个 runtime 绑定真实实现，没有实现的 runtime 不能注册；
+- `ModelRegistry` 只发现和查询 definition、runtime 与 artifact，不下载、不转换、不加载；
+- `RuntimeRegistry` 注册可跨模型复用的低层 backend，模型 package 仍负责预处理、后处理和 capability；
+- `InstanceManager` 负责实例创建、自动 runtime 选择、显式 device、加载、切换和卸载。
+
+模型代码与模型文件严格分离。声明中的 artifact path 默认相对于 registry 的 `storage_root`，
+路径解析会拒绝 `..` 逃逸；模型权重、转换产物和 tokenizer 等均保存在 storage 下，不进入 SDK package。
+一个 runtime 可以声明多个 artifact，因此既支持单文件 YOLO，也支持包含权重分片、tokenizer 和配置的 LLM/VLM。
+
+模型 package 可以使用 Python 构造 manifest，也可以使用数据化的 `model.yaml`：
+
+```python
+from pathlib import Path
+
+from hugging_mac_sdk import load_model_config
+
+config = load_model_config(Path(__file__).with_name("model.yaml"))
+```
+
+YAML 只承载 metadata，不允许声明可导入的任意 Python factory；runtime factory 必须在可信模型代码中显式绑定。
+
 ## 组合优先
 
 模型 SDK 采用：
@@ -236,6 +282,95 @@ flowchart LR
 
 capability 对象属于某个 instance。它们可以共享该实例的权重、tokenizer、processor、锁和资源 lease，
 但不能跨实例共享可变状态。两个使用相同模型 definition 创建的实例，生命周期和请求状态仍然彼此隔离。
+
+## Registry 与 Manager API
+
+Registry 的查询不会产生副作用：
+
+```python
+registry.list_models()
+registry.supported_runtimes("ultralytics/yolov8n")
+registry.get_artifact("ultralytics/yolov8n", "coreml")
+registry.get_artifacts("example/llm", "mlx")
+registry.resolve_artifact_path("ultralytics/yolov8n", "coreml")
+```
+
+每个 runtime 使用独立 factory，避免把所有 backend 分派堆在一个大型条件分支中：
+
+```python
+definition = ModelDefinition(
+    manifest=manifest,
+    runtime_factories={
+        "onnx": create_onnx_instance,
+        "coreml": create_coreml_instance,
+        "mlx": create_mlx_instance,
+    },
+    artifacts=artifacts,
+)
+```
+
+Manager 支持自动选择和显式控制：
+
+```python
+instance = await manager.load("example/model", runtime="auto")
+cpu_instance = await manager.load(
+    "example/model",
+    runtime="onnx",
+    device="cpu",
+)
+
+info = instance.info()
+replacement = await manager.switch_runtime(
+    str(instance.instance_id),
+    "coreml",
+    device="all",
+)
+await manager.unload_all()
+```
+
+`switch_runtime` 只允许切换未被 handle retain 的实例，并先加载 replacement；新 runtime 加载失败时旧实例仍然可用。
+`info()` 返回 model ID、revision、runtime、实际 device、artifact path、state 和 capability 名称，但不会泄露
+PyTorch model、Core ML model、ONNX session 等底层对象。
+
+Manager 的 `load()`、`ensure_loaded()` 与 `unload_with_metrics()` 会记录生命周期指标：
+
+- 操作耗时，使用 monotonic high-resolution clock，单位为毫秒；
+- 操作前后的进程 RSS；
+- load 期间 RSS 正向差值和 unload 期间 RSS 释放差值；
+- load 是否包含 warmup。
+
+`ModelSdk.acquire()` 也统一经过 `ensure_loaded()`，因此业务请求触发的首次加载和手动加载使用相同计量。
+这些数据是围绕操作采样的**进程级观测值**，不是模型独占内存。并发任务、Python/native allocator cache、
+memory mapping 以及 GPU/ANE 的独立分配都会影响差值；即使模型已经卸载，进程 RSS 也可能因为 allocator
+保留内存而暂时不下降。
+
+## 资源大小与删除
+
+`ModelResourceStatus` 同时返回：
+
+- 每个 artifact 的存在状态、获取方式（下载或转换）和大小；
+- 每个 runtime 所需 artifact 的大小合计；
+- SDK 支持的转换目标、对应 runtime 及当前产物状态；
+- 当前模型 revision 所有本地 artifact 的总大小。
+
+目录型 artifact（例如 Core ML package、Hugging Face snapshot、MLX 或分片 LLM）递归统计目录中的文件；
+多 artifact runtime 将各文件或目录相加。状态不返回本机绝对路径。
+
+资源删除是显式且幂等的：
+
+```python
+# 删除一个 runtime 的本地 artifact
+status = await sdk.resources.delete(
+    "ultralytics/yolov8n",
+    runtime="coreml",
+)
+
+# 删除该模型 revision 的完整受管权重目录
+status = await sdk.resources.delete("ultralytics/yolov8n")
+```
+
+模型实现只能删除自身受管 storage root 内的路径。路径逃逸、指向外部目录的自定义 artifact 或不支持的
+runtime 会被拒绝。Registry definition、manifest 和下载配置不会被删除，因此之后仍可重新下载。
 
 ## 生命周期状态机
 

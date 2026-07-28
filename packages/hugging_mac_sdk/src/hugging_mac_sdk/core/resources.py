@@ -36,6 +36,13 @@ class ModelResourceProvider(Protocol):
         overwrite: bool = False,
     ) -> ModelResourceStatus: ...
 
+    async def delete(
+        self,
+        options: Mapping[str, object] | None = None,
+        *,
+        runtime: str | None = None,
+    ) -> ModelResourceStatus: ...
+
 
 class ModelResourceService:
     def __init__(self, registry: ModelRegistry) -> None:
@@ -76,6 +83,21 @@ class ModelResourceService:
             target_format,
             options,
             overwrite=overwrite,
+        )
+
+    async def delete(
+        self,
+        model_id: str,
+        *,
+        revision: str | None = None,
+        runtime: str | None = None,
+        options: Mapping[str, object] | None = None,
+    ) -> ModelResourceStatus:
+        """Delete local artifacts without changing the registered definition."""
+
+        return await self._provider(model_id, revision).delete(
+            options,
+            runtime=runtime,
         )
 
     def _provider(

@@ -42,6 +42,23 @@ apps/web/frontend/
 开发服务器把 `/api` 代理到 `http://127.0.0.1:8000`。也可以通过
 `VITE_API_BASE_URL` 指向其他 FastAPI 地址。
 
+`/models` 也是模型实例控制面：
+
+- 每个当前可用的 runtime 提供 `Load instance`，允许同一模型创建多个独立实例；
+- 每个实例提供单独的 `Unload`，实例有活动 reference 时按钮禁用；
+- 模型项显示本地总大小，每个 runtime 显示其所需文件或目录的合计大小；
+- `Download` 获取源权重；源权重存在时显示 `Re-download` 并执行覆盖下载；
+- `Delete weights` 在二次确认后删除该模型 revision 的完整本地权重目录；
+- 实例显示 load 耗时、RSS 分配差值和操作后的进程 RSS；
+- unload 完成后显示最近一次卸载耗时和 RSS 释放差值；
+- 操作期间按钮进入 loading 状态，完成后重新获取 catalog，SDK 错误直接展示在页面错误区。
+
+内存数字明确标记为进程 RSS 观测值。allocator cache、memory map、并发请求以及 GPU/ANE 分配可能导致
+RSS 差值小于模型文件大小，甚至卸载后暂时没有下降。
+
+模型存在任何受管实例时，覆盖下载和删除按钮禁用；后端也执行相同检查，防止并发请求绕过前端约束。
+删除权重不删除模型 catalog 项，因此按钮会恢复为 `Download`，用户可以重新准备资源。
+
 ## Object Detection 后端
 
 后端模块位于：
@@ -89,12 +106,19 @@ POST /api/v1/apps/object-detection/detect/frame
 模型资源接口：
 
 ```text
+GET  /api/v1/catalog/models/{model_id}/resources
+POST /api/v1/catalog/models/{model_id}/resources/download
+POST /api/v1/catalog/models/{model_id}/resources/convert
+DELETE /api/v1/catalog/models/{model_id}/resources
+
 GET  /api/v1/apps/object-detection/resources
 POST /api/v1/apps/object-detection/resources/source/download
 POST /api/v1/apps/object-detection/resources/coreml/convert
 ```
 
-后两个接口只由明确的用户动作调用。检测接口及 `ModelSdk.acquire/load` 不会自动下载或转换。
+Models 页面从通用资源状态中的 `conversion_targets` 动态生成转换按钮，并显示具体平台名。当前
+YOLOv8 提供 PyTorch → Core ML；当 SDK 增加 ONNX 等转换目标时，页面无需新增硬编码按钮。
+下载和转换只由明确的用户动作调用。检测接口及 `ModelSdk.acquire/load` 不会自动下载或转换。
 
 ## 三种检测模式
 

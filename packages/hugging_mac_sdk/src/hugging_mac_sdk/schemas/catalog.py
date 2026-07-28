@@ -3,10 +3,32 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from hugging_mac_sdk.core.instance import ModelState
+
+
+class LifecycleOperation(StrEnum):
+    LOAD = "load"
+    UNLOAD = "unload"
+
+
+class LifecycleMetrics(BaseModel):
+    """Best-effort process-level measurements around one lifecycle operation."""
+
+    model_config = ConfigDict(frozen=True)
+
+    operation: LifecycleOperation
+    duration_ms: float = Field(ge=0)
+    process_rss_before_bytes: int | None = Field(default=None, ge=0)
+    process_rss_after_bytes: int | None = Field(default=None, ge=0)
+    process_rss_change_bytes: int | None = None
+    memory_allocated_bytes: int | None = Field(default=None, ge=0)
+    memory_released_bytes: int | None = Field(default=None, ge=0)
+    warmup_included: bool = False
+    measured_at: datetime
 
 
 class InstanceSnapshot(BaseModel):
@@ -19,6 +41,18 @@ class InstanceSnapshot(BaseModel):
     state: ModelState
     created_at: datetime
     reference_count: int = Field(ge=0)
+    load_metrics: LifecycleMetrics | None = None
+
+
+class UnloadResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    instance_id: str
+    model_id: str
+    revision: str
+    runtime: str
+    state: ModelState
+    metrics: LifecycleMetrics
 
 
 class RuntimeSummary(BaseModel):

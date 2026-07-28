@@ -42,25 +42,83 @@ class RuntimePolicy:
             details={"declared": sorted(declared)},
         )
 
+    def resolve(self, manifest: ModelManifest, requested: str | None) -> str:
+        """Resolve ``None``/``auto`` or validate an explicit runtime name."""
+
+        if requested in {None, "auto"}:
+            return self.select(manifest)
+        assert requested is not None
+        if not any(runtime.name == requested for runtime in manifest.runtimes):
+            raise UnsupportedRuntimeError(
+                f"{manifest.model_id}@{manifest.revision} does not support runtime {requested}",
+                details={"runtime": requested},
+            )
+        return requested
+
+    def select_device(self, runtime: RuntimeSpec, requested: str | None = None) -> str | None:
+        """Select a declared device while preserving backend-specific names."""
+
+        if not runtime.devices:
+            if requested not in {None, "auto"}:
+                raise UnsupportedRuntimeError(
+                    f"Runtime {runtime.name} does not expose device selection",
+                    details={"runtime": runtime.name, "device": requested},
+                )
+            return None
+        if requested in {None, "auto"}:
+            return runtime.devices[0]
+        if requested not in runtime.devices:
+            raise UnsupportedRuntimeError(
+                f"Runtime {runtime.name} does not support device {requested}",
+                details={
+                    "runtime": runtime.name,
+                    "device": requested,
+                    "supported_devices": runtime.devices,
+                },
+            )
+        return requested
+
     def availability(self, runtime: RuntimeSpec) -> RuntimeAvailability:
         name = runtime.name
-        is_apple_silicon = sys.platform == "darwin" and platform.machine() == "arm64"
-        if name == "coreml":
-            if not is_apple_silicon:
-                return RuntimeAvailability(False, "Core ML requires Apple Silicon macOS")
-            return _module_availability("coremltools")
-        if name == "pytorch-mps":
-            if not is_apple_silicon:
-                return RuntimeAvailability(False, "MPS requires Apple Silicon macOS")
-            return _module_availability("torch")
-        if name == "mlx":
-            if not is_apple_silicon:
-                return RuntimeAvailability(False, "MLX requires Apple Silicon macOS")
-            return _module_availability("mlx")
+        current_platform = sys.platform
+        current_architecture = platform.machine().lower()
+        if runtime.platforms and current_platform not in runtime.platforms:
+            return RuntimeAvailability(
+                False,
+                f"{name} requires platform: {', '.join(runtime.platforms)}",
+            )
+        if runtime.architectures and current_architecture not in runtime.architectures:
+            return RuntimeAvailability(
+                False,
+                f"{name} requires architecture: {', '.join(runtime.architectures)}",
+            )
+        required_modules = runtime.required_modules or _known_runtime_modules(name)
+        for module in required_modules:
+            availability = _module_availability(module)
+            if not availability.available:
+                return availability
         return RuntimeAvailability(True)
 
 
 def _module_availability(module: str) -> RuntimeAvailability:
-    if importlib.util.find_spec(module) is None:
+    try:
+        installed = importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError):
+        installed = module in sys.modules
+    if not installed:
         return RuntimeAvailability(False, f"Optional dependency is not installed: {module}")
     return RuntimeAvailability(True)
+
+
+def _known_runtime_modules(runtime: str) -> tuple[str, ...]:
+    return {
+        "coreml": ("coremltools",),
+        "mlx": ("mlx",),
+        "onnx": ("onnxruntime",),
+        "onnxruntime": ("onnxruntime",),
+        "openvino": ("openvino",),
+        "pytorch": ("torch",),
+        "pytorch-mps": ("torch",),
+        "rknn": ("rknnlite",),
+        "tflite": ("tflite_runtime",),
+    }.get(runtime, ())

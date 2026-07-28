@@ -6,9 +6,12 @@ import asyncio
 import contextlib
 from abc import ABC, abstractmethod
 from enum import StrEnum
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, TypeVar, cast
 from uuid import UUID, uuid4
+
+from pydantic import BaseModel, ConfigDict
 
 from hugging_mac_sdk.errors import (
     HuggingMacSdkError,
@@ -28,6 +31,21 @@ class ModelState(StrEnum):
     FAILED = "failed"
 
 
+class ModelInstanceInfo(BaseModel):
+    """Runtime details for one local instance."""
+
+    model_config = ConfigDict(frozen=True)
+
+    instance_id: str
+    model_id: str | None = None
+    revision: str | None = None
+    runtime: str | None = None
+    device: str | None = None
+    artifact_path: Path | None = None
+    state: ModelState
+    capabilities: tuple[str, ...] = ()
+
+
 CapabilityT = TypeVar("CapabilityT")
 
 
@@ -38,8 +56,21 @@ class BaseModelInstance(ABC):
     They must not expose framework model objects through the public interface.
     """
 
-    def __init__(self, *, instance_id: UUID | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        instance_id: UUID | None = None,
+        model_id: str | None = None,
+        revision: str | None = None,
+        runtime: str | None = None,
+        device: str | None = None,
+    ) -> None:
         self._instance_id = instance_id or uuid4()
+        self._model_id = model_id
+        self._revision = revision
+        self._runtime = runtime
+        self._device = device
+        self._artifact_path: Path | None = None
         self._state = ModelState.CREATED
         self._state_lock = asyncio.Lock()
         self._capabilities: dict[type[Any], Any] = {}
@@ -85,6 +116,35 @@ class BaseModelInstance(ABC):
                 f"Instance {self.instance_id} does not support {capability.__name__}",
                 details={"capability": capability.__name__},
             ) from error
+
+    def info(self) -> ModelInstanceInfo:
+        """Return stable metadata without exposing a framework session."""
+
+        return ModelInstanceInfo(
+            instance_id=str(self._instance_id),
+            model_id=self._model_id,
+            revision=self._revision,
+            runtime=self._runtime,
+            device=self._device,
+            artifact_path=self._artifact_path,
+            state=self._state,
+            capabilities=tuple(
+                sorted(capability.__name__ for capability in self._capabilities)
+            ),
+        )
+
+    def _set_runtime_context(
+        self,
+        *,
+        device: str | None = None,
+        artifact_path: Path | None = None,
+    ) -> None:
+        """Allow a runtime implementation to report resolved execution details."""
+
+        if device is not None:
+            self._device = device
+        if artifact_path is not None:
+            self._artifact_path = artifact_path
 
     async def load(self) -> None:
         """Load resources exactly once; concurrent lifecycle calls are serialized."""

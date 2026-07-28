@@ -79,6 +79,7 @@ def _safe_details(details: dict[str, Any]) -> dict[str, Any]:
         "capability",
         "artifact_id",
         "declared",
+        "instance_count",
         "model_id",
         "revision",
         "runtime",

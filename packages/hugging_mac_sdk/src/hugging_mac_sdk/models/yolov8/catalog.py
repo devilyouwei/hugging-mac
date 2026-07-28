@@ -2,80 +2,67 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import cast
 
 from hugging_mac_sdk.converters.registry import ConverterRegistry
 from hugging_mac_sdk.converters.ultralytics import UltralyticsExportConverter
-from hugging_mac_sdk.core.instance import BaseModelInstance
+from hugging_mac_sdk.core.config import load_model_config
 from hugging_mac_sdk.core.registry import ModelDefinition, ModelRegistry
 from hugging_mac_sdk.errors import UnsupportedRuntimeError
 from hugging_mac_sdk.models.yolov8.assets import (
     YoloV8AssetResolver,
     YoloV8ResourceProvider,
 )
-from hugging_mac_sdk.models.yolov8.config import (
-    YOLOV8_REPO_ID,
-    YOLOV8_REPO_REVISION,
-    YOLOV8N_FILENAME,
-    YOLOV8N_SHA256,
-    YoloV8InstanceConfig,
-)
+from hugging_mac_sdk.models.yolov8.config import YoloV8InstanceConfig
 from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
 from hugging_mac_sdk.models.yolov8.instance import (
+    BaseYoloV8Instance,
     CoreMlYoloV8Instance,
     PyTorchMpsYoloV8Instance,
 )
-from hugging_mac_sdk.schemas.manifest import ModelManifest, RuntimeSpec
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource
 
-YOLOV8N_MANIFEST = ModelManifest(
-    model_id="ultralytics/yolov8n",
-    revision=f"{YOLOV8_REPO_REVISION}-{YOLOV8N_FILENAME.removesuffix('.pt')}",
-    display_name="Ultralytics YOLOv8n",
-    description="面向实时场景的轻量级 COCO 目标检测模型。",
-    tags=frozenset({"vision", "object-detection", "yolo"}),
-    family="yolov8",
-    capabilities=frozenset({"object-detection"}),
-    runtimes=(
-        RuntimeSpec(
-            name="pytorch-mps",
-            devices=("mps", "cpu"),
-            dtypes=("float32",),
-        ),
-        RuntimeSpec(
-            name="coreml",
-            devices=("all", "cpu-and-gpu", "cpu-and-neural-engine", "cpu"),
-            dtypes=("float16", "float32"),
-            quantizations=("float16", "int8"),
-        ),
-    ),
-    resources=(
-        HuggingFaceSource(
-            repo_id=YOLOV8_REPO_ID,
-            revision=YOLOV8_REPO_REVISION,
-            filename=YOLOV8N_FILENAME,
-            expected_sha256=YOLOV8N_SHA256,
-        ),
-    ),
-    license="AGPL-3.0",
-    source_url="https://huggingface.co/Ultralytics/YOLOv8",
-    default_runtime="coreml",
-)
+YOLOV8N_CONFIG = load_model_config(Path(__file__).with_name("model.yaml"))
+YOLOV8N_MANIFEST = YOLOV8N_CONFIG.manifest
 
-def _create_yolov8(options: dict[str, object]) -> BaseModelInstance:
-    config = YoloV8InstanceConfig.model_validate(options)
+def _create_pytorch_mps(options: dict[str, object]) -> PyTorchMpsYoloV8Instance:
+    config = YoloV8InstanceConfig.model_validate(options | {"runtime": "pytorch-mps"})
     source = cast(HuggingFaceSource, YOLOV8N_MANIFEST.resources[0])
     assets = YoloV8AssetResolver(source, config)
-    if config.runtime == "pytorch-mps":
-        return PyTorchMpsYoloV8Instance(config, assets)
-    if config.runtime == "coreml":
-        return CoreMlYoloV8Instance(config, assets)
-    raise UnsupportedRuntimeError(f"Unsupported YOLOv8 runtime: {config.runtime}")
+    return PyTorchMpsYoloV8Instance(config, assets)
+
+
+def _create_coreml(options: dict[str, object]) -> CoreMlYoloV8Instance:
+    normalized = dict(options)
+    requested_device = normalized.pop("device", None)
+    if requested_device is not None:
+        normalized["compute_units"] = requested_device
+    config = YoloV8InstanceConfig.model_validate(normalized | {"runtime": "coreml"})
+    source = cast(HuggingFaceSource, YOLOV8N_MANIFEST.resources[0])
+    assets = YoloV8AssetResolver(source, config)
+    return CoreMlYoloV8Instance(config, assets)
+
+
+def _create_yolov8_legacy(options: dict[str, object]) -> BaseYoloV8Instance:
+    """Compatibility dispatcher; new code uses ``runtime_factories`` directly."""
+
+    runtime = str(options.get("runtime", YOLOV8N_MANIFEST.default_runtime))
+    if runtime == "pytorch-mps":
+        return _create_pytorch_mps(options)
+    if runtime == "coreml":
+        return _create_coreml(options)
+    raise UnsupportedRuntimeError(f"Unsupported YOLOv8 runtime: {runtime}")
 
 
 YOLOV8N_DEFINITION = ModelDefinition(
     manifest=YOLOV8N_MANIFEST,
-    factory=_create_yolov8,
+    factory=_create_yolov8_legacy,
+    runtime_factories={
+        "pytorch-mps": _create_pytorch_mps,
+        "coreml": _create_coreml,
+    },
+    artifacts=YOLOV8N_CONFIG.artifacts,
     converter_ids=("ultralytics.yolov8",),
     resource_provider=YoloV8ResourceProvider(
         cast(HuggingFaceSource, YOLOV8N_MANIFEST.resources[0]),

@@ -13,8 +13,15 @@ from hugging_mac_sdk.schemas.resources import ResolvedResource
 
 class ArtifactFormat(StrEnum):
     PYTORCH = "pytorch"
+    TORCHSCRIPT = "torchscript"
     COREML = "coreml"
     ONNX = "onnx"
+    SAFETENSORS = "safetensors"
+    GGUF = "gguf"
+    MLX = "mlx"
+    RKNN = "rknn"
+    TFLITE = "tflite"
+    OPENVINO = "openvino"
 
 
 class ConversionRequest(BaseModel):

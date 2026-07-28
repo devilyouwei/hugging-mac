@@ -16,6 +16,11 @@ const readyInstances = computed(() =>
   models.value.reduce((total, model) => total + model.ready_count, 0),
 )
 
+const chipLabel = computed(() => {
+  const value = system.value?.chip_name
+  return value ? value.replace(/^Apple\s+/i, "") : system.value?.machine || "Mac"
+})
+
 async function loadHome() {
   loading.value = true
   error.value = ""
@@ -40,12 +45,16 @@ onMounted(loadHome)
       <div class="hero-copy">
         <p class="kicker">LOCAL MODEL STUDIO · APPLE SILICON</p>
         <h1>
-          One Mac.<br />
-          <span>Many minds.</span>
+          <span class="hero-title-line">
+            <span class="hero-icon" aria-hidden="true">
+              <img src="/hugging-mac-icon.png" alt="" />
+            </span>
+            <span class="hero-title-solid">One Mac.</span>
+          </span>
+          <span class="hero-title-outline">Many minds.</span>
         </h1>
         <p class="hero-intro">
-          从经典视觉网络到现代多模态模型，在统一 SDK 上加载、观察和运行。
-          数据留在本机，runtime 为当前机器动态选择。
+          Squeeze every last drop of performance from your Mac's Apple silicon.
         </p>
         <div class="hero-actions">
           <RouterLink class="button button--primary" to="/apps/object-detection">
@@ -62,7 +71,36 @@ onMounted(loadHome)
           <span class="live-indicator">LIVE</span>
         </div>
         <template v-if="system">
-          <strong>{{ system.machine }}</strong>
+          <p class="machine-panel__platform">Apple silicon</p>
+          <strong>{{ chipLabel }}</strong>
+          <div class="machine-spec-grid">
+            <div>
+              <span>CPU</span>
+              <strong>
+                {{ system.cpu_physical_count ?? system.cpu_logical_count ?? "—" }}
+              </strong>
+              <small
+                v-if="
+                  system.cpu_performance_cores != null &&
+                  system.cpu_efficiency_cores != null
+                "
+              >
+                {{ system.cpu_performance_cores }}P ·
+                {{ system.cpu_efficiency_cores }}E
+              </small>
+              <small v-else>cores</small>
+            </div>
+            <div>
+              <span>GPU</span>
+              <strong>{{ system.gpu_cores ?? "—" }}</strong>
+              <small>cores</small>
+            </div>
+            <div>
+              <span>Neural</span>
+              <strong>{{ system.neural_engine_cores ?? "—" }}</strong>
+              <small>cores</small>
+            </div>
+          </div>
           <dl>
             <div>
               <dt>macOS</dt>
@@ -71,7 +109,8 @@ onMounted(loadHome)
             <div>
               <dt>Memory free</dt>
               <dd>
-                {{ (system.memory_available_bytes / 1024 ** 3).toFixed(1) }} GB
+                {{ (system.memory_available_bytes / 1024 ** 3).toFixed(1) }} /
+                {{ (system.memory_total_bytes / 1024 ** 3).toFixed(0) }} GB
               </dd>
             </div>
             <div>

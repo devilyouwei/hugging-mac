@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 
@@ -44,6 +45,8 @@ def create_app(
                 context.apps.register_manifest(blueprint.manifest, context.models.registry)
             yield
         finally:
+            with contextlib.suppress(Exception):
+                await context.models.instances.unload_all(force=True)
             context.close()
 
     app = FastAPI(

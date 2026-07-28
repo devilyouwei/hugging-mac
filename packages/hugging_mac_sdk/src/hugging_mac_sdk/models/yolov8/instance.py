@@ -15,6 +15,10 @@ from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import InferenceError, UnsupportedRuntimeError
 from hugging_mac_sdk.models.yolov8.assets import YoloV8AssetResolver
 from hugging_mac_sdk.models.yolov8.config import YoloV8InstanceConfig
+from hugging_mac_sdk.models.yolov8.config import (
+    YOLOV8_MODEL_ID,
+    YOLOV8_MODEL_REVISION,
+)
 from hugging_mac_sdk.schemas.detection import (
     BoundingBox,
     Detection,
@@ -33,7 +37,12 @@ class BaseYoloV8Instance(BaseModelInstance):
         config: YoloV8InstanceConfig,
         assets: YoloV8AssetResolver,
     ) -> None:
-        super().__init__()
+        super().__init__(
+            model_id=YOLOV8_MODEL_ID,
+            revision=YOLOV8_MODEL_REVISION,
+            runtime=config.runtime,
+            device=config.device if config.runtime == "pytorch-mps" else config.compute_units,
+        )
         self._config = config
         self._assets = assets
         self._artifact_path: Path | None = None
@@ -103,6 +112,7 @@ class PyTorchMpsYoloV8Instance(BaseYoloV8Instance):
 
     async def _resolve(self) -> None:
         self._artifact_path = (await self._assets.resolve_source()).path
+        self._set_runtime_context(artifact_path=self._artifact_path)
 
     async def _load(self) -> None:
         await super()._load()
@@ -114,6 +124,7 @@ class PyTorchMpsYoloV8Instance(BaseYoloV8Instance):
                 raise UnsupportedRuntimeError("PyTorch MPS is not available on this machine")
             requested = "cpu"
         self._device = requested
+        self._set_runtime_context(device=requested)
 
     async def _unload(self) -> None:
         had_loaded_model = self._model is not None
@@ -139,6 +150,7 @@ class CoreMlYoloV8Instance(BaseYoloV8Instance):
 
     async def _resolve(self) -> None:
         self._artifact_path = (await self._assets.resolve_coreml()).path
+        self._set_runtime_context(artifact_path=self._artifact_path)
 
     def _prediction_arguments(self, request: DetectionRequest) -> dict[str, Any]:
         # Ultralytics detects .mlpackage and dispatches through Core ML. Core ML's

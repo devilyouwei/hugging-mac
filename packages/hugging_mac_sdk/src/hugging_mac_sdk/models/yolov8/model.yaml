@@ -1,0 +1,51 @@
+manifest:
+  schema_version: "1"
+  model_id: ultralytics/yolov8n
+  revision: 8a9e1a5-yolov8n
+  display_name: Ultralytics YOLOv8n
+  description: 面向实时场景的轻量级 COCO 目标检测模型。
+  tags: [vision, object-detection, yolo]
+  family: yolov8
+  capabilities: [object-detection]
+  runtimes:
+    - name: pytorch-mps
+      devices: [mps, cpu]
+      dtypes: [float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [torch, ultralytics]
+    - name: coreml
+      devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
+      dtypes: [float16, float32]
+      quantizations: [float16, int8]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [coremltools, ultralytics]
+  resources:
+    - kind: huggingface
+      repo_id: Ultralytics/YOLOv8
+      revision: 8a9e1a5
+      filename: yolov8n.pt
+      expected_sha256: 31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95
+  license: AGPL-3.0
+  source_url: https://huggingface.co/Ultralytics/YOLOv8
+  default_runtime: coreml
+
+artifacts:
+  - artifact_id: source
+    runtime: pytorch-mps
+    format: pytorch
+    path: ultralytics/yolov8n/8a9e1a5/source/yolov8n.pt
+    kind: file
+    source:
+      kind: huggingface
+      repo_id: Ultralytics/YOLOv8
+      revision: 8a9e1a5
+      filename: yolov8n.pt
+      expected_sha256: 31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95
+    expected_sha256: 31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95
+  - artifact_id: coreml
+    runtime: coreml
+    format: coreml
+    path: ultralytics/yolov8n/8a9e1a5/coreml/yolov8n.mlpackage
+    kind: directory

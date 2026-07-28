@@ -14,6 +14,9 @@ class RuntimeSpec(BaseModel):
     devices: tuple[str, ...] = ()
     dtypes: tuple[str, ...] = ()
     quantizations: tuple[str, ...] = ()
+    platforms: tuple[str, ...] = ()
+    architectures: tuple[str, ...] = ()
+    required_modules: tuple[str, ...] = ()
 
 
 class ModelManifest(BaseModel):

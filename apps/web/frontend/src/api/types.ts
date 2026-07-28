@@ -28,6 +28,61 @@ export interface InstanceSummary {
   state: string
   created_at: string
   reference_count: number
+  load_metrics: LifecycleMetrics | null
+}
+
+export interface LifecycleMetrics {
+  operation: "load" | "unload"
+  duration_ms: number
+  process_rss_before_bytes: number | null
+  process_rss_after_bytes: number | null
+  process_rss_change_bytes: number | null
+  memory_allocated_bytes: number | null
+  memory_released_bytes: number | null
+  warmup_included: boolean
+  measured_at: string
+}
+
+export interface UnloadResult {
+  instance_id: string
+  model_id: string
+  revision: string
+  runtime: string
+  state: string
+  metrics: LifecycleMetrics
+}
+
+export interface ModelArtifactResource {
+  artifact_id: string
+  format: string
+  runtime: string | null
+  provisioning: "download" | "convert"
+  available: boolean
+  size_bytes: number | null
+}
+
+export interface RuntimeResourceStatus {
+  runtime: string
+  available: boolean
+  size_bytes: number
+  artifact_ids: string[]
+}
+
+export interface ConversionTargetStatus {
+  target_format: string
+  runtime: string | null
+  artifact_id: string
+  available: boolean
+  size_bytes: number | null
+}
+
+export interface ModelResourceStatus {
+  model_id: string
+  revision: string
+  artifacts: ModelArtifactResource[]
+  runtimes: RuntimeResourceStatus[]
+  conversion_targets: ConversionTargetStatus[]
+  total_size_bytes: number
 }
 
 export interface ModelSummary {
@@ -73,9 +128,14 @@ export interface SystemInfo {
   os_version: string
   machine: string
   processor: string
+  chip_name: string | null
   python_version: string
   cpu_logical_count: number | null
   cpu_physical_count: number | null
+  cpu_performance_cores: number | null
+  cpu_efficiency_cores: number | null
+  gpu_cores: number | null
+  neural_engine_cores: number | null
   memory_total_bytes: number
   memory_available_bytes: number
   memory_percent: number

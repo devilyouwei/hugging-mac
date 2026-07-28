@@ -34,14 +34,69 @@ class YoloInstance(BaseModelInstance):
         ...
 ```
 
-静态 manifest 与 factory 组成 definition：
+静态 manifest、artifact 与独立的 runtime factory 组成 definition：
 
 ```python
-registry.register(ModelDefinition(manifest=yolo_manifest, factory=create_yolo))
+registry.register(
+    ModelDefinition(
+        manifest=yolo_manifest,
+        runtime_factories={
+            "pytorch-mps": create_yolo_mps,
+            "coreml": create_yolo_coreml,
+        },
+        artifacts=yolo_artifacts,
+    )
+)
 instance = registry.create_instance("ultralytics/yolo", runtime="pytorch-mps")
 await instance.load()
 detector = instance.require(ObjectDetection)
 ```
+
+没有实际 factory 的 runtime 不允许出现在 definition 中。模型 metadata 也可以放在 package 内的
+`model.yaml`，通过 `load_model_config()` 安全读取；YAML 不负责导入或执行 runtime 代码。
+
+## Registry、runtime 与实例管理
+
+Registry 只查询，不下载或加载模型：
+
+```python
+runtimes = registry.supported_runtimes("ultralytics/yolov8n")
+artifact = registry.get_artifact("ultralytics/yolov8n", "coreml")
+path = registry.resolve_artifact_path("ultralytics/yolov8n", "coreml")
+```
+
+`InstanceManager` 把 runtime policy 纳入创建链路，支持 `auto`、显式 device、多实例和安全 runtime 切换：
+
+```python
+manager = InstanceManager(registry)
+model = await manager.load("ultralytics/yolov8n", runtime="auto")
+print(model.info())
+
+replacement = await manager.switch_runtime(
+    str(model.instance_id),
+    "pytorch-mps",
+    device="mps",
+)
+await manager.unload_all()
+```
+
+加载指标可从实例 snapshot 获取，卸载指标由 `unload_with_metrics()` 返回：
+
+```python
+snapshot = await manager.snapshot(str(model.instance_id))
+print(snapshot.load_metrics.duration_ms)
+print(snapshot.load_metrics.memory_allocated_bytes)
+
+result = await manager.unload_with_metrics(str(model.instance_id))
+print(result.metrics.duration_ms)
+print(result.metrics.memory_released_bytes)
+```
+
+内存值是操作前后 Python 进程 RSS 的观测差值，并非模型独占内存；allocator cache、并发任务和
+GPU/ANE 分配可能影响结果。
+
+模型能力仍通过组合接口获取，例如 `instance.require(ObjectDetection)`；不会为所有模型添加含义模糊的
+通用 `predict(**kwargs)`。
 
 ## 下载模型资源
 
@@ -59,6 +114,22 @@ status = await sdk.resources.convert(
 ```
 
 这些调用必须由业务层或用户动作主动触发。
+
+资源状态的 `conversion_targets` 描述可转换的目标格式、对应 runtime、artifact 和本地可用状态，
+供 API 或 UI 动态生成 `Convert/Re-convert` 操作。新增 ONNX 等转换时，只需由模型 resource provider
+声明目标并实现转换，无需修改平台层路由。
+
+资源状态也会聚合每个 runtime 的本地文件/目录大小以及模型总大小。删除同样是显式操作：
+
+```python
+status = await sdk.resources.delete(
+    "ultralytics/yolov8n",
+    runtime="coreml",  # 省略 runtime 时删除整个模型 revision 目录
+)
+```
+
+删除不会移除模型 definition。模型实现必须把删除范围限制在自身受管 storage root 内，外部自定义路径和
+路径逃逸会被拒绝。
 
 Hugging Face 完整模型目录：
 

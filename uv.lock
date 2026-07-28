@@ -1043,6 +1043,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "types-psutil" },
+    { name = "types-pyyaml" },
 ]
 docs = [
     { name = "mkdocs" },
@@ -1105,6 +1106,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=6.2,<7" },
     { name = "ruff", specifier = ">=0.12,<1" },
     { name = "types-psutil", specifier = ">=7,<8" },
+    { name = "types-pyyaml", specifier = ">=6,<7" },
 ]
 docs = [
     { name = "mkdocs", specifier = ">=1.6,<2" },
@@ -1120,7 +1122,9 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "pillow" },
     { name = "platformdirs" },
+    { name = "psutil" },
     { name = "pydantic" },
+    { name = "pyyaml" },
 ]
 
 [package.optional-dependencies]
@@ -1139,7 +1143,9 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'yolo'", specifier = ">=2,<2.4" },
     { name = "pillow", specifier = ">=11,<13" },
     { name = "platformdirs", specifier = ">=4.3,<5" },
+    { name = "psutil", specifier = ">=7,<8" },
     { name = "pydantic", specifier = ">=2.11,<3" },
+    { name = "pyyaml", specifier = ">=6,<7" },
     { name = "torch", marker = "extra == 'yolo'", specifier = ">=2.7,<3" },
     { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.3,<9" },
 ]
@@ -3458,6 +3464,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/cb/f1/6901857281d4e8d792492e1495eef6f4f01318a3b6a066486d81000a4511/types_psutil-7.2.2.20260518.tar.gz", hash = "sha256:9f825f631463a5b4d26f19f63aebc9ec25f01140d655026f3ad8a67841f9b331", size = 26660, upload-time = "2026-05-18T06:05:09.389Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cd/eb/f726339668879819599c74c2e1f0cab760912a4159046942bdae2ad37bd6/types_psutil-7.2.2.20260518-py3-none-any.whl", hash = "sha256:6a3d697665754a60d7b5a41d5a2cff12b53f5e0676d77810cd28ba5e14cb4049", size = 32820, upload-time = "2026-05-18T06:05:08.321Z" },
+]
+
+[[package]]
+name = "types-pyyaml"
+version = "6.0.12.20260724"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/6f/a28f44bcd56bebed42b028a2894c79853e2f5e6b5279e633cb3f287a05e7/types_pyyaml-6.0.12.20260724.tar.gz", hash = "sha256:3c1ce1bb73cd5ec02e90390c2b1f00e810d241d8825fd73ff359696839271b6b", size = 17893, upload-time = "2026-07-24T04:58:43.453Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8b/42/0337fefc615e20ee55d1c8f71b774a9b2b734a04669139c20753b27a2a3a/types_pyyaml-6.0.12.20260724-py3-none-any.whl", hash = "sha256:d57db930a4b2efbc57cf430ec8882765d246929432fa253092f383902329a453", size = 20312, upload-time = "2026-07-24T04:58:42.486Z" },
 ]
 
 [[package]]

@@ -1,0 +1,258 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
+from pathlib import Path
+
+import pytest
+from hugging_mac_sdk import (
+    ArtifactFormat,
+    ArtifactKind,
+    ManifestError,
+    ModelArtifact,
+    ModelDefinition,
+    ModelLoadError,
+    ModelManifest,
+    ModelRegistry,
+    RuntimeBackend,
+    RuntimePolicy,
+    RuntimeRegistry,
+    RuntimeSession,
+    RuntimeSpec,
+    UnsupportedRuntimeError,
+    load_model_config,
+)
+from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
+from hugging_mac_sdk.core.manager import InstanceManager
+
+
+class DummyInstance(BaseModelInstance):
+    def __init__(self, options: dict[str, object]) -> None:
+        super().__init__(
+            model_id="example/multi-runtime",
+            revision="main",
+            runtime=str(options["runtime"]),
+            device=str(options["device"]) if "device" in options else None,
+        )
+
+    async def _load(self) -> None:
+        return None
+
+    async def _unload(self) -> None:
+        return None
+
+
+class FailingInstance(DummyInstance):
+    async def _load(self) -> None:
+        raise RuntimeError("backend failed")
+
+
+class DummyBackend(RuntimeBackend):
+    @property
+    def name(self) -> str:
+        return "dummy"
+
+    def is_available(self) -> bool:
+        return True
+
+    async def create_session(
+        self,
+        artifact: Path,
+        *,
+        device: str | None,
+        options: Mapping[str, object],
+    ) -> RuntimeSession:
+        raise NotImplementedError
+
+
+def _manifest() -> ModelManifest:
+    return ModelManifest(
+        model_id="example/multi-runtime",
+        display_name="Multi Runtime",
+        family="test",
+        capabilities=frozenset({"test"}),
+        runtimes=(
+            RuntimeSpec(name="alpha", devices=("cpu",)),
+            RuntimeSpec(name="beta", devices=("gpu", "cpu")),
+        ),
+        default_runtime="alpha",
+    )
+
+
+def _definition() -> ModelDefinition:
+    return ModelDefinition(
+        manifest=_manifest(),
+        runtime_factories={
+            "alpha": DummyInstance,
+            "beta": DummyInstance,
+        },
+        artifacts=(
+            ModelArtifact(
+                artifact_id="alpha-model",
+                runtime="alpha",
+                format=ArtifactFormat.ONNX,
+                path=Path("example/alpha/model.onnx"),
+            ),
+            ModelArtifact(
+                artifact_id="beta-model",
+                runtime="beta",
+                format=ArtifactFormat.COREML,
+                path=Path("example/beta/model.mlpackage"),
+                kind=ArtifactKind.DIRECTORY,
+            ),
+        ),
+    )
+
+
+def test_registry_reports_only_bound_runtimes_and_resolves_artifacts(
+    tmp_path: Path,
+) -> None:
+    registry = ModelRegistry(storage_root=tmp_path)
+    registry.register(_definition())
+
+    assert registry.list_models() == (registry.get("example/multi-runtime"),)
+    assert registry.supported_runtimes("example/multi-runtime") == ("alpha", "beta")
+    assert registry.get_artifact("example/multi-runtime", "beta").artifact_id == "beta-model"
+    assert registry.resolve_artifact_path(
+        "example/multi-runtime",
+        "alpha",
+    ) == tmp_path / "example/alpha/model.onnx"
+
+
+def test_definition_rejects_declared_runtime_without_implementation() -> None:
+    with pytest.raises(ManifestError):
+        ModelDefinition(
+            manifest=_manifest(),
+            runtime_factories={"alpha": DummyInstance},
+        )
+
+
+async def test_manager_auto_device_info_and_runtime_switch() -> None:
+    registry = ModelRegistry()
+    registry.register(_definition())
+    manager = InstanceManager(registry, RuntimePolicy(("beta", "alpha")))
+
+    beta = await manager.load(
+        "example/multi-runtime",
+        runtime="auto",
+        device="gpu",
+    )
+    assert beta.state is ModelState.READY
+    assert beta.info().runtime == "beta"
+    assert beta.info().device == "gpu"
+
+    alpha = await manager.switch_runtime(
+        str(beta.instance_id),
+        "alpha",
+        device="cpu",
+    )
+    assert beta.info().state is ModelState.UNLOADED
+    assert alpha.state is ModelState.READY
+    assert alpha.info().runtime == "alpha"
+    assert alpha.info().device == "cpu"
+
+    await manager.unload_all()
+    assert alpha.info().state is ModelState.UNLOADED
+
+
+async def test_failed_runtime_switch_keeps_original_instance_ready() -> None:
+    manifest = ModelManifest(
+        model_id="example/multi-runtime",
+        display_name="Safe Switch",
+        family="test",
+        capabilities=frozenset({"test"}),
+        runtimes=(RuntimeSpec(name="alpha"), RuntimeSpec(name="broken")),
+    )
+    registry = ModelRegistry()
+    registry.register(
+        ModelDefinition(
+            manifest=manifest,
+            runtime_factories={
+                "alpha": DummyInstance,
+                "broken": FailingInstance,
+            },
+        )
+    )
+    manager = InstanceManager(registry)
+    original = await manager.load("example/multi-runtime", runtime="alpha")
+
+    with pytest.raises(ModelLoadError):
+        await manager.switch_runtime(str(original.instance_id), "broken")
+
+    assert original.info().state is ModelState.READY
+    assert await manager.get(str(original.instance_id)) is original
+
+
+async def test_manager_reports_load_and_unload_metrics() -> None:
+    registry = ModelRegistry()
+    registry.register(_definition())
+    manager = InstanceManager(registry)
+
+    instance = await manager.load("example/multi-runtime", runtime="alpha")
+    snapshot = await manager.snapshot(str(instance.instance_id))
+
+    assert snapshot.load_metrics is not None
+    assert snapshot.load_metrics.operation == "load"
+    assert snapshot.load_metrics.duration_ms >= 0
+    assert snapshot.load_metrics.process_rss_before_bytes is not None
+    assert snapshot.load_metrics.process_rss_after_bytes is not None
+
+    result = await manager.unload_with_metrics(str(instance.instance_id))
+
+    assert result is not None
+    assert result.state is ModelState.UNLOADED
+    assert result.metrics.operation == "unload"
+    assert result.metrics.duration_ms >= 0
+    assert result.metrics.memory_released_bytes is not None
+
+
+async def test_manager_rejects_unload_while_instance_is_retained() -> None:
+    registry = ModelRegistry()
+    registry.register(_definition())
+    manager = InstanceManager(registry)
+    instance = await manager.load("example/multi-runtime", runtime="alpha")
+    instance_id = str(instance.instance_id)
+    await manager.retain(instance_id)
+
+    with pytest.raises(UnsupportedRuntimeError, match="retained"):
+        await manager.unload_with_metrics(instance_id)
+
+    assert await manager.get(instance_id) is instance
+    await manager.release(instance_id)
+    assert await manager.unload(instance_id)
+
+
+def test_yaml_model_config_is_data_only(tmp_path: Path) -> None:
+    config_path = tmp_path / "model.yaml"
+    config_path.write_text(
+        """
+manifest:
+  model_id: example/yaml
+  display_name: YAML Model
+  family: test
+  capabilities: [embedding]
+  runtimes:
+    - name: onnx
+      devices: [cpu]
+artifacts:
+  - artifact_id: model
+    runtime: onnx
+    format: onnx
+    path: example/yaml/model.onnx
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_model_config(config_path)
+
+    assert config.manifest.model_id == "example/yaml"
+    assert config.artifacts[0].path == Path("example/yaml/model.onnx")
+
+
+def test_runtime_backend_registry_is_independent_from_model_registry() -> None:
+    runtimes = RuntimeRegistry()
+    backend = DummyBackend()
+
+    runtimes.register(backend)
+
+    assert runtimes.get("dummy") is backend
+    assert runtimes.list() == (backend,)

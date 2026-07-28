@@ -54,6 +54,8 @@ async def test_acquire_reuses_shared_instances_and_catalog_reports_details() -> 
     assert model.instance_count == 1
     assert model.ready_count == 1
     assert model.instances[0].reference_count == 2
+    assert model.instances[0].load_metrics is not None
+    assert model.instances[0].load_metrics.operation == "load"
 
     await first.close()
     assert (await sdk.catalog.snapshot()).models[0].instances[0].reference_count == 1

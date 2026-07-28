@@ -47,6 +47,12 @@ apps/web/backend/
 | Method | Path | 作用 |
 |---|---|---|
 | GET | `/api/v1/catalog/models` | 模型、runtime 可用性与实例明细 |
+| POST | `/api/v1/catalog/models/{model_id}/instances` | 按 runtime/device 加载独立模型实例 |
+| DELETE | `/api/v1/catalog/instances/{instance_id}` | 卸载指定实例并返回耗时与 RSS 释放指标 |
+| GET | `/api/v1/catalog/models/{model_id}/resources` | artifact、runtime 与模型总大小 |
+| POST | `/api/v1/catalog/models/{model_id}/resources/download` | 覆盖下载源权重 |
+| POST | `/api/v1/catalog/models/{model_id}/resources/convert` | 按 `target_format` 覆盖转换目标产物 |
+| DELETE | `/api/v1/catalog/models/{model_id}/resources` | 删除该 revision 的本地权重目录 |
 | GET | `/api/v1/catalog/apps` | 已注册业务 App |
 | GET | `/api/v1/catalog/events` | SSE catalog 初始快照与 heartbeat |
 | GET | `/api/v1/system/health` | 存活状态 |
@@ -59,6 +65,19 @@ apps/web/backend/
 | POST | `/api/v1/apps/object-detection/detect/frame` | 低开销实时帧目标检测 |
 
 模型 catalog 是轻量只读查询，不会下载、转换或加载模型。前端首页分别并行请求 models/apps。
+加载接口接收 `runtime`、可选 `device` 和 `warmup`；模型文件缺失、runtime 不支持或加载失败时直接返回
+SDK 的稳定错误。实例仍被业务请求 retain 时，卸载接口拒绝操作，避免中断正在执行的推理。
+
+实例 snapshot 包含首次加载的耗时、进程 RSS 前后值和 RSS 分配差值；卸载响应包含卸载耗时与 RSS
+释放差值。它们是本地 Python 进程的观测指标，不代表模型独占内存或完整的 GPU/ANE 内存。
+
+覆盖下载、转换和删除属于资源变更操作。只要该模型仍有受管实例，平台就返回 `409 Conflict`，要求先卸载实例。
+删除只移除 SDK 声明的本地权重目录，不删除 manifest、模型代码或 registry definition。删除接口幂等，
+资源不存在时仍返回当前的空资源状态。
+
+转换接口使用统一请求体，例如 `{"target_format": "coreml"}`。目标格式由 SDK
+`ModelResourceStatus.conversion_targets` 暴露，前端据此显示 `Convert to Core ML` 或
+`Re-convert to Core ML`；以后模型注册 ONNX、MLX 等目标后无需增加专用平台路由。
 
 ## 终端日志
 

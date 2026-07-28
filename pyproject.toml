@@ -79,6 +79,7 @@ dev = [
   "pytest-cov>=6.2,<7",
   "ruff>=0.12,<1",
   "types-psutil>=7,<8",
+  "types-pyyaml>=6,<7",
 ]
 docs = [
   "mkdocs>=1.6,<2",

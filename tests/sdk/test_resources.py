@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 from hugging_mac_sdk import ModelSdk
-from hugging_mac_sdk.errors import ResourceNotFoundError
+from hugging_mac_sdk.errors import ResourceIntegrityError, ResourceNotFoundError
 from hugging_mac_sdk.models.yolov8 import YOLOV8N_MANIFEST, register_yolov8
 from hugging_mac_sdk.models.yolov8.assets import YoloV8AssetResolver
 from hugging_mac_sdk.models.yolov8.config import YOLOV8N_SHA256, YoloV8InstanceConfig
@@ -100,6 +100,9 @@ async def test_sdk_exposes_explicit_download_and_conversion(
     initial = await sdk.resources.status("ultralytics/yolov8n", options=options)
     assert not initial.artifacts[0].available
     assert not initial.artifacts[1].available
+    assert len(initial.conversion_targets) == 1
+    assert initial.conversion_targets[0].target_format == "coreml"
+    assert not initial.conversion_targets[0].available
 
     downloaded = await sdk.resources.download_source(
         "ultralytics/yolov8n",
@@ -115,3 +118,47 @@ async def test_sdk_exposes_explicit_download_and_conversion(
     )
     assert converted.artifacts[0].available
     assert converted.artifacts[1].available
+    assert converted.conversion_targets[0].available
+    assert converted.conversion_targets[0].runtime == "coreml"
+    assert converted.conversion_targets[0].size_bytes == 6
+    assert converted.total_size_bytes == sum(
+        artifact.size_bytes or 0 for artifact in converted.artifacts
+    )
+    runtime_sizes = {runtime.runtime: runtime for runtime in converted.runtimes}
+    assert runtime_sizes["pytorch-mps"].available
+    assert runtime_sizes["pytorch-mps"].size_bytes > 0
+    assert runtime_sizes["coreml"].available
+    assert runtime_sizes["coreml"].size_bytes == 6
+
+    without_coreml = await sdk.resources.delete(
+        "ultralytics/yolov8n",
+        runtime="coreml",
+        options=options,
+    )
+    assert without_coreml.artifacts[0].available
+    assert not without_coreml.artifacts[1].available
+
+    empty = await sdk.resources.delete(
+        "ultralytics/yolov8n",
+        options=options,
+    )
+    assert not any(artifact.available for artifact in empty.artifacts)
+    assert empty.total_size_bytes == 0
+
+
+async def test_delete_refuses_custom_artifact_outside_model_root(tmp_path: Path) -> None:
+    outside = tmp_path / "external.pt"
+    outside.write_bytes(b"keep me")
+    resolver = YoloV8AssetResolver(
+        _source(),
+        YoloV8InstanceConfig(
+            model_home=tmp_path / "managed",
+            source_path=outside,
+            runtime="pytorch-mps",
+        ),
+    )
+
+    with pytest.raises(ResourceIntegrityError, match="outside"):
+        await resolver.delete(runtime="pytorch-mps")
+
+    assert outside.read_bytes() == b"keep me"

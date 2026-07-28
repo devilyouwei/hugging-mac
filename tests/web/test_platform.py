@@ -5,6 +5,15 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from hugging_mac_sdk import (
+    BaseModelInstance,
+    ConversionRequest,
+    ConversionResult,
+    ModelDefinition,
+)
+from hugging_mac_sdk.models.yolov8.config import YOLOV8N_SHA256
+from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
+from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.schemas.detection import (
     BoundingBox,
     Detection,
@@ -12,9 +21,18 @@ from hugging_mac_sdk.schemas.detection import (
     DetectionTimings,
     ImageSize,
 )
+from hugging_mac_sdk.schemas.resources import ResolvedResource
 from hugging_mac_web.config import WebSettings
 from hugging_mac_web.main import create_app
 from PIL import Image
+
+
+class PlatformDummyInstance(BaseModelInstance):
+    async def _load(self) -> None:
+        return None
+
+    async def _unload(self) -> None:
+        return None
 
 
 def _settings(tmp_path: Path) -> WebSettings:
@@ -55,6 +73,13 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert root.status_code == 200
     assert health.json()["data"]["status"] == "healthy"
     assert "memory_total_bytes" in info.json()["data"]
+    assert {
+        "chip_name",
+        "cpu_performance_cores",
+        "cpu_efficiency_cores",
+        "gpu_cores",
+        "neural_engine_cores",
+    } <= info.json()["data"].keys()
     app_summary = apps.json()["data"][0]
     assert app_summary["manifest"]["app_id"] == "object-detection"
     assert app_summary["status"] == "available"
@@ -70,6 +95,141 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     }
     assert preflight.status_code == 200
     assert preflight.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path) -> None:
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        registry = app.state.context.models.registry
+        current = registry.get("ultralytics/yolov8n")
+        registry.register(
+            ModelDefinition(
+                manifest=current.manifest,
+                runtime_factories={
+                    "pytorch-mps": lambda _: PlatformDummyInstance(),
+                    "coreml": lambda _: PlatformDummyInstance(),
+                },
+                artifacts=current.artifacts,
+                converter_ids=current.converter_ids,
+                resource_provider=current.resource_provider,
+            ),
+            replace=True,
+        )
+
+        loaded = client.post(
+            "/api/v1/catalog/models/ultralytics/yolov8n/instances",
+            json={"runtime": "coreml", "warmup": False},
+        )
+        instance_id = loaded.json()["data"]["instance_id"]
+        catalog = client.get("/api/v1/catalog/models")
+        blocked_delete = client.delete(
+            "/api/v1/catalog/models/ultralytics/yolov8n/resources"
+        )
+        blocked_convert = client.post(
+            "/api/v1/catalog/models/ultralytics/yolov8n/resources/convert",
+            json={"target_format": "coreml"},
+        )
+        unloaded = client.delete(f"/api/v1/catalog/instances/{instance_id}")
+
+    assert loaded.status_code == 201
+    assert loaded.json()["data"]["state"] == "ready"
+    assert loaded.json()["data"]["load_metrics"]["operation"] == "load"
+    assert loaded.json()["data"]["load_metrics"]["duration_ms"] >= 0
+    assert catalog.json()["data"][0]["instance_count"] == 1
+    assert blocked_delete.status_code == 409
+    assert blocked_delete.json()["error"]["details"]["instance_count"] == 1
+    assert blocked_convert.status_code == 409
+    assert unloaded.status_code == 200
+    assert unloaded.json()["data"]["state"] == "unloaded"
+    assert unloaded.json()["data"]["metrics"]["operation"] == "unload"
+    assert unloaded.json()["data"]["metrics"]["duration_ms"] >= 0
+
+
+def test_platform_downloads_overwrites_and_deletes_model_resources(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_download(
+        _: ResourceDownloader,
+        source: Any,
+        destination: Path,
+        **__: object,
+    ) -> ResolvedResource:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"replacement weights")
+        return ResolvedResource(
+            path=destination,
+            source=source,
+            digest=YOLOV8N_SHA256,
+            size_bytes=destination.stat().st_size,
+        )
+
+    async def fake_convert(
+        _: YoloV8Converter,
+        request: ConversionRequest,
+    ) -> ConversionResult:
+        request.output_path.mkdir(parents=True, exist_ok=True)
+        (request.output_path / "model.mlmodel").write_bytes(b"coreml")
+        return ConversionResult(
+            path=request.output_path,
+            format=request.target_format,
+            digest="0" * 64,
+            size_bytes=6,
+            converter_id="ultralytics.yolov8",
+        )
+
+    monkeypatch.setattr(ResourceDownloader, "download", fake_download)
+    monkeypatch.setattr(YoloV8Converter, "convert", fake_convert)
+    monkeypatch.setattr(
+        "hugging_mac_sdk.models.yolov8.assets.file_sha256",
+        lambda _: YOLOV8N_SHA256,
+    )
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        initial = client.get(
+            "/api/v1/catalog/models/ultralytics/yolov8n/resources"
+        )
+        downloaded = client.post(
+            "/api/v1/catalog/models/ultralytics/yolov8n/resources/download"
+        )
+        redownloaded = client.post(
+            "/api/v1/catalog/models/ultralytics/yolov8n/resources/download"
+        )
+        converted = client.post(
+            "/api/v1/catalog/models/ultralytics/yolov8n/resources/convert",
+            json={"target_format": "coreml"},
+        )
+        reconverted = client.post(
+            "/api/v1/catalog/models/ultralytics/yolov8n/resources/convert",
+            json={"target_format": "coreml"},
+        )
+        unsupported = client.post(
+            "/api/v1/catalog/models/ultralytics/yolov8n/resources/convert",
+            json={"target_format": "onnx"},
+        )
+        deleted = client.delete(
+            "/api/v1/catalog/models/ultralytics/yolov8n/resources"
+        )
+
+    assert initial.status_code == 200
+    assert initial.json()["data"]["total_size_bytes"] == 0
+    assert downloaded.status_code == 200
+    assert downloaded.json()["data"]["total_size_bytes"] == len(b"replacement weights")
+    assert redownloaded.status_code == 200
+    assert redownloaded.json()["data"]["artifacts"][0]["available"]
+    assert converted.status_code == 200
+    conversion_target = converted.json()["data"]["conversion_targets"][0]
+    assert conversion_target["target_format"] == "coreml"
+    assert conversion_target["runtime"] == "coreml"
+    assert conversion_target["available"]
+    assert conversion_target["size_bytes"] == 6
+    assert reconverted.status_code == 200
+    assert unsupported.status_code == 409
+    assert deleted.status_code == 200
+    assert deleted.json()["data"]["total_size_bytes"] == 0
+    assert not any(item["available"] for item in deleted.json()["data"]["artifacts"])
 
 
 def test_media_upload_is_validated_and_stored_in_local_cache(tmp_path: Path) -> None:
