@@ -197,7 +197,7 @@ class AppContext:
 async def detect(command: DetectCommand) -> DetectionView:
     try:
         handle = await context.models.acquire(
-            model_id="ultralytics/yolov8n",
+            model_id="ultralytics/yolov8",
             runtime=config.runtime,
             reuse="shared",
         )
@@ -314,7 +314,7 @@ SDK 负责抛出稳定的 `HuggingMacSdkError` 子类。App service 捕获并补
     "retryable": false,
     "trace_id": "01...",
     "details": {
-      "model_id": "ultralytics/yolov8n"
+      "model_id": "ultralytics/yolov8"
     }
   }
 }

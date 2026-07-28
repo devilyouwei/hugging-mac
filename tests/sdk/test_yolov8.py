@@ -160,11 +160,22 @@ def test_registered_factory_selects_runtime() -> None:
 
     register_yolov8(models, ConverterRegistry())
 
-    coreml = models.create_instance("ultralytics/yolov8n", runtime="coreml")
-    pytorch = models.create_instance("ultralytics/yolov8n", runtime="pytorch-mps")
+    for variant in ("n", "s", "m"):
+        coreml = models.create_instance(
+            "ultralytics/yolov8",
+            variant=variant,
+            runtime="coreml",
+        )
+        pytorch = models.create_instance(
+            "ultralytics/yolov8",
+            variant=variant,
+            runtime="pytorch-mps",
+        )
 
-    assert isinstance(coreml, CoreMlYoloV8Instance)
-    assert isinstance(pytorch, PyTorchMpsYoloV8Instance)
+        assert isinstance(coreml, CoreMlYoloV8Instance)
+        assert isinstance(pytorch, PyTorchMpsYoloV8Instance)
+        assert coreml.info().variant == variant
+        assert pytorch.info().variant == variant
 
 
 def test_definition_factory_accepts_explicit_runtime() -> None:

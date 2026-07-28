@@ -100,6 +100,7 @@ class ModelResourceStatus(BaseModel):
 
     model_id: str
     revision: str
+    variant: str = "default"
     artifacts: tuple[ModelArtifactStatus, ...]
     runtimes: tuple[RuntimeResourceStatus, ...] = ()
     conversion_targets: tuple[ConversionTargetStatus, ...] = ()

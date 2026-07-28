@@ -65,8 +65,18 @@ class ModelDefinition:
                 f"Artifacts reference undeclared runtimes for {self.manifest.model_id}",
                 details={"runtimes": invalid_artifacts},
             )
+        declared_variants = {variant.name for variant in self.manifest.variants}
+        invalid_variants = sorted(
+            {artifact.variant for artifact in self.artifacts} - declared_variants
+        )
+        if invalid_variants:
+            raise ManifestError(
+                f"Artifacts reference undeclared variants for {self.manifest.model_id}",
+                details={"variants": invalid_variants},
+            )
         artifact_keys = [
-            (artifact.runtime, artifact.artifact_id) for artifact in self.artifacts
+            (artifact.variant, artifact.runtime, artifact.artifact_id)
+            for artifact in self.artifacts
         ]
         if len(artifact_keys) != len(set(artifact_keys)):
             raise ManifestError(
@@ -91,6 +101,7 @@ class ModelDefinition:
         options: dict[str, object] | None = None,
         *,
         runtime: str | None = None,
+        variant: str | None = None,
     ) -> BaseModelInstance:
         """Create an instance, optionally selecting its runtime explicitly."""
 
@@ -100,6 +111,18 @@ class ModelDefinition:
                 f"No runtime factory is registered for {self.manifest.model_id}"
             )
         merged_options = dict(options or {})
+        option_variant = merged_options.get("variant")
+        if variant is not None and option_variant not in {None, variant}:
+            raise ResourceNotFoundError(
+                "Conflicting variant values were provided",
+                details={"variant": variant, "options_variant": option_variant},
+            )
+        selected_variant = (
+            variant
+            or (str(option_variant) if option_variant is not None else None)
+            or self.manifest.default_variant
+        )
+        self.manifest.get_variant(selected_variant)
         option_runtime = merged_options.get("runtime")
         if runtime is not None and option_runtime not in {None, runtime}:
             raise UnsupportedRuntimeError(
@@ -127,27 +150,40 @@ class ModelDefinition:
                 details={"runtime": selected_runtime, "supported_runtimes": supported},
             )
         merged_options["runtime"] = selected_runtime
+        merged_options["variant"] = selected_variant
         selected_factory = self.runtime_factories.get(selected_runtime, self.factory)
         assert selected_factory is not None
         return selected_factory(merged_options)
 
-    def get_artifacts(self, runtime: str) -> tuple[ModelArtifact, ...]:
+    def get_artifacts(
+        self,
+        runtime: str,
+        variant: str | None = None,
+    ) -> tuple[ModelArtifact, ...]:
+        selected_variant = self.manifest.get_variant(variant).name
         artifacts = tuple(
-            artifact for artifact in self.artifacts if artifact.runtime == runtime
+            artifact
+            for artifact in self.artifacts
+            if artifact.runtime == runtime and artifact.variant == selected_variant
         )
         if artifacts:
             return artifacts
         raise ResourceNotFoundError(
             f"No artifact is declared for {self.manifest.model_id} runtime {runtime}",
-            details={"model_id": self.manifest.model_id, "runtime": runtime},
+            details={
+                "model_id": self.manifest.model_id,
+                "runtime": runtime,
+                "variant": selected_variant,
+            },
         )
 
     def get_artifact(
         self,
         runtime: str,
         artifact_id: str | None = None,
+        variant: str | None = None,
     ) -> ModelArtifact:
-        artifacts = self.get_artifacts(runtime)
+        artifacts = self.get_artifacts(runtime, variant)
         if artifact_id is not None:
             for artifact in artifacts:
                 if artifact.artifact_id == artifact_id:
@@ -158,6 +194,7 @@ class ModelDefinition:
                 details={
                     "model_id": self.manifest.model_id,
                     "runtime": runtime,
+                    "variant": variant or self.manifest.default_variant,
                     "artifact_id": artifact_id,
                 },
             )
@@ -167,6 +204,7 @@ class ModelDefinition:
                 details={
                     "model_id": self.manifest.model_id,
                     "runtime": runtime,
+                    "variant": variant or self.manifest.default_variant,
                     "artifact_ids": [artifact.artifact_id for artifact in artifacts],
                 },
             )
@@ -282,8 +320,13 @@ class ModelRegistry:
         *,
         revision: str | None = None,
         artifact_id: str | None = None,
+        variant: str | None = None,
     ) -> ModelArtifact:
-        return self.get(model_id, revision).get_artifact(runtime, artifact_id)
+        return self.get(model_id, revision).get_artifact(
+            runtime,
+            artifact_id,
+            variant,
+        )
 
     def get_artifacts(
         self,
@@ -291,8 +334,9 @@ class ModelRegistry:
         runtime: str,
         *,
         revision: str | None = None,
+        variant: str | None = None,
     ) -> tuple[ModelArtifact, ...]:
-        return self.get(model_id, revision).get_artifacts(runtime)
+        return self.get(model_id, revision).get_artifacts(runtime, variant)
 
     def resolve_artifact_path(
         self,
@@ -301,6 +345,7 @@ class ModelRegistry:
         *,
         revision: str | None = None,
         artifact_id: str | None = None,
+        variant: str | None = None,
         storage_root: Path | None = None,
     ) -> Path:
         artifact = self.get_artifact(
@@ -308,6 +353,7 @@ class ModelRegistry:
             runtime,
             revision=revision,
             artifact_id=artifact_id,
+            variant=variant,
         )
         return artifact.resolve(storage_root or self._storage_root)
 
@@ -317,7 +363,8 @@ class ModelRegistry:
         *,
         revision: str | None = None,
         runtime: str | None = None,
+        variant: str | None = None,
         options: dict[str, object] | None = None,
     ) -> BaseModelInstance:
         definition = self.get(model_id, revision)
-        return definition.create(options, runtime=runtime)
+        return definition.create(options, runtime=runtime, variant=variant)

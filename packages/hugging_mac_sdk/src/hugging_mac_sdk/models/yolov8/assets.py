@@ -6,7 +6,7 @@ import asyncio
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from hugging_mac_sdk.errors import (
     ResourceIntegrityError,
@@ -14,9 +14,12 @@ from hugging_mac_sdk.errors import (
     UnsupportedRuntimeError,
 )
 from hugging_mac_sdk.models.yolov8.config import (
-    YOLOV8N_FILENAME,
-    YOLOV8N_SHA256,
+    YOLOV8_FILENAMES,
+    YOLOV8_MODEL_ID,
+    YOLOV8_SHA256,
+    YOLOV8_VARIANTS,
     YoloV8InstanceConfig,
+    YoloV8Variant,
 )
 from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
@@ -50,17 +53,19 @@ class YoloV8AssetResolver:
             raise ResourceNotFoundError(
                 "YOLOv8 source model is not downloaded",
                 details={
-                    "model_id": "ultralytics/yolov8n",
+                    "model_id": YOLOV8_MODEL_ID,
+                    "variant": self._config.variant,
                     "artifact_id": "source",
                 },
             )
         if not path.is_file():
             raise ResourceNotFoundError(f"YOLOv8 source is not a file: {path}")
         digest = file_sha256(path)
-        if digest != YOLOV8N_SHA256:
+        expected_sha256 = YOLOV8_SHA256[self._config.variant]
+        if digest != expected_sha256:
             raise ResourceIntegrityError(
                 f"YOLOv8 source SHA-256 mismatch: {path}",
-                details={"expected": YOLOV8N_SHA256, "actual": digest},
+                details={"expected": expected_sha256, "actual": digest},
             )
         return ResolvedResource(
             path=path,
@@ -75,7 +80,8 @@ class YoloV8AssetResolver:
             raise ResourceNotFoundError(
                 "YOLOv8 Core ML artifact has not been converted",
                 details={
-                    "model_id": "ultralytics/yolov8n",
+                    "model_id": YOLOV8_MODEL_ID,
+                    "variant": self._config.variant,
                     "artifact_id": "coreml",
                 },
             )
@@ -107,8 +113,9 @@ class YoloV8AssetResolver:
         source = await self.resolve_source()
         await self._converter.convert(
             ConversionRequest(
-                model_id="ultralytics/yolov8n",
+                model_id=YOLOV8_MODEL_ID,
                 model_revision=self._source.revision,
+                variant=self._config.variant,
                 source=source,
                 source_format=ArtifactFormat.PYTORCH,
                 target_format=ArtifactFormat.COREML,
@@ -129,7 +136,11 @@ class YoloV8AssetResolver:
         else:
             raise UnsupportedRuntimeError(
                 f"YOLOv8 does not support runtime {runtime}",
-                details={"model_id": "ultralytics/yolov8n", "runtime": runtime},
+                details={
+                    "model_id": YOLOV8_MODEL_ID,
+                    "variant": self._config.variant,
+                    "runtime": runtime,
+                },
             )
         await asyncio.to_thread(self._delete_targets, targets)
 
@@ -137,8 +148,9 @@ class YoloV8AssetResolver:
         source_path = self._config.source_path or self._default_source_path()
         coreml_path = self._config.artifact_path or self._default_coreml_path()
         return ModelResourceStatus(
-            model_id="ultralytics/yolov8n",
+            model_id=YOLOV8_MODEL_ID,
             revision=revision,
+            variant=self._config.variant,
             artifacts=(
                 _artifact_status(
                     "source",
@@ -157,13 +169,23 @@ class YoloV8AssetResolver:
         )
 
     def _default_source_path(self) -> Path:
-        return self._model_root() / "source" / YOLOV8N_FILENAME
+        return self._model_root() / "source" / YOLOV8_FILENAMES[self._config.variant]
 
     def _default_coreml_path(self) -> Path:
-        return self._model_root() / "coreml" / "yolov8n.mlpackage"
+        return (
+            self._model_root()
+            / "coreml"
+            / f"yolov8{self._config.variant}.mlpackage"
+        )
 
     def _model_root(self) -> Path:
-        return self._config.model_home / "ultralytics" / "yolov8n" / self._source.revision
+        return (
+            self._config.model_home
+            / "ultralytics"
+            / "yolov8"
+            / self._source.revision
+            / self._config.variant
+        )
 
     def _delete_targets(self, targets: tuple[Path, ...]) -> None:
         root = self._model_root().expanduser().resolve(strict=False)
@@ -172,7 +194,10 @@ class YoloV8AssetResolver:
             if resolved != root and not resolved.is_relative_to(root):
                 raise ResourceIntegrityError(
                     "Refusing to delete a YOLOv8 artifact outside its model directory",
-                    details={"model_id": "ultralytics/yolov8n"},
+                    details={
+                        "model_id": YOLOV8_MODEL_ID,
+                        "variant": self._config.variant,
+                    },
                 )
             if resolved.is_symlink() or resolved.is_file():
                 resolved.unlink(missing_ok=True)
@@ -185,31 +210,34 @@ class YoloV8AssetResolver:
 class YoloV8ResourceProvider:
     def __init__(
         self,
-        source: HuggingFaceSource,
+        sources: Mapping[str, HuggingFaceSource],
         *,
         revision: str,
     ) -> None:
-        self._source = source
+        self._sources = dict(sources)
         self._revision = revision
 
     async def status(
         self,
+        variant: str,
         options: Mapping[str, object] | None = None,
     ) -> ModelResourceStatus:
-        return self._resolver(options).status(revision=self._revision)
+        return self._resolver(variant, options).status(revision=self._revision)
 
     async def download_source(
         self,
+        variant: str,
         options: Mapping[str, object] | None = None,
         *,
         overwrite: bool = False,
     ) -> ModelResourceStatus:
-        resolver = self._resolver(options)
+        resolver = self._resolver(variant, options)
         await resolver.download_source(overwrite=overwrite)
         return resolver.status(revision=self._revision)
 
     async def convert(
         self,
+        variant: str,
         target_format: ArtifactFormat,
         options: Mapping[str, object] | None = None,
         *,
@@ -219,30 +247,56 @@ class YoloV8ResourceProvider:
             raise UnsupportedRuntimeError(
                 f"YOLOv8 resource provider does not support {target_format} yet",
                 details={
-                    "model_id": "ultralytics/yolov8n",
+                    "model_id": YOLOV8_MODEL_ID,
+                    "variant": variant,
                     "target_format": target_format,
                 },
             )
-        resolver = self._resolver(options)
+        resolver = self._resolver(variant, options)
         await resolver.convert_coreml(overwrite=overwrite)
         return resolver.status(revision=self._revision)
 
     async def delete(
         self,
+        variant: str,
         options: Mapping[str, object] | None = None,
         *,
         runtime: str | None = None,
     ) -> ModelResourceStatus:
-        resolver = self._resolver(options)
+        resolver = self._resolver(variant, options)
         await resolver.delete(runtime=runtime)
         return resolver.status(revision=self._revision)
 
     def _resolver(
         self,
+        variant: str,
         options: Mapping[str, object] | None,
     ) -> YoloV8AssetResolver:
-        config = YoloV8InstanceConfig.model_validate(dict(options or {}))
-        return YoloV8AssetResolver(self._source, config)
+        try:
+            if variant not in YOLOV8_VARIANTS:
+                raise KeyError(variant)
+            typed_variant = cast(YoloV8Variant, variant)
+            source = self._sources[variant]
+        except KeyError as error:
+            raise ResourceNotFoundError(
+                f"YOLOv8 variant is not registered: {variant}",
+                details={
+                    "model_id": YOLOV8_MODEL_ID,
+                    "variant": variant,
+                    "supported_variants": sorted(self._sources),
+                },
+            ) from error
+        normalized = dict(options or {})
+        option_variant = normalized.get("variant")
+        if option_variant not in {None, variant}:
+            raise ResourceIntegrityError(
+                "Conflicting YOLOv8 variant values were provided",
+                details={"variant": variant, "options_variant": option_variant},
+            )
+        config = YoloV8InstanceConfig.model_validate(
+            normalized | {"variant": typed_variant}
+        )
+        return YoloV8AssetResolver(source, config)
 
 
 def _artifact_status(

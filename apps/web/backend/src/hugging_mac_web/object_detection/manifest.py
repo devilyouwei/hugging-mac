@@ -11,7 +11,7 @@ OBJECT_DETECTION_MANIFEST = AppManifest(
     api_prefix="/api/v1/apps/object-detection",
     required_models=(
         AppModelRequirement(
-            model_id="ultralytics/yolov8n",
+            model_id="ultralytics/yolov8",
             capabilities=("object-detection",),
             required=True,
         ),

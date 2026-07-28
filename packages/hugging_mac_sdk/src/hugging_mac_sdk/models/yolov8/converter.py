@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from hugging_mac_sdk.converters.ultralytics import UltralyticsExportConverter
 from hugging_mac_sdk.schemas.conversion import (
     ArtifactFormat,
@@ -10,6 +12,7 @@ from hugging_mac_sdk.schemas.conversion import (
 )
 
 from .config import YoloV8CoreMlConfig
+from .config import YOLOV8_FILENAMES, YOLOV8_MODEL_ID, YoloV8Variant
 
 
 class YoloV8Converter(UltralyticsExportConverter):
@@ -22,15 +25,19 @@ class YoloV8Converter(UltralyticsExportConverter):
         return 100
 
     def supports(self, request: ConversionRequest) -> bool:
+        variant = cast(YoloV8Variant, request.variant)
         return (
             super().supports(request)
-            and request.model_id == "ultralytics/yolov8n"
-            and request.source.path.name == "yolov8n.pt"
+            and request.model_id == YOLOV8_MODEL_ID
+            and request.variant in YOLOV8_FILENAMES
+            and request.source.path.name == YOLOV8_FILENAMES[variant]
         )
 
     async def convert(self, request: ConversionRequest) -> ConversionResult:
         if request.target_format is ArtifactFormat.COREML:
-            defaults = YoloV8CoreMlConfig().model_dump()
+            defaults = YoloV8CoreMlConfig(
+                variant=cast(YoloV8Variant, request.variant)
+            ).model_dump()
             defaults.pop("compute_units")
             defaults.pop("variant")
             request = request.model_copy(update={"options": defaults | request.options})

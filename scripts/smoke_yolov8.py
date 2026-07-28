@@ -1,4 +1,4 @@
-"""Explicitly prepare optional YOLOv8n assets and run one SDK detection."""
+"""Explicitly prepare one YOLOv8 variant and run an SDK detection."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ async def run(
     runtime: str,
     model_home: Path,
     allow_cpu_fallback: bool,
+    variant: str,
     *,
     download: bool,
     convert: bool,
@@ -31,13 +32,15 @@ async def run(
     }
     if download:
         await sdk.resources.download_source(
-            "ultralytics/yolov8n",
+            "ultralytics/yolov8",
+            variant=variant,
             options=options,
         )
     if convert:
         await sdk.resources.convert(
-            "ultralytics/yolov8n",
+            "ultralytics/yolov8",
             ArtifactFormat.COREML,
+            variant=variant,
             options=options,
         )
 
@@ -48,7 +51,8 @@ async def run(
     image.save(encoded, format="PNG")
 
     async with await sdk.acquire(
-        "ultralytics/yolov8n",
+        "ultralytics/yolov8",
+        variant=variant,
         runtime=runtime,
         options=options,
     ) as handle:
@@ -71,6 +75,7 @@ def main() -> None:
         default=Path(".cache/hugging-mac-smoke"),
     )
     parser.add_argument("--allow-cpu-fallback", action="store_true")
+    parser.add_argument("--variant", choices=("n", "s", "m"), default="n")
     parser.add_argument(
         "--download",
         action="store_true",
@@ -87,6 +92,7 @@ def main() -> None:
             args.runtime,
             args.model_home,
             args.allow_cpu_fallback,
+            args.variant,
             download=args.download,
             convert=args.convert,
         )

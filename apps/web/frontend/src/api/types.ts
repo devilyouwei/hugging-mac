@@ -24,6 +24,7 @@ export interface InstanceSummary {
   instance_id: string
   model_id: string
   revision: string
+  variant: string
   runtime: string
   state: string
   created_at: string
@@ -47,6 +48,7 @@ export interface UnloadResult {
   instance_id: string
   model_id: string
   revision: string
+  variant: string
   runtime: string
   state: string
   metrics: LifecycleMetrics
@@ -79,6 +81,7 @@ export interface ConversionTargetStatus {
 export interface ModelResourceStatus {
   model_id: string
   revision: string
+  variant: string
   artifacts: ModelArtifactResource[]
   runtimes: RuntimeResourceStatus[]
   conversion_targets: ConversionTargetStatus[]
@@ -88,6 +91,8 @@ export interface ModelResourceStatus {
 export interface ModelSummary {
   model_id: string
   revision: string
+  variants: VariantSummary[]
+  default_variant: string
   name: string
   description: string
   family: string
@@ -99,6 +104,16 @@ export interface ModelSummary {
   instance_count: number
   ready_count: number
   instances: InstanceSummary[]
+}
+
+export interface VariantSummary {
+  name: string
+  display_name: string
+  description: string
+  metadata: Record<string, string | number | boolean>
+  default: boolean
+  instance_count: number
+  ready_count: number
 }
 
 export interface AppManifest {

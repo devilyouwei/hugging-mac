@@ -24,6 +24,7 @@ class LoadModelCommand(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     runtime: str = "auto"
+    variant: str | None = None
     device: str | None = None
     warmup: bool = False
 
@@ -32,6 +33,7 @@ class ConvertModelCommand(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     target_format: ArtifactFormat
+    variant: str | None = None
 
 
 def create_models_router() -> APIRouter:
@@ -54,9 +56,11 @@ def create_models_router() -> APIRouter:
     async def model_resources(
         model_id: str,
         context: ContextDependency,
+        variant: str | None = Query(default=None),
     ) -> ApiResponse[ModelResourceStatus]:
         resources = await context.models.resources.status(
             model_id,
+            variant=variant,
             options={"model_home": context.settings.model_home},
         )
         return ApiResponse(
@@ -71,10 +75,17 @@ def create_models_router() -> APIRouter:
     async def download_model_resources(
         model_id: str,
         context: ContextDependency,
+        variant: str | None = Query(default=None),
     ) -> ApiResponse[ModelResourceStatus]:
-        await _ensure_resources_mutable(context, model_id)
+        selected_variant = _resolve_variant(context, model_id, variant)
+        await _ensure_resources_mutable(
+            context,
+            model_id,
+            variant=selected_variant,
+        )
         resources = await context.models.resources.download_source(
             model_id,
+            variant=selected_variant,
             options={"model_home": context.settings.model_home},
             overwrite=True,
         )
@@ -91,10 +102,18 @@ def create_models_router() -> APIRouter:
         model_id: str,
         context: ContextDependency,
         runtime: str | None = Query(default=None),
+        variant: str | None = Query(default=None),
     ) -> ApiResponse[ModelResourceStatus]:
-        await _ensure_resources_mutable(context, model_id, runtime=runtime)
+        selected_variant = _resolve_variant(context, model_id, variant)
+        await _ensure_resources_mutable(
+            context,
+            model_id,
+            runtime=runtime,
+            variant=selected_variant,
+        )
         resources = await context.models.resources.delete(
             model_id,
+            variant=selected_variant,
             runtime=runtime,
             options={"model_home": context.settings.model_home},
         )
@@ -112,10 +131,16 @@ def create_models_router() -> APIRouter:
         command: ConvertModelCommand,
         context: ContextDependency,
     ) -> ApiResponse[ModelResourceStatus]:
-        await _ensure_resources_mutable(context, model_id)
+        selected_variant = _resolve_variant(context, model_id, command.variant)
+        await _ensure_resources_mutable(
+            context,
+            model_id,
+            variant=selected_variant,
+        )
         resources = await context.models.resources.convert(
             model_id,
             command.target_format,
+            variant=selected_variant,
             options={"model_home": context.settings.model_home},
             overwrite=True,
         )
@@ -136,6 +161,7 @@ def create_models_router() -> APIRouter:
     ) -> ApiResponse[InstanceSnapshot]:
         instance = await context.models.instances.load(
             model_id,
+            variant=command.variant,
             runtime=command.runtime,
             device=command.device,
             options={"model_home": context.settings.model_home},
@@ -167,17 +193,27 @@ def create_models_router() -> APIRouter:
     return router
 
 
+def _resolve_variant(
+    context: ContextDependency,
+    model_id: str,
+    variant: str | None,
+) -> str:
+    return context.models.registry.get(model_id).manifest.get_variant(variant).name
+
+
 async def _ensure_resources_mutable(
     context: ContextDependency,
     model_id: str,
     *,
     runtime: str | None = None,
+    variant: str | None = None,
 ) -> None:
     active = tuple(
         snapshot
         for snapshot in await context.models.instances.snapshots()
         if snapshot.model_id == model_id
         and (runtime is None or snapshot.runtime == runtime)
+        and (variant is None or snapshot.variant == variant)
     )
     if active:
         raise UnsupportedCapabilityError(
@@ -185,6 +221,7 @@ async def _ensure_resources_mutable(
             details={
                 "model_id": model_id,
                 "runtime": runtime,
+                "variant": variant,
                 "instance_count": len(active),
             },
         )

@@ -283,16 +283,30 @@ flowchart LR
 capability 对象属于某个 instance。它们可以共享该实例的权重、tokenizer、processor、锁和资源 lease，
 但不能跨实例共享可变状态。两个使用相同模型 definition 创建的实例，生命周期和请求状态仍然彼此隔离。
 
+## Model Variant
+
+variant 表示同一模型结构、任务协议和输入输出契约下可互换的一组权重或规模，例如 YOLOv8 的
+`n/s/m`。它不是 model ID，也不是 revision：
+
+- model ID 标识稳定的模型结构与公共能力，例如 `ultralytics/yolov8`；
+- revision 固定一版来源和实现；
+- variant 选择该 revision 下的具体权重规模；
+- runtime 决定用哪种执行后端加载所选 variant。
+
+`ModelManifest.variants` 声明全部 variant 和各自资源，`default_variant` 提供兼容默认值。
+artifact、下载、转换、删除、实例 snapshot 和 catalog 均携带 variant。实例复用键至少包含
+`model_id + revision + variant + runtime + options`。
+
 ## Registry 与 Manager API
 
 Registry 的查询不会产生副作用：
 
 ```python
 registry.list_models()
-registry.supported_runtimes("ultralytics/yolov8n")
-registry.get_artifact("ultralytics/yolov8n", "coreml")
+registry.supported_runtimes("ultralytics/yolov8")
+registry.get_artifact("ultralytics/yolov8", "coreml", variant="s")
 registry.get_artifacts("example/llm", "mlx")
-registry.resolve_artifact_path("ultralytics/yolov8n", "coreml")
+registry.resolve_artifact_path("ultralytics/yolov8", "coreml", variant="s")
 ```
 
 每个 runtime 使用独立 factory，避免把所有 backend 分派堆在一个大型条件分支中：
@@ -313,6 +327,11 @@ Manager 支持自动选择和显式控制：
 
 ```python
 instance = await manager.load("example/model", runtime="auto")
+small = await manager.load(
+    "ultralytics/yolov8",
+    variant="s",
+    runtime="coreml",
+)
 cpu_instance = await manager.load(
     "example/model",
     runtime="onnx",
@@ -329,7 +348,10 @@ await manager.unload_all()
 ```
 
 `switch_runtime` 只允许切换未被 handle retain 的实例，并先加载 replacement；新 runtime 加载失败时旧实例仍然可用。
-`info()` 返回 model ID、revision、runtime、实际 device、artifact path、state 和 capability 名称，但不会泄露
+`switch_variant(instance_id, "m")` 使用相同的先加载后替换语义切换权重规模。variant 是共享实例 identity
+的一部分，因此不同 variant 永远不会错误复用同一个实例。
+
+`info()` 返回 model ID、revision、variant、runtime、实际 device、artifact path、state 和 capability 名称，但不会泄露
 PyTorch model、Core ML model、ONNX session 等底层对象。
 
 Manager 的 `load()`、`ensure_loaded()` 与 `unload_with_metrics()` 会记录生命周期指标：
@@ -361,12 +383,13 @@ memory mapping 以及 GPU/ANE 的独立分配都会影响差值；即使模型�
 ```python
 # 删除一个 runtime 的本地 artifact
 status = await sdk.resources.delete(
-    "ultralytics/yolov8n",
+    "ultralytics/yolov8",
+    variant="s",
     runtime="coreml",
 )
 
-# 删除该模型 revision 的完整受管权重目录
-status = await sdk.resources.delete("ultralytics/yolov8n")
+# 删除该模型 revision 下 n variant 的完整受管权重目录
+status = await sdk.resources.delete("ultralytics/yolov8", variant="n")
 ```
 
 模型实现只能删除自身受管 storage root 内的路径。路径逃逸、指向外部目录的自定义 artifact 或不支持的

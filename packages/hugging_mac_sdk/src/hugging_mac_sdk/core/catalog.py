@@ -14,6 +14,7 @@ from hugging_mac_sdk.schemas.catalog import (
     ModelCatalogSnapshot,
     ModelSummary,
     RuntimeSummary,
+    VariantSummary,
 )
 from hugging_mac_sdk.schemas.manifest import ModelManifest
 
@@ -41,6 +42,7 @@ class ModelCatalogService:
             )
             state_counts = Counter(item.state.value for item in model_instances)
             runtime_counts = Counter(item.runtime for item in model_instances)
+            variant_counts = Counter(item.variant for item in model_instances)
             default_runtime = self._select_default_runtime(manifest)
             runtimes = tuple(
                 RuntimeSummary(
@@ -61,10 +63,28 @@ class ModelCatalogService:
                 for runtime in manifest.runtimes
                 if (availability := self._runtime_policy.availability(runtime))
             )
+            variants = tuple(
+                VariantSummary(
+                    name=variant.name,
+                    display_name=variant.display_name,
+                    description=variant.description,
+                    metadata=variant.metadata,
+                    default=variant.name == manifest.default_variant,
+                    instance_count=variant_counts[variant.name],
+                    ready_count=sum(
+                        1
+                        for item in model_instances
+                        if item.variant == variant.name and item.state is ModelState.READY
+                    ),
+                )
+                for variant in manifest.variants
+            )
             summaries.append(
                 ModelSummary(
                     model_id=manifest.model_id,
                     revision=manifest.revision,
+                    variants=variants,
+                    default_variant=manifest.default_variant,
                     name=manifest.display_name,
                     description=manifest.description,
                     family=manifest.family,
@@ -77,6 +97,7 @@ class ModelCatalogService:
                     ready_count=state_counts[ModelState.READY.value],
                     instances_by_state=dict(sorted(state_counts.items())),
                     instances_by_runtime=dict(sorted(runtime_counts.items())),
+                    instances_by_variant=dict(sorted(variant_counts.items())),
                     instances=model_instances,
                 )
             )

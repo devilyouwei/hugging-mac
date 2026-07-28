@@ -29,6 +29,7 @@ class ModelArtifact(BaseModel):
 
     artifact_id: Annotated[str, Field(min_length=1)]
     runtime: Annotated[str, Field(min_length=1)]
+    variant: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9._-]*$")] = "default"
     format: ArtifactFormat
     path: Path
     kind: ArtifactKind = ArtifactKind.FILE

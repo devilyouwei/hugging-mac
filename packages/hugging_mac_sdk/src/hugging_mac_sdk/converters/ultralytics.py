@@ -87,6 +87,9 @@ class UltralyticsExportConverter(ModelConverter):
                 digest=digest,
                 size_bytes=size,
                 converter_id=self.converter_id,
+                model_id=request.model_id,
+                model_revision=request.model_revision,
+                variant=request.variant,
                 source_digest=request.source.digest,
                 options=options.model_dump(mode="json"),
             )

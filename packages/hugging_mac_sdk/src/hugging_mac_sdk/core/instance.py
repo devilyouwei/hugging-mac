@@ -39,6 +39,7 @@ class ModelInstanceInfo(BaseModel):
     instance_id: str
     model_id: str | None = None
     revision: str | None = None
+    variant: str | None = None
     runtime: str | None = None
     device: str | None = None
     artifact_path: Path | None = None
@@ -62,12 +63,14 @@ class BaseModelInstance(ABC):
         instance_id: UUID | None = None,
         model_id: str | None = None,
         revision: str | None = None,
+        variant: str | None = None,
         runtime: str | None = None,
         device: str | None = None,
     ) -> None:
         self._instance_id = instance_id or uuid4()
         self._model_id = model_id
         self._revision = revision
+        self._variant = variant
         self._runtime = runtime
         self._device = device
         self._artifact_path: Path | None = None
@@ -124,6 +127,7 @@ class BaseModelInstance(ABC):
             instance_id=str(self._instance_id),
             model_id=self._model_id,
             revision=self._revision,
+            variant=self._variant,
             runtime=self._runtime,
             device=self._device,
             artifact_path=self._artifact_path,

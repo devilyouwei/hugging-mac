@@ -8,7 +8,11 @@ from hugging_mac_sdk import ModelSdk
 from hugging_mac_sdk.errors import ResourceIntegrityError, ResourceNotFoundError
 from hugging_mac_sdk.models.yolov8 import YOLOV8N_MANIFEST, register_yolov8
 from hugging_mac_sdk.models.yolov8.assets import YoloV8AssetResolver
-from hugging_mac_sdk.models.yolov8.config import YOLOV8N_SHA256, YoloV8InstanceConfig
+from hugging_mac_sdk.models.yolov8.config import (
+    YOLOV8_SHA256,
+    YOLOV8N_SHA256,
+    YoloV8InstanceConfig,
+)
 from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.schemas.conversion import (
@@ -20,7 +24,7 @@ from hugging_mac_sdk.schemas.resources import HuggingFaceSource, ResolvedResourc
 
 
 def _source() -> HuggingFaceSource:
-    source = YOLOV8N_MANIFEST.resources[0]
+    source = YOLOV8N_MANIFEST.get_variant("n").resources[0]
     assert isinstance(source, HuggingFaceSource)
     return source
 
@@ -44,7 +48,7 @@ async def test_resolve_never_downloads_or_converts_missing_assets(tmp_path: Path
     register_yolov8(sdk.registry, ConverterRegistry())
     with pytest.raises(ResourceNotFoundError, match="not downloaded"):
         await sdk.acquire(
-            "ultralytics/yolov8n",
+            "ultralytics/yolov8",
             runtime="pytorch-mps",
             options={"model_home": tmp_path},
         )
@@ -97,7 +101,7 @@ async def test_sdk_exposes_explicit_download_and_conversion(
     register_yolov8(sdk.registry, ConverterRegistry())
     options = {"model_home": tmp_path}
 
-    initial = await sdk.resources.status("ultralytics/yolov8n", options=options)
+    initial = await sdk.resources.status("ultralytics/yolov8", options=options)
     assert not initial.artifacts[0].available
     assert not initial.artifacts[1].available
     assert len(initial.conversion_targets) == 1
@@ -105,14 +109,14 @@ async def test_sdk_exposes_explicit_download_and_conversion(
     assert not initial.conversion_targets[0].available
 
     downloaded = await sdk.resources.download_source(
-        "ultralytics/yolov8n",
+        "ultralytics/yolov8",
         options=options,
     )
     assert downloaded.artifacts[0].available
     assert not downloaded.artifacts[1].available
 
     converted = await sdk.resources.convert(
-        "ultralytics/yolov8n",
+        "ultralytics/yolov8",
         ArtifactFormat.COREML,
         options=options,
     )
@@ -131,7 +135,7 @@ async def test_sdk_exposes_explicit_download_and_conversion(
     assert runtime_sizes["coreml"].size_bytes == 6
 
     without_coreml = await sdk.resources.delete(
-        "ultralytics/yolov8n",
+        "ultralytics/yolov8",
         runtime="coreml",
         options=options,
     )
@@ -139,7 +143,7 @@ async def test_sdk_exposes_explicit_download_and_conversion(
     assert not without_coreml.artifacts[1].available
 
     empty = await sdk.resources.delete(
-        "ultralytics/yolov8n",
+        "ultralytics/yolov8",
         options=options,
     )
     assert not any(artifact.available for artifact in empty.artifacts)
@@ -162,3 +166,67 @@ async def test_delete_refuses_custom_artifact_outside_model_root(tmp_path: Path)
         await resolver.delete(runtime="pytorch-mps")
 
     assert outside.read_bytes() == b"keep me"
+
+
+async def test_yolov8_variant_resources_are_downloaded_and_deleted_independently(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_download(
+        _: ResourceDownloader,
+        source: HuggingFaceSource,
+        destination: Path,
+        **__: object,
+    ) -> ResolvedResource:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(source.filename.encode() if source.filename else b"weights")
+        return ResolvedResource(
+            path=destination,
+            source=source,
+            digest=source.expected_sha256,
+            size_bytes=destination.stat().st_size,
+        )
+
+    monkeypatch.setattr(ResourceDownloader, "download", fake_download)
+    monkeypatch.setattr(
+        "hugging_mac_sdk.models.yolov8.assets.file_sha256",
+        lambda path: YOLOV8_SHA256[path.stem[-1]],
+    )
+    sdk = ModelSdk()
+    from hugging_mac_sdk.converters import ConverterRegistry
+
+    register_yolov8(sdk.registry, ConverterRegistry())
+    options = {"model_home": tmp_path}
+
+    for variant in ("n", "s", "m"):
+        status = await sdk.resources.download_source(
+            "ultralytics/yolov8",
+            variant=variant,
+            options=options,
+        )
+        assert status.variant == variant
+        assert status.artifacts[0].available
+        assert (
+            tmp_path
+            / "ultralytics"
+            / "yolov8"
+            / "8a9e1a5"
+            / variant
+            / "source"
+            / f"yolov8{variant}.pt"
+        ).is_file()
+
+    await sdk.resources.delete(
+        "ultralytics/yolov8",
+        variant="s",
+        options=options,
+    )
+    assert not (
+        tmp_path / "ultralytics" / "yolov8" / "8a9e1a5" / "s"
+    ).exists()
+    assert (
+        tmp_path / "ultralytics" / "yolov8" / "8a9e1a5" / "n"
+    ).exists()
+    assert (
+        tmp_path / "ultralytics" / "yolov8" / "8a9e1a5" / "m"
+    ).exists()

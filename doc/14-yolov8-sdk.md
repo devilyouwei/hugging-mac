@@ -4,24 +4,34 @@
 
 ## 范围
 
-第一版实现 `Ultralytics/YOLOv8` 中固定的 `yolov8n.pt`，提供 `ObjectDetection` capability：
+内置定义以 `ultralytics/yolov8` 表示共享的检测结构和 `ObjectDetection` capability，并提供
+`n`、`s`、`m` 三个可切换权重 variant：
 
 ```mermaid
 flowchart LR
     HF["Hugging Face<br/>固定 revision + SHA-256"]
-    PT["yolov8n.pt"]
+    Variant["variant: n / s / m"]
+    PT["yolov8{variant}.pt"]
     MPS["PyTorch MPS Instance"]
     Convert["YOLOv8 Converter"]
-    MLPackage["yolov8n.mlpackage"]
+    MLPackage["yolov8{variant}.mlpackage"]
     CoreML["Core ML Instance"]
     Capability["ObjectDetection"]
 
-    HF --> PT
+    HF --> Variant --> PT
     PT --> MPS --> Capability
     PT --> Convert --> MLPackage --> CoreML --> Capability
 ```
 
 PyTorch MPS 是源模型正确性 reference runtime；Core ML 是 Apple Silicon 默认高性能 runtime。
+
+三者共享 capability、预处理、NMS 和输出 schema，仅权重规模不同：
+
+| Variant | 源文件大小 | SHA-256 |
+|---|---:|---|
+| `n` | 6,534,387 B | `31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95` |
+| `s` | 22,573,363 B | `268e5bb54c640c96c3510224833bc2eeacab4135c6deb41502156e39986b562d` |
+| `m` | 52,117,635 B | `6c25b0b63b1a433843f06d821a9ac1deb8d5805f74f0f38772c7308c5adc55a5` |
 
 ## 公共输入输出
 
@@ -49,9 +59,16 @@ PyTorch MPS 是源模型正确性 reference runtime；Core ML 是 Apple Silicon 
 默认目录：
 
 ```text
-<model-home>/ultralytics/yolov8n/8a9e1a5/
-├── source/yolov8n.pt
-└── coreml/yolov8n.mlpackage/
+<model-home>/ultralytics/yolov8/8a9e1a5/
+├── n/
+│   ├── source/yolov8n.pt
+│   └── coreml/yolov8n.mlpackage/
+├── s/
+│   ├── source/yolov8s.pt
+│   └── coreml/yolov8s.mlpackage/
+└── m/
+    ├── source/yolov8m.pt
+    └── coreml/yolov8m.mlpackage/
 ```
 
 加载 MPS 实例时：
@@ -72,16 +89,19 @@ PyTorch MPS 是源模型正确性 reference runtime；Core ML 是 Apple Silicon 
 
 ```python
 status = await sdk.resources.status(
-    "ultralytics/yolov8n",
+    "ultralytics/yolov8",
+    variant="s",
     options={"model_home": Path("models")},
 )
 await sdk.resources.download_source(
-    "ultralytics/yolov8n",
+    "ultralytics/yolov8",
+    variant="s",
     options={"model_home": Path("models")},
 )
 await sdk.resources.convert(
-    "ultralytics/yolov8n",
+    "ultralytics/yolov8",
     ArtifactFormat.COREML,
+    variant="s",
     options={"model_home": Path("models")},
 )
 ```
@@ -113,7 +133,8 @@ App 可以把这些操作绑定到 API 或前端按钮；`acquire/load/detect` �
 models = ModelRegistry()
 register_yolov8(models, ConverterRegistry())
 instance = models.create_instance(
-    "ultralytics/yolov8n",
+    "ultralytics/yolov8",
+    variant="s",
     runtime="coreml",
     options={"model_home": Path("models")},
 )
@@ -129,8 +150,9 @@ await instance.unload()
 也可以直接通过 definition 工厂构造：
 
 ```python
-definition = models.get("ultralytics/yolov8n")
+definition = models.get("ultralytics/yolov8")
 instance = definition.create(
+    variant="m",
     runtime="pytorch-mps",
     options={"model_home": Path("models")},
 )
@@ -142,6 +164,17 @@ instance = definition.create(
 |---|---|
 | `pytorch-mps` | `PyTorchMpsYoloV8Instance` |
 | `coreml` | `CoreMlYoloV8Instance` |
+
+Manager 也可以安全替换现有未被 retain 的实例：
+
+```python
+replacement = await sdk.instances.switch_variant(
+    str(instance.instance_id),
+    "m",
+)
+```
+
+替换实例加载失败时旧 variant 保持可用。共享实例复用键包含 variant，因此 `n`、`s`、`m` 不会互相复用。
 
 ## 实机 smoke test
 
@@ -166,7 +199,7 @@ uv run --all-packages --extra yolo scripts/smoke_yolov8.py \
 
 ## 当前限制
 
-- 只注册 YOLOv8n detection；
+- 当前注册 YOLOv8 detection 的 `n/s/m` 三个 variant，尚未加入 `l/x`；
 - 尚未加入 segment、pose、classification；
 - Core ML 只开放 `ComputeUnit.ALL`；
 - Core ML 转换必须在加载前显式执行；

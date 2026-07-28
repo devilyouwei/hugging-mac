@@ -40,6 +40,7 @@ class BaseYoloV8Instance(BaseModelInstance):
         super().__init__(
             model_id=YOLOV8_MODEL_ID,
             revision=YOLOV8_MODEL_REVISION,
+            variant=config.variant,
             runtime=config.runtime,
             device=config.device if config.runtime == "pytorch-mps" else config.compute_units,
         )
@@ -230,7 +231,7 @@ def _map_result(result: Any, instance: BaseYoloV8Instance) -> DetectionResponse:
         )
     speed = getattr(result, "speed", {}) or {}
     return DetectionResponse(
-        model_id="ultralytics/yolov8n",
+        model_id=YOLOV8_MODEL_ID,
         instance_id=str(instance.instance_id),
         runtime=instance.runtime_name,
         device=instance.execution_device,

@@ -1,10 +1,8 @@
-"""YOLOv8n model manifest and registration entry point."""
+"""YOLOv8 multi-variant model manifest and registration entry point."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
-
 from hugging_mac_sdk.converters.registry import ConverterRegistry
 from hugging_mac_sdk.converters.ultralytics import UltralyticsExportConverter
 from hugging_mac_sdk.core.config import load_model_config
@@ -23,12 +21,24 @@ from hugging_mac_sdk.models.yolov8.instance import (
 )
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource
 
-YOLOV8N_CONFIG = load_model_config(Path(__file__).with_name("model.yaml"))
-YOLOV8N_MANIFEST = YOLOV8N_CONFIG.manifest
+YOLOV8_CONFIG = load_model_config(Path(__file__).with_name("model.yaml"))
+YOLOV8_MANIFEST = YOLOV8_CONFIG.manifest
+# Compatibility names for SDK consumers; they now refer to the model family
+# whose default variant is ``n``.
+YOLOV8N_CONFIG = YOLOV8_CONFIG
+YOLOV8N_MANIFEST = YOLOV8_MANIFEST
+
+
+def _variant_source(variant: str) -> HuggingFaceSource:
+    resources = YOLOV8_MANIFEST.get_variant(variant).resources
+    if len(resources) != 1 or not isinstance(resources[0], HuggingFaceSource):
+        raise TypeError(f"YOLOv8 variant {variant} needs one Hugging Face source")
+    return resources[0]
+
 
 def _create_pytorch_mps(options: dict[str, object]) -> PyTorchMpsYoloV8Instance:
     config = YoloV8InstanceConfig.model_validate(options | {"runtime": "pytorch-mps"})
-    source = cast(HuggingFaceSource, YOLOV8N_MANIFEST.resources[0])
+    source = _variant_source(config.variant)
     assets = YoloV8AssetResolver(source, config)
     return PyTorchMpsYoloV8Instance(config, assets)
 
@@ -39,7 +49,7 @@ def _create_coreml(options: dict[str, object]) -> CoreMlYoloV8Instance:
     if requested_device is not None:
         normalized["compute_units"] = requested_device
     config = YoloV8InstanceConfig.model_validate(normalized | {"runtime": "coreml"})
-    source = cast(HuggingFaceSource, YOLOV8N_MANIFEST.resources[0])
+    source = _variant_source(config.variant)
     assets = YoloV8AssetResolver(source, config)
     return CoreMlYoloV8Instance(config, assets)
 
@@ -47,7 +57,7 @@ def _create_coreml(options: dict[str, object]) -> CoreMlYoloV8Instance:
 def _create_yolov8_legacy(options: dict[str, object]) -> BaseYoloV8Instance:
     """Compatibility dispatcher; new code uses ``runtime_factories`` directly."""
 
-    runtime = str(options.get("runtime", YOLOV8N_MANIFEST.default_runtime))
+    runtime = str(options.get("runtime", YOLOV8_MANIFEST.default_runtime))
     if runtime == "pytorch-mps":
         return _create_pytorch_mps(options)
     if runtime == "coreml":
@@ -55,20 +65,24 @@ def _create_yolov8_legacy(options: dict[str, object]) -> BaseYoloV8Instance:
     raise UnsupportedRuntimeError(f"Unsupported YOLOv8 runtime: {runtime}")
 
 
-YOLOV8N_DEFINITION = ModelDefinition(
-    manifest=YOLOV8N_MANIFEST,
+YOLOV8_DEFINITION = ModelDefinition(
+    manifest=YOLOV8_MANIFEST,
     factory=_create_yolov8_legacy,
     runtime_factories={
         "pytorch-mps": _create_pytorch_mps,
         "coreml": _create_coreml,
     },
-    artifacts=YOLOV8N_CONFIG.artifacts,
+    artifacts=YOLOV8_CONFIG.artifacts,
     converter_ids=("ultralytics.yolov8",),
     resource_provider=YoloV8ResourceProvider(
-        cast(HuggingFaceSource, YOLOV8N_MANIFEST.resources[0]),
-        revision=YOLOV8N_MANIFEST.revision,
+        {
+            variant.name: _variant_source(variant.name)
+            for variant in YOLOV8_MANIFEST.variants
+        },
+        revision=YOLOV8_MANIFEST.revision,
     ),
 )
+YOLOV8N_DEFINITION = YOLOV8_DEFINITION
 
 
 def register_yolov8(
@@ -81,5 +95,5 @@ def register_yolov8(
 
     converters.register(UltralyticsExportConverter(), replace=replace)
     converters.register(YoloV8Converter(), replace=replace)
-    models.register(YOLOV8N_DEFINITION, replace=replace)
-    return YOLOV8N_DEFINITION
+    models.register(YOLOV8_DEFINITION, replace=replace)
+    return YOLOV8_DEFINITION

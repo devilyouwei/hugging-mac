@@ -42,6 +42,7 @@ class ReusePolicy(StrEnum):
 class _InstanceRecord:
     model_id: str
     revision: str
+    variant: str
     runtime: str
     created_at: datetime
     options: dict[str, object]
@@ -67,6 +68,7 @@ class InstanceManager:
         model_id: str,
         *,
         revision: str | None = None,
+        variant: str | None = None,
         runtime: str | None = None,
         device: str | None = None,
         options: Mapping[str, object] | None = None,
@@ -75,6 +77,16 @@ class InstanceManager:
         normalized = dict(options or {})
         manifest = self._registry.get(model_id, revision).manifest
         resolved_revision = manifest.revision
+        option_variant = normalized.get("variant")
+        if variant is not None and option_variant not in {None, variant}:
+            raise ResourceNotFoundError(
+                "Conflicting variant values were provided",
+                details={"variant": variant, "options_variant": option_variant},
+            )
+        selected_variant = manifest.get_variant(
+            variant or (str(option_variant) if option_variant is not None else None)
+        ).name
+        normalized["variant"] = selected_variant
         selected_runtime = self._runtime_policy.resolve(manifest, runtime)
         runtime_spec = next(
             item for item in manifest.runtimes if item.name == selected_runtime
@@ -89,7 +101,13 @@ class InstanceManager:
             selected_device = self._runtime_policy.select_device(runtime_spec, device)
             if selected_device is not None:
                 normalized["device"] = selected_device
-        key = self._instance_key(model_id, resolved_revision, selected_runtime, normalized)
+        key = self._instance_key(
+            model_id,
+            resolved_revision,
+            selected_variant,
+            selected_runtime,
+            normalized,
+        )
 
         async with self._lock:
             existing = self._shared.get(key)
@@ -102,6 +120,7 @@ class InstanceManager:
             instance = self._registry.create_instance(
                 model_id,
                 revision=resolved_revision,
+                variant=selected_variant,
                 runtime=selected_runtime,
                 options=normalized,
             )
@@ -110,6 +129,7 @@ class InstanceManager:
             self._records[instance_id] = _InstanceRecord(
                 model_id=model_id,
                 revision=resolved_revision,
+                variant=selected_variant,
                 runtime=selected_runtime,
                 created_at=datetime.now(UTC),
                 options=normalized,
@@ -123,6 +143,7 @@ class InstanceManager:
         model_id: str,
         *,
         revision: str | None = None,
+        variant: str | None = None,
         runtime: str | None = "auto",
         device: str | None = None,
         options: Mapping[str, object] | None = None,
@@ -134,6 +155,7 @@ class InstanceManager:
         instance = await self.create(
             model_id,
             revision=revision,
+            variant=variant,
             runtime=runtime,
             device=device,
             options=options,
@@ -242,6 +264,63 @@ class InstanceManager:
         await self.unload(instance_id)
         return replacement
 
+    async def switch_variant(
+        self,
+        instance_id: str,
+        variant: str,
+        *,
+        runtime: str | None = None,
+        device: str | None = None,
+        options: Mapping[str, object] | None = None,
+        warmup: bool = False,
+    ) -> BaseModelInstance:
+        """Replace an unreferenced instance with another weight variant."""
+
+        async with self._lock:
+            record = self._records.get(instance_id)
+            if record is None:
+                raise ResourceNotFoundError(f"Model instance not found: {instance_id}")
+            if record.reference_count:
+                raise UnsupportedRuntimeError(
+                    "Cannot switch a retained model instance",
+                    details={
+                        "instance_id": instance_id,
+                        "reference_count": record.reference_count,
+                    },
+                )
+            model_id = record.model_id
+            revision = record.revision
+            selected_runtime = runtime or record.runtime
+            original_record = record
+            inherited_options = dict(record.options)
+        inherited_options.pop("runtime", None)
+        inherited_options.pop("variant", None)
+        inherited_options.pop("device", None)
+        inherited_options.update(options or {})
+        replacement = await self.load(
+            model_id,
+            revision=revision,
+            variant=variant,
+            runtime=selected_runtime,
+            device=device,
+            options=inherited_options,
+            warmup=warmup,
+        )
+        async with self._lock:
+            current_record = self._records.get(instance_id)
+            can_replace = (
+                current_record is original_record
+                and current_record.reference_count == 0
+            )
+        if not can_replace:
+            await self.unload(str(replacement.instance_id))
+            raise UnsupportedRuntimeError(
+                "Instance ownership changed while switching variant",
+                details={"instance_id": instance_id},
+            )
+        await self.unload(instance_id)
+        return replacement
+
     async def unload(self, instance_id: str) -> bool:
         return await self.unload_with_metrics(instance_id) is not None
 
@@ -284,6 +363,7 @@ class InstanceManager:
             instance_id=instance_id,
             model_id=record.model_id,
             revision=record.revision,
+            variant=record.variant,
             runtime=record.runtime,
             state=instance.state,
             metrics=metrics,
@@ -329,6 +409,7 @@ class InstanceManager:
                     instance_id=instance_id,
                     model_id=record.model_id,
                     revision=record.revision,
+                    variant=record.variant,
                     runtime=record.runtime,
                     state=self._instances[instance_id].state,
                     created_at=record.created_at,
@@ -347,6 +428,7 @@ class InstanceManager:
                 instance_id=instance_id,
                 model_id=record.model_id,
                 revision=record.revision,
+                variant=record.variant,
                 runtime=record.runtime,
                 state=self._instances[instance_id].state,
                 created_at=record.created_at,
@@ -358,12 +440,14 @@ class InstanceManager:
     def _instance_key(
         model_id: str,
         revision: str,
+        variant: str,
         runtime: str,
         options: Mapping[str, object],
     ) -> tuple[object, ...]:
         return (
             model_id,
             revision,
+            variant,
             runtime,
             tuple(sorted((key, _freeze(value)) for key, value in options.items())),
         )

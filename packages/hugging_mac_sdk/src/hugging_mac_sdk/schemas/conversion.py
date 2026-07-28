@@ -33,6 +33,7 @@ class ConversionRequest(BaseModel):
     output_path: Path
     model_id: str | None = None
     model_revision: str | None = None
+    variant: str = "default"
     options: dict[str, Any] = Field(default_factory=dict)
     overwrite: bool = False
 
@@ -45,5 +46,8 @@ class ConversionResult(BaseModel):
     digest: str
     size_bytes: int
     converter_id: str
+    model_id: str | None = None
+    model_revision: str | None = None
+    variant: str = "default"
     source_digest: str | None = None
     options: dict[str, Any] = Field(default_factory=dict)

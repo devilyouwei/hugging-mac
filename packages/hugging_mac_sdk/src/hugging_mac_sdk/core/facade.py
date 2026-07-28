@@ -85,6 +85,7 @@ class ModelSdk:
         model_id: str,
         *,
         revision: str | None = None,
+        variant: str | None = None,
         runtime: str | None = None,
         device: str | None = None,
         options: Mapping[str, object] | None = None,
@@ -94,6 +95,7 @@ class ModelSdk:
         instance = await self.instances.create(
             model_id,
             revision=revision,
+            variant=variant,
             runtime=runtime,
             device=device,
             options=options,
@@ -120,6 +122,7 @@ class ModelSdk:
         model_id: str,
         *,
         revision: str | None = None,
+        variant: str | None = None,
         runtime: str | None = "auto",
         device: str | None = None,
         options: Mapping[str, object] | None = None,
@@ -131,6 +134,7 @@ class ModelSdk:
         handle = await self.acquire(
             model_id,
             revision=revision,
+            variant=variant,
             runtime=runtime,
             device=device,
             options=options,

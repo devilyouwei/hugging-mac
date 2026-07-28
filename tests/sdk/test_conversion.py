@@ -111,8 +111,9 @@ async def test_yolov8_registration_and_coreml_conversion(
     converters = ConverterRegistry()
     definition = register_yolov8(models, converters)
     request = ConversionRequest(
-        model_id="ultralytics/yolov8n",
+        model_id="ultralytics/yolov8",
         model_revision=definition.manifest.revision,
+        variant="n",
         source=source,
         source_format=ArtifactFormat.PYTORCH,
         target_format=ArtifactFormat.COREML,
@@ -122,6 +123,8 @@ async def test_yolov8_registration_and_coreml_conversion(
     result = await ConversionService(converters).convert(request, definition=definition)
 
     assert result.converter_id == "ultralytics.yolov8"
+    assert result.model_id == "ultralytics/yolov8"
+    assert result.variant == "n"
     assert (result.path / "model.mlmodel").read_bytes() == b"coreml"
     assert export_arguments["format"] == "coreml"
     assert export_arguments["imgsz"] == 640
@@ -133,7 +136,7 @@ async def test_yolov8_registration_and_coreml_conversion(
 
 
 def test_yolov8_manifest_pins_source_and_has_runtime_factory() -> None:
-    source = YOLOV8N_MANIFEST.resources[0]
+    source = YOLOV8N_MANIFEST.get_variant("n").resources[0]
 
     assert isinstance(source, HuggingFaceSource)
     assert source.repo_id == "Ultralytics/YOLOv8"
@@ -141,6 +144,8 @@ def test_yolov8_manifest_pins_source_and_has_runtime_factory() -> None:
     assert source.filename == "yolov8n.pt"
     assert source.expected_sha256 == YOLOV8N_SHA256
     assert YOLOV8N_MANIFEST.license == "AGPL-3.0"
+    assert tuple(item.name for item in YOLOV8N_MANIFEST.variants) == ("n", "s", "m")
+    assert YOLOV8N_MANIFEST.default_variant == "n"
 
     models = ModelRegistry()
     converters = ConverterRegistry()

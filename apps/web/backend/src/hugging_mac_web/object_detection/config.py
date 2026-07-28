@@ -11,7 +11,8 @@ class ObjectDetectionSettings(BaseSettings):
         extra="ignore",
     )
 
-    model_id: str = "ultralytics/yolov8n"
+    model_id: str = "ultralytics/yolov8"
+    model_variant: str = "n"
     default_confidence: float = Field(default=0.25, ge=0.0, le=1.0)
     default_iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
     default_max_detections: int = Field(default=100, ge=1, le=1000)

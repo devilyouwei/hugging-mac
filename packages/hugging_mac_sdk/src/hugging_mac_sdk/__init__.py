@@ -39,6 +39,7 @@ from hugging_mac_sdk.schemas.catalog import (
     ModelSummary,
     RuntimeSummary,
     UnloadResult,
+    VariantSummary,
 )
 from hugging_mac_sdk.schemas.conversion import (
     ArtifactFormat,
@@ -53,7 +54,7 @@ from hugging_mac_sdk.schemas.detection import (
     ImageInput,
 )
 from hugging_mac_sdk.schemas.health import HealthReport, HealthStatus
-from hugging_mac_sdk.schemas.manifest import ModelManifest, RuntimeSpec
+from hugging_mac_sdk.schemas.manifest import ModelManifest, ModelVariantSpec, RuntimeSpec
 from hugging_mac_sdk.schemas.resources import (
     ConversionTargetStatus,
     HuggingFaceSource,
@@ -111,6 +112,7 @@ __all__ = [
     "ModelSdk",
     "ModelState",
     "ModelSummary",
+    "ModelVariantSpec",
     "RegistrationConflictError",
     "ResolvedResource",
     "ResourceDownloader",
@@ -130,5 +132,6 @@ __all__ = [
     "UnsupportedRuntimeError",
     "UrlArchiveSource",
     "UrlFileSource",
+    "VariantSummary",
     "load_model_config",
 ]

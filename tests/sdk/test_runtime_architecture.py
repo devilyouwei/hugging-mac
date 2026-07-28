@@ -13,6 +13,7 @@ from hugging_mac_sdk import (
     ModelLoadError,
     ModelManifest,
     ModelRegistry,
+    ModelVariantSpec,
     RuntimeBackend,
     RuntimePolicy,
     RuntimeRegistry,
@@ -22,7 +23,7 @@ from hugging_mac_sdk import (
     load_model_config,
 )
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
-from hugging_mac_sdk.core.manager import InstanceManager
+from hugging_mac_sdk.core.manager import InstanceManager, ReusePolicy
 
 
 class DummyInstance(BaseModelInstance):
@@ -30,6 +31,7 @@ class DummyInstance(BaseModelInstance):
         super().__init__(
             model_id="example/multi-runtime",
             revision="main",
+            variant=str(options["variant"]),
             runtime=str(options["runtime"]),
             device=str(options["device"]) if "device" in options else None,
         )
@@ -149,9 +151,60 @@ async def test_manager_auto_device_info_and_runtime_switch() -> None:
     assert alpha.state is ModelState.READY
     assert alpha.info().runtime == "alpha"
     assert alpha.info().device == "cpu"
+    assert alpha.info().variant == "default"
 
     await manager.unload_all()
     assert alpha.info().state is ModelState.UNLOADED
+
+
+async def test_manager_keeps_variants_distinct_and_switches_safely() -> None:
+    manifest = ModelManifest(
+        model_id="example/variants",
+        display_name="Variant Model",
+        family="test",
+        capabilities=frozenset({"test"}),
+        runtimes=(RuntimeSpec(name="alpha"),),
+        variants=(
+            ModelVariantSpec(name="n", display_name="Nano"),
+            ModelVariantSpec(name="s", display_name="Small"),
+            ModelVariantSpec(name="m", display_name="Medium"),
+        ),
+        default_variant="n",
+    )
+    registry = ModelRegistry()
+    registry.register(
+        ModelDefinition(
+            manifest=manifest,
+            runtime_factories={"alpha": DummyInstance},
+        )
+    )
+    manager = InstanceManager(registry)
+
+    nano = await manager.create(
+        "example/variants",
+        variant="n",
+        reuse=ReusePolicy.SHARED,
+    )
+    nano_again = await manager.create(
+        "example/variants",
+        variant="n",
+        reuse=ReusePolicy.SHARED,
+    )
+    small = await manager.create(
+        "example/variants",
+        variant="s",
+        reuse=ReusePolicy.SHARED,
+    )
+
+    assert nano is nano_again
+    assert nano is not small
+    assert nano.info().variant == "n"
+    assert small.info().variant == "s"
+
+    medium = await manager.switch_variant(str(small.instance_id), "m")
+    assert small.info().state is ModelState.UNLOADED
+    assert medium.info().variant == "m"
+    assert (await manager.snapshot(str(medium.instance_id))).variant == "m"
 
 
 async def test_failed_runtime_switch_keeps_original_instance_ready() -> None:

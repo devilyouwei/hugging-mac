@@ -68,6 +68,10 @@ apps/web/backend/
 加载接口接收 `runtime`、可选 `device` 和 `warmup`；模型文件缺失、runtime 不支持或加载失败时直接返回
 SDK 的稳定错误。实例仍被业务请求 retain 时，卸载接口拒绝操作，避免中断正在执行的推理。
 
+模型 manifest 同时暴露 `variants` 和 `default_variant`。加载请求可传 `variant`；资源查询、下载和删除通过
+query 选择 variant，转换请求在 JSON 中携带 variant。不传时使用模型默认值。实例 snapshot、卸载结果和
+资源状态都会回显最终选择的 variant。
+
 实例 snapshot 包含首次加载的耗时、进程 RSS 前后值和 RSS 分配差值；卸载响应包含卸载耗时与 RSS
 释放差值。它们是本地 Python 进程的观测指标，不代表模型独占内存或完整的 GPU/ANE 内存。
 

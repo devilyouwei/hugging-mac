@@ -89,4 +89,5 @@ registry 提供：
 - 资源校验与许可证审查；
 - 一份可复现的设备基线结果。
 
-首个通过该流程的内置定义是 `ultralytics/yolov8n`，详见 [YOLOv8 SDK](14-yolov8-sdk.md)。
+首个通过该流程的内置定义是 `ultralytics/yolov8`，其 `n/s/m` 权重作为同一模型的 variant 管理，
+详见 [YOLOv8 SDK](14-yolov8-sdk.md)。

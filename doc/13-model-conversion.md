@@ -41,15 +41,16 @@ flowchart LR
 专用 converter 适合补充固定 shape、特殊导出 op、NMS、tokenizer、模型拆分等逻辑。通用 converter
 适合框架已经原生理解的标准模型，不应包含按模型 ID 分支的大量条件。
 
-## YOLOv8n 首个配置
+## YOLOv8 多 variant 配置
 
 | 字段 | 值 |
 |---|---|
-| Model ID | `ultralytics/yolov8n` |
+| Model ID | `ultralytics/yolov8` |
+| Variant | `n`、`s`、`m`，默认 `n` |
 | Hugging Face repo | `Ultralytics/YOLOv8` |
 | Revision | `8a9e1a5` |
-| 文件 | `yolov8n.pt` |
-| SHA-256 | `31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95` |
+| 文件 | `yolov8{variant}.pt` |
+| SHA-256 | 每个 variant 在 manifest 中分别固定 |
 | 许可证 | `AGPL-3.0` |
 | 专用 converter | `ultralytics.yolov8` |
 | 通用 converter | `ultralytics.export` |

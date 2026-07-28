@@ -37,6 +37,7 @@ class InstanceSnapshot(BaseModel):
     instance_id: str
     model_id: str
     revision: str
+    variant: str
     runtime: str
     state: ModelState
     created_at: datetime
@@ -50,6 +51,7 @@ class UnloadResult(BaseModel):
     instance_id: str
     model_id: str
     revision: str
+    variant: str
     runtime: str
     state: ModelState
     metrics: LifecycleMetrics
@@ -69,11 +71,25 @@ class RuntimeSummary(BaseModel):
     ready_count: int = Field(ge=0)
 
 
+class VariantSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    display_name: str
+    description: str
+    metadata: dict[str, str | int | float | bool]
+    default: bool
+    instance_count: int = Field(ge=0)
+    ready_count: int = Field(ge=0)
+
+
 class ModelSummary(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     model_id: str
     revision: str
+    variants: tuple[VariantSummary, ...]
+    default_variant: str
     name: str
     description: str
     family: str
@@ -86,6 +102,7 @@ class ModelSummary(BaseModel):
     ready_count: int = Field(ge=0)
     instances_by_state: dict[str, int]
     instances_by_runtime: dict[str, int]
+    instances_by_variant: dict[str, int]
     instances: tuple[InstanceSnapshot, ...]
 
 

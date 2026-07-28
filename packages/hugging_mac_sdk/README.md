@@ -60,16 +60,24 @@ detector = instance.require(ObjectDetection)
 Registry 只查询，不下载或加载模型：
 
 ```python
-runtimes = registry.supported_runtimes("ultralytics/yolov8n")
-artifact = registry.get_artifact("ultralytics/yolov8n", "coreml")
-path = registry.resolve_artifact_path("ultralytics/yolov8n", "coreml")
+runtimes = registry.supported_runtimes("ultralytics/yolov8")
+artifact = registry.get_artifact("ultralytics/yolov8", "coreml", variant="s")
+path = registry.resolve_artifact_path(
+    "ultralytics/yolov8",
+    "coreml",
+    variant="s",
+)
 ```
 
 `InstanceManager` 把 runtime policy 纳入创建链路，支持 `auto`、显式 device、多实例和安全 runtime 切换：
 
 ```python
 manager = InstanceManager(registry)
-model = await manager.load("ultralytics/yolov8n", runtime="auto")
+model = await manager.load(
+    "ultralytics/yolov8",
+    variant="s",
+    runtime="auto",
+)
 print(model.info())
 
 replacement = await manager.switch_runtime(
@@ -79,6 +87,8 @@ replacement = await manager.switch_runtime(
 )
 await manager.unload_all()
 ```
+
+`variant` 是模型实例 identity 的一部分。`switch_variant()` 会先加载替代权重，成功后才卸载旧实例。
 
 加载指标可从实例 snapshot 获取，卸载指标由 `unload_with_metrics()` 返回：
 
@@ -105,11 +115,15 @@ GPU/ANE 分配可能影响结果。
 已注册模型优先通过统一 facade 操作：
 
 ```python
-status = await sdk.resources.status("ultralytics/yolov8n")
-status = await sdk.resources.download_source("ultralytics/yolov8n")
+status = await sdk.resources.status("ultralytics/yolov8", variant="s")
+status = await sdk.resources.download_source(
+    "ultralytics/yolov8",
+    variant="s",
+)
 status = await sdk.resources.convert(
-    "ultralytics/yolov8n",
+    "ultralytics/yolov8",
     ArtifactFormat.COREML,
+    variant="s",
 )
 ```
 
@@ -123,7 +137,8 @@ status = await sdk.resources.convert(
 
 ```python
 status = await sdk.resources.delete(
-    "ultralytics/yolov8n",
+    "ultralytics/yolov8",
+    variant="s",
     runtime="coreml",  # 省略 runtime 时删除整个模型 revision 目录
 )
 ```
@@ -189,7 +204,7 @@ converter ID。
 uv sync --package hugging-mac-sdk --extra yolo
 ```
 
-下载并转换已注册的 YOLOv8n：
+下载并转换已注册 YOLOv8 的 `s` variant：
 
 ```python
 from pathlib import Path
@@ -208,29 +223,31 @@ models = ModelRegistry()
 converters = ConverterRegistry()
 definition = register_yolov8(models, converters)
 
-source_spec = definition.manifest.resources[0]
+variant = "s"
+source_spec = definition.manifest.get_variant(variant).resources[0]
 source = await ResourceDownloader().download(
     source_spec,
-    Path("models/ultralytics/yolov8n.pt"),
+    Path("models/ultralytics/yolov8s.pt"),
 )
 
 result = await ConversionService(converters).convert(
     ConversionRequest(
         model_id=definition.manifest.model_id,
         model_revision=definition.manifest.revision,
+        variant=variant,
         source=source,
         source_format=ArtifactFormat.PYTORCH,
         target_format=ArtifactFormat.COREML,
-        output_path=Path("models/ultralytics/yolov8n.mlpackage"),
+        output_path=Path("models/ultralytics/yolov8s.mlpackage"),
     ),
     definition=definition,
 )
 ```
 
-YOLOv8n 的专用转换器默认使用固定 `640×640`、batch 1、FP16、静态 shape 和导出内置 NMS。
+YOLOv8 的 `n/s/m` 专用转换器默认使用固定 `640×640`、batch 1、FP16、静态 shape 和导出内置 NMS。
 Core ML 运行时配置为 `ComputeUnit.ALL`，但该配置在模型加载阶段应用，不是 Ultralytics 导出参数。
 
-源模型来自 `Ultralytics/YOLOv8` 的 `yolov8n.pt`，revision 与 SHA-256 已固定。该文件包含 Python
+源模型来自 `Ultralytics/YOLOv8` 的 `yolov8{n,s,m}.pt`，revision 与各自 SHA-256 已固定。这些文件包含 Python
 pickle 对象，只能作为 manifest 中明确允许的受信任来源加载，不能把任意第三方 `.pt` 当成安全数据文件。
 
 ## YOLOv8 推理
@@ -251,7 +268,8 @@ models = ModelRegistry()
 register_yolov8(models, ConverterRegistry())
 
 instance = models.create_instance(
-    "ultralytics/yolov8n",
+    "ultralytics/yolov8",
+    variant="s",
     runtime="coreml",
     options={"model_home": Path("models")},
 )
@@ -271,8 +289,9 @@ await instance.unload()
 拿到 definition 时也可以直接使用同一个工厂契约：
 
 ```python
-definition = models.get("ultralytics/yolov8n")
+definition = models.get("ultralytics/yolov8")
 instance = definition.create(
+    variant="m",
     runtime="coreml",
     options={"model_home": Path("models")},
 )

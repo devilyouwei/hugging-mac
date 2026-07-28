@@ -20,7 +20,7 @@ Index 是平台主页，不是某个模型 Demo。列出模型不能触发下载
 │ hugging-mac                         系统状态 / 设置 / 搜索    │
 ├──────────────────────────────────────────────────────────────┤
 │ Models                                                      │
-│ ┌ YOLOv8n ──────────┐ ┌ Future LLM ──────┐                  │
+│ ┌ YOLOv8 (n/s/m) ───┐ ┌ Future LLM ──────┐                  │
 │ │ Object Detection  │ │ Chat             │                  │
 │ │ Core ML · MPS     │ │ MLX              │                  │
 │ │ 2 instances       │ │ Not instantiated │                  │
@@ -30,7 +30,7 @@ Index 是平台主页，不是某个模型 Demo。列出模型不能触发下载
 │ Applications                                                 │
 │ ┌ Object Detection ┐ ┌ Model Benchmark ┐                    │
 │ │ vision · yolo    │ │ eval · compare  │                    │
-│ │ YOLOv8n          │ │ 2 models        │                    │
+│ │ YOLOv8 variants │ │ 2 models        │                    │
 │ └──────────────────┘ └─────────────────┘                    │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -158,7 +158,7 @@ App 通过自己的 manifest 注册：
 
 ```yaml
 required_models:
-  - model_id: ultralytics/yolov8n
+  - model_id: ultralytics/yolov8
     capabilities: [object-detection]
     preferred_runtime: coreml
     required: true

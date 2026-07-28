@@ -18,11 +18,13 @@ from hugging_mac_sdk.schemas.resources import ModelResourceStatus
 class ModelResourceProvider(Protocol):
     async def status(
         self,
+        variant: str,
         options: Mapping[str, object] | None = None,
     ) -> ModelResourceStatus: ...
 
     async def download_source(
         self,
+        variant: str,
         options: Mapping[str, object] | None = None,
         *,
         overwrite: bool = False,
@@ -30,6 +32,7 @@ class ModelResourceProvider(Protocol):
 
     async def convert(
         self,
+        variant: str,
         target_format: ArtifactFormat,
         options: Mapping[str, object] | None = None,
         *,
@@ -38,6 +41,7 @@ class ModelResourceProvider(Protocol):
 
     async def delete(
         self,
+        variant: str,
         options: Mapping[str, object] | None = None,
         *,
         runtime: str | None = None,
@@ -53,19 +57,26 @@ class ModelResourceService:
         model_id: str,
         *,
         revision: str | None = None,
+        variant: str | None = None,
         options: Mapping[str, object] | None = None,
     ) -> ModelResourceStatus:
-        return await self._provider(model_id, revision).status(options)
+        definition = self._registry.get(model_id, revision)
+        selected_variant = definition.manifest.get_variant(variant).name
+        return await self._provider(model_id, revision).status(selected_variant, options)
 
     async def download_source(
         self,
         model_id: str,
         *,
         revision: str | None = None,
+        variant: str | None = None,
         options: Mapping[str, object] | None = None,
         overwrite: bool = False,
     ) -> ModelResourceStatus:
+        definition = self._registry.get(model_id, revision)
+        selected_variant = definition.manifest.get_variant(variant).name
         return await self._provider(model_id, revision).download_source(
+            selected_variant,
             options,
             overwrite=overwrite,
         )
@@ -76,10 +87,14 @@ class ModelResourceService:
         target_format: ArtifactFormat,
         *,
         revision: str | None = None,
+        variant: str | None = None,
         options: Mapping[str, object] | None = None,
         overwrite: bool = False,
     ) -> ModelResourceStatus:
+        definition = self._registry.get(model_id, revision)
+        selected_variant = definition.manifest.get_variant(variant).name
         return await self._provider(model_id, revision).convert(
+            selected_variant,
             target_format,
             options,
             overwrite=overwrite,
@@ -90,12 +105,16 @@ class ModelResourceService:
         model_id: str,
         *,
         revision: str | None = None,
+        variant: str | None = None,
         runtime: str | None = None,
         options: Mapping[str, object] | None = None,
     ) -> ModelResourceStatus:
         """Delete local artifacts without changing the registered definition."""
 
+        definition = self._registry.get(model_id, revision)
+        selected_variant = definition.manifest.get_variant(variant).name
         return await self._provider(model_id, revision).delete(
+            selected_variant,
             options,
             runtime=runtime,
         )

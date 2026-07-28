@@ -1,9 +1,9 @@
 manifest:
   schema_version: "1"
-  model_id: ultralytics/yolov8n
-  revision: 8a9e1a5-yolov8n
-  display_name: Ultralytics YOLOv8n
-  description: 面向实时场景的轻量级 COCO 目标检测模型。
+  model_id: ultralytics/yolov8
+  revision: 8a9e1a5
+  display_name: Ultralytics YOLOv8
+  description: 共享检测结构和输入输出协议、支持多种权重规模的实时 COCO 目标检测模型。
   tags: [vision, object-detection, yolo]
   family: yolov8
   capabilities: [object-detection]
@@ -21,21 +21,48 @@ manifest:
       platforms: [darwin]
       architectures: [arm64]
       required_modules: [coremltools, ultralytics]
-  resources:
-    - kind: huggingface
-      repo_id: Ultralytics/YOLOv8
-      revision: 8a9e1a5
-      filename: yolov8n.pt
-      expected_sha256: 31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95
+  variants:
+    - name: n
+      display_name: YOLOv8 Nano
+      description: 最小、最快的 YOLOv8 检测权重。
+      metadata: {parameters_millions: 3.2, source_size_bytes: 6534387}
+      resources:
+        - kind: huggingface
+          repo_id: Ultralytics/YOLOv8
+          revision: 8a9e1a5
+          filename: yolov8n.pt
+          expected_sha256: 31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95
+    - name: s
+      display_name: YOLOv8 Small
+      description: 在速度和精度之间取得平衡的较小权重。
+      metadata: {parameters_millions: 11.2, source_size_bytes: 22573363}
+      resources:
+        - kind: huggingface
+          repo_id: Ultralytics/YOLOv8
+          revision: 8a9e1a5
+          filename: yolov8s.pt
+          expected_sha256: 268e5bb54c640c96c3510224833bc2eeacab4135c6deb41502156e39986b562d
+    - name: m
+      display_name: YOLOv8 Medium
+      description: 更高精度、计算和内存开销更高的中型权重。
+      metadata: {parameters_millions: 25.9, source_size_bytes: 52117635}
+      resources:
+        - kind: huggingface
+          repo_id: Ultralytics/YOLOv8
+          revision: 8a9e1a5
+          filename: yolov8m.pt
+          expected_sha256: 6c25b0b63b1a433843f06d821a9ac1deb8d5805f74f0f38772c7308c5adc55a5
+  default_variant: n
   license: AGPL-3.0
   source_url: https://huggingface.co/Ultralytics/YOLOv8
   default_runtime: coreml
 
 artifacts:
   - artifact_id: source
+    variant: n
     runtime: pytorch-mps
     format: pytorch
-    path: ultralytics/yolov8n/8a9e1a5/source/yolov8n.pt
+    path: ultralytics/yolov8/8a9e1a5/n/source/yolov8n.pt
     kind: file
     source:
       kind: huggingface
@@ -45,7 +72,46 @@ artifacts:
       expected_sha256: 31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95
     expected_sha256: 31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95
   - artifact_id: coreml
+    variant: n
     runtime: coreml
     format: coreml
-    path: ultralytics/yolov8n/8a9e1a5/coreml/yolov8n.mlpackage
+    path: ultralytics/yolov8/8a9e1a5/n/coreml/yolov8n.mlpackage
+    kind: directory
+  - artifact_id: source
+    variant: s
+    runtime: pytorch-mps
+    format: pytorch
+    path: ultralytics/yolov8/8a9e1a5/s/source/yolov8s.pt
+    kind: file
+    source:
+      kind: huggingface
+      repo_id: Ultralytics/YOLOv8
+      revision: 8a9e1a5
+      filename: yolov8s.pt
+      expected_sha256: 268e5bb54c640c96c3510224833bc2eeacab4135c6deb41502156e39986b562d
+    expected_sha256: 268e5bb54c640c96c3510224833bc2eeacab4135c6deb41502156e39986b562d
+  - artifact_id: coreml
+    variant: s
+    runtime: coreml
+    format: coreml
+    path: ultralytics/yolov8/8a9e1a5/s/coreml/yolov8s.mlpackage
+    kind: directory
+  - artifact_id: source
+    variant: m
+    runtime: pytorch-mps
+    format: pytorch
+    path: ultralytics/yolov8/8a9e1a5/m/source/yolov8m.pt
+    kind: file
+    source:
+      kind: huggingface
+      repo_id: Ultralytics/YOLOv8
+      revision: 8a9e1a5
+      filename: yolov8m.pt
+      expected_sha256: 6c25b0b63b1a433843f06d821a9ac1deb8d5805f74f0f38772c7308c5adc55a5
+    expected_sha256: 6c25b0b63b1a433843f06d821a9ac1deb8d5805f74f0f38772c7308c5adc55a5
+  - artifact_id: coreml
+    variant: m
+    runtime: coreml
+    format: coreml
+    path: ultralytics/yolov8/8a9e1a5/m/coreml/yolov8m.mlpackage
     kind: directory
