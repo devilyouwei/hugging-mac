@@ -23,11 +23,13 @@ const runtime = ref<RuntimeChoice>("auto")
 const confidence = ref(0.25)
 const iouThreshold = ref(0.7)
 const maxDetections = ref(100)
+const selectedVariant = ref("")
 const error = ref("")
 const resourceStatus = ref<ResourceStatus | null>(null)
 const resourceBusy = ref<"" | "download" | "convert">("")
 const detectOptions = computed<DetectOptions>(() => ({
   runtime: runtime.value,
+  variant: selectedVariant.value || resourceStatus.value?.variant || "n",
   confidence: confidence.value,
   iouThreshold: iouThreshold.value,
   maxDetections: maxDetections.value,
@@ -46,7 +48,8 @@ const runtimeArtifactReady = computed(() => {
 
 async function refreshResources() {
   try {
-    resourceStatus.value = await fetchResourceStatus()
+    resourceStatus.value = await fetchResourceStatus(selectedVariant.value || undefined)
+    if (!selectedVariant.value) selectedVariant.value = resourceStatus.value.variant
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "模型资源状态读取失败"
   }
@@ -58,7 +61,9 @@ async function prepareResource(action: "download" | "convert") {
   error.value = ""
   try {
     resourceStatus.value =
-      action === "download" ? await downloadSource() : await convertCoreMl()
+      action === "download"
+        ? await downloadSource(detectOptions.value.variant)
+        : await convertCoreMl(detectOptions.value.variant)
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "模型资源操作失败"
   } finally {
@@ -89,6 +94,18 @@ onMounted(refreshResources)
           <span>INPUT / CONFIG</span>
           <span>01—04</span>
         </div>
+        <label class="field">
+          <span>YOLOv8 variant</span>
+          <select v-model="selectedVariant" @change="refreshResources">
+            <option
+              v-for="variant in resourceStatus?.variants ?? []"
+              :key="variant.name"
+              :value="variant.name"
+            >
+              {{ variant.display_name }} · {{ variant.description }}
+            </option>
+          </select>
+        </label>
         <ResourceSetup
           :status="resourceStatus"
           :busy="resourceBusy"

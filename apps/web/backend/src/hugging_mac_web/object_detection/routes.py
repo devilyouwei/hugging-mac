@@ -40,8 +40,9 @@ def create_router(settings: ObjectDetectionSettings) -> APIRouter:
     @router.get("/resources", response_model=ApiResponse[ResourceStatusView])
     async def resource_status(
         context: ContextDependency,
+        variant: str | None = Query(default=None),
     ) -> ApiResponse[ResourceStatusView]:
-        data = await ObjectDetectionService(context, settings).resource_status()
+        data = await ObjectDetectionService(context, settings).resource_status(variant=variant)
         return ApiResponse(
             data=data,
             meta=ResponseMeta(generated_at=utc_now()),
@@ -53,9 +54,13 @@ def create_router(settings: ObjectDetectionSettings) -> APIRouter:
     )
     async def download_source(
         context: ContextDependency,
+        variant: str | None = Query(default=None),
         overwrite: bool = False,
     ) -> ApiResponse[ResourceStatusView]:
-        data = await ObjectDetectionService(context, settings).download_source(overwrite=overwrite)
+        data = await ObjectDetectionService(context, settings).download_source(
+            variant=variant,
+            overwrite=overwrite,
+        )
         return ApiResponse(
             data=data,
             meta=ResponseMeta(generated_at=utc_now()),
@@ -67,9 +72,13 @@ def create_router(settings: ObjectDetectionSettings) -> APIRouter:
     )
     async def convert_coreml(
         context: ContextDependency,
+        variant: str | None = Query(default=None),
         overwrite: bool = False,
     ) -> ApiResponse[ResourceStatusView]:
-        data = await ObjectDetectionService(context, settings).convert_coreml(overwrite=overwrite)
+        data = await ObjectDetectionService(context, settings).convert_coreml(
+            variant=variant,
+            overwrite=overwrite,
+        )
         return ApiResponse(
             data=data,
             meta=ResponseMeta(generated_at=utc_now()),
@@ -80,6 +89,7 @@ def create_router(settings: ObjectDetectionSettings) -> APIRouter:
         context: ContextDependency,
         file: Annotated[UploadFile, File(description="JPEG, PNG or WebP image")],
         runtime: Annotated[RuntimeChoice, Form()] = RuntimeChoice.AUTO,
+        variant: Annotated[str | None, Form()] = None,
         confidence: Annotated[
             float,
             Form(ge=0.0, le=1.0),
@@ -116,6 +126,7 @@ def create_router(settings: ObjectDetectionSettings) -> APIRouter:
         result = await ObjectDetectionService(context, settings).detect(
             DetectCommand(
                 runtime=runtime,
+                variant=variant,
                 confidence=confidence,
                 iou_threshold=iou_threshold,
                 max_detections=max_detections,
@@ -141,6 +152,7 @@ def create_router(settings: ObjectDetectionSettings) -> APIRouter:
         ],
         content_type: Annotated[str, Header(alias="Content-Type")],
         runtime: Annotated[RuntimeChoice, Query()] = RuntimeChoice.AUTO,
+        variant: Annotated[str | None, Query()] = None,
         confidence: Annotated[
             float,
             Query(ge=0.0, le=1.0),
@@ -179,6 +191,7 @@ def create_router(settings: ObjectDetectionSettings) -> APIRouter:
         result = await ObjectDetectionService(context, settings).detect(
             DetectCommand(
                 runtime=runtime,
+                variant=variant,
                 confidence=confidence,
                 iou_threshold=iou_threshold,
                 max_detections=max_detections,

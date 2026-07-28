@@ -679,6 +679,32 @@ a {
   line-height: 1.55;
 }
 
+.variant-picker {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 1.2rem;
+  padding: 0.7rem;
+}
+
+.variant-picker > span,
+.variant-picker small {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+}
+
+.variant-picker select {
+  background: var(--paper);
+  border: 0;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  min-width: 0;
+  padding: 0.25rem 0;
+}
+
 .model-resource-summary {
   border-top: 1px solid var(--line);
   display: flex;

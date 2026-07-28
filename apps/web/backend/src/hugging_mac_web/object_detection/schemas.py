@@ -19,6 +19,7 @@ class DetectCommand(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     runtime: RuntimeChoice = RuntimeChoice.AUTO
+    variant: str | None = None
     confidence: float = Field(default=0.25, ge=0.0, le=1.0)
     iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
     max_detections: int = Field(default=100, ge=1, le=1000)
@@ -62,6 +63,7 @@ class DetectionResult(BaseModel):
 
     input_cache_id: str | None
     model_id: str
+    variant: str
     instance_id: str
     runtime: str
     device: str
@@ -75,10 +77,12 @@ class DetectionResult(BaseModel):
         response: DetectionResponse,
         *,
         input_cache_id: str | None,
+        variant: str,
     ) -> DetectionResult:
         return cls(
             input_cache_id=input_cache_id,
             model_id=response.model_id,
+            variant=variant,
             instance_id=response.instance_id,
             runtime=response.runtime,
             device=response.device,
@@ -123,7 +127,9 @@ class ResourceStatusView(BaseModel):
 
     model_id: str
     revision: str
+    variant: str
     default_runtime: str | None
+    variants: tuple[VariantView, ...]
     artifacts: tuple[ArtifactResourceView, ...]
 
     @classmethod
@@ -132,11 +138,14 @@ class ResourceStatusView(BaseModel):
         status: ModelResourceStatus,
         *,
         default_runtime: str | None,
+        variants: tuple[VariantView, ...],
     ) -> ResourceStatusView:
         return cls(
             model_id=status.model_id,
             revision=status.revision,
+            variant=status.variant,
             default_runtime=default_runtime,
+            variants=variants,
             artifacts=tuple(
                 ArtifactResourceView(
                     artifact_id=artifact.artifact_id,
@@ -148,3 +157,12 @@ class ResourceStatusView(BaseModel):
                 for artifact in status.artifacts
             ),
         )
+
+
+class VariantView(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    display_name: str
+    description: str
+    default: bool

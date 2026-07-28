@@ -14,6 +14,7 @@ from hugging_mac_web.object_detection.schemas import (
     DetectionResult,
     ResourceStatusView,
     RuntimeChoice,
+    VariantView,
 )
 
 
@@ -26,9 +27,11 @@ class ObjectDetectionService:
         self._context = context
         self._settings = settings
 
-    async def resource_status(self) -> ResourceStatusView:
+    async def resource_status(self, *, variant: str | None = None) -> ResourceStatusView:
+        selected_variant = self._resolve_variant(variant)
         status = await self._context.models.resources.status(
             self._settings.model_id,
+            variant=selected_variant,
             options=self._model_options,
         )
         catalog = await self._context.models.catalog.snapshot()
@@ -39,24 +42,47 @@ class ObjectDetectionService:
         return ResourceStatusView.from_sdk(
             status,
             default_runtime=model.default_runtime if model is not None else None,
+            variants=tuple(
+                VariantView(
+                    name=item.name,
+                    display_name=item.display_name,
+                    description=item.description,
+                    default=item.default,
+                )
+                for item in (model.variants if model is not None else ())
+            ),
         )
 
-    async def download_source(self, *, overwrite: bool = False) -> ResourceStatusView:
+    async def download_source(
+        self,
+        *,
+        variant: str | None = None,
+        overwrite: bool = False,
+    ) -> ResourceStatusView:
+        selected_variant = self._resolve_variant(variant)
         await self._context.models.resources.download_source(
             self._settings.model_id,
+            variant=selected_variant,
             options=self._model_options,
             overwrite=overwrite,
         )
-        return await self.resource_status()
+        return await self.resource_status(variant=selected_variant)
 
-    async def convert_coreml(self, *, overwrite: bool = False) -> ResourceStatusView:
+    async def convert_coreml(
+        self,
+        *,
+        variant: str | None = None,
+        overwrite: bool = False,
+    ) -> ResourceStatusView:
+        selected_variant = self._resolve_variant(variant)
         await self._context.models.resources.convert(
             self._settings.model_id,
             ArtifactFormat.COREML,
+            variant=selected_variant,
             options=self._model_options,
             overwrite=overwrite,
         )
-        return await self.resource_status()
+        return await self.resource_status(variant=selected_variant)
 
     async def detect(
         self,
@@ -83,8 +109,10 @@ class ObjectDetectionService:
             )
             input_cache_id = cached.cache_id
         runtime = None if command.runtime is RuntimeChoice.AUTO else command.runtime.value
+        selected_variant = self._resolve_variant(command.variant)
         async with await self._context.models.acquire(
             self._settings.model_id,
+            variant=selected_variant,
             runtime=runtime,
             options=self._model_options,
             reuse=ReusePolicy.SHARED,
@@ -103,7 +131,13 @@ class ObjectDetectionService:
         return DetectionResult.from_sdk(
             response,
             input_cache_id=input_cache_id,
+            variant=selected_variant,
         )
+
+    def _resolve_variant(self, variant: str | None) -> str:
+        return self._context.models.registry.get(
+            self._settings.model_id
+        ).manifest.get_variant(variant or self._settings.model_variant).name
 
     @property
     def _model_options(self) -> dict[str, object]:

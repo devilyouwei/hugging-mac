@@ -39,7 +39,7 @@ function formatSize(size: number | null | undefined): string {
     <div class="asset-row">
       <span class="asset-state" :class="{ 'asset-state--ready': source?.available }"></span>
       <div>
-        <strong>YOLOv8n source</strong>
+        <strong>YOLOv8{{ status?.variant ?? "" }} source</strong>
         <small>PyTorch · {{ formatSize(source?.size_bytes) }}</small>
       </div>
       <button

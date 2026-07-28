@@ -17,6 +17,7 @@ import type {
   ModelSummary,
   RuntimeSummary,
   UnloadResult,
+  VariantSummary,
 } from "@/api/types"
 import StatusPill from "@/components/StatusPill.vue"
 
@@ -27,16 +28,24 @@ const pending = ref<Record<string, boolean>>({})
 const lastUnloads = ref<Record<string, UnloadResult>>({})
 const resources = ref<Record<string, ModelResourceStatus>>({})
 const resourceErrors = ref<Record<string, string>>({})
+const selectedVariants = ref<Record<string, string>>({})
 
 async function refreshModels(): Promise<void> {
   models.value = await fetchModels()
+  for (const model of models.value) {
+    if (!selectedVariants.value[model.model_id]) {
+      selectedVariants.value[model.model_id] = model.default_variant
+    }
+  }
   await Promise.all(
     models.value.map(async (model) => {
       try {
-        resources.value[model.model_id] = await fetchModelResources(model.model_id)
-        delete resourceErrors.value[model.model_id]
+        const variant = selectedVariant(model)
+        resources.value[resourceKey(model.model_id, variant)] =
+          await fetchModelResources(model.model_id, variant)
+        delete resourceErrors.value[resourceKey(model.model_id, variant)]
       } catch (caught) {
-        resourceErrors.value[model.model_id] =
+        resourceErrors.value[resourceKey(model.model_id, selectedVariant(model))] =
           caught instanceof Error ? caught.message : "资源状态不可用"
       }
     }),
@@ -57,6 +66,39 @@ function operationKey(action: string, id: string): string {
   return `${action}:${id}`
 }
 
+function resourceKey(modelId: string, variant: string): string {
+  return `${modelId}:${variant}`
+}
+
+function selectedVariant(model: ModelSummary): string {
+  return selectedVariants.value[model.model_id] ?? model.default_variant
+}
+
+function selectedVariantSummary(model: ModelSummary): VariantSummary {
+  return (
+    model.variants.find((item) => item.name === selectedVariant(model)) ??
+    model.variants[0]
+  )
+}
+
+function modelResources(model: ModelSummary): ModelResourceStatus | undefined {
+  return resources.value[resourceKey(model.model_id, selectedVariant(model))]
+}
+
+async function selectVariant(model: ModelSummary): Promise<void> {
+  const variant = selectedVariant(model)
+  try {
+    resources.value[resourceKey(model.model_id, variant)] = await fetchModelResources(
+      model.model_id,
+      variant,
+    )
+    delete resourceErrors.value[resourceKey(model.model_id, variant)]
+  } catch (caught) {
+    resourceErrors.value[resourceKey(model.model_id, variant)] =
+      caught instanceof Error ? caught.message : "资源状态不可用"
+  }
+}
+
 function isPending(action: string, id: string): boolean {
   return Boolean(pending.value[operationKey(action, id)])
 }
@@ -75,9 +117,10 @@ async function runOperation(key: string, operation: () => Promise<void>): Promis
 }
 
 async function handleLoad(model: ModelSummary, runtime: RuntimeSummary): Promise<void> {
-  const key = operationKey("load", `${model.model_id}:${runtime.name}`)
+  const variant = selectedVariant(model)
+  const key = operationKey("load", `${model.model_id}:${variant}:${runtime.name}`)
   await runOperation(key, async () => {
-    await loadModel(model.model_id, runtime.name)
+    await loadModel(model.model_id, runtime.name, { variant })
   })
 }
 
@@ -85,14 +128,18 @@ async function handleUnload(instance: InstanceSummary): Promise<void> {
   const key = operationKey("unload", instance.instance_id)
   await runOperation(key, async () => {
     const result = await unloadModel(instance.instance_id)
-    lastUnloads.value[`${result.model_id}:${result.runtime}`] = result
+    lastUnloads.value[`${result.model_id}:${result.variant}:${result.runtime}`] = result
   })
 }
 
 async function handleDownload(model: ModelSummary): Promise<void> {
-  const key = operationKey("download", model.model_id)
+  const variant = selectedVariant(model)
+  const key = operationKey("download", `${model.model_id}:${variant}`)
   await runOperation(key, async () => {
-    resources.value[model.model_id] = await downloadModelResources(model.model_id)
+    resources.value[resourceKey(model.model_id, variant)] = await downloadModelResources(
+      model.model_id,
+      variant,
+    )
   })
 }
 
@@ -100,43 +147,53 @@ async function handleConvert(
   model: ModelSummary,
   target: ConversionTargetStatus,
 ): Promise<void> {
+  const variant = selectedVariant(model)
   const key = operationKey(
     "convert",
-    `${model.model_id}:${target.target_format}`,
+    `${model.model_id}:${variant}:${target.target_format}`,
   )
   await runOperation(key, async () => {
-    resources.value[model.model_id] = await convertModelResources(
+    resources.value[resourceKey(model.model_id, variant)] = await convertModelResources(
       model.model_id,
       target.target_format,
+      variant,
     )
   })
 }
 
 async function handleDelete(model: ModelSummary): Promise<void> {
+  const variant = selectedVariant(model)
   const confirmed = window.confirm(
-    `Delete all local weights for ${model.name}? You can download them again later.`,
+    `Delete local ${selectedVariantSummary(model).display_name} weights? You can download them again later.`,
   )
   if (!confirmed) return
-  const key = operationKey("delete", model.model_id)
+  const key = operationKey("delete", `${model.model_id}:${variant}`)
   await runOperation(key, async () => {
-    resources.value[model.model_id] = await deleteModelResources(model.model_id)
+    resources.value[resourceKey(model.model_id, variant)] = await deleteModelResources(
+      model.model_id,
+      variant,
+    )
   })
 }
 
-function lastUnload(modelId: string, runtime: string): UnloadResult | undefined {
-  return lastUnloads.value[`${modelId}:${runtime}`]
+function lastUnload(
+  modelId: string,
+  variant: string,
+  runtime: string,
+): UnloadResult | undefined {
+  return lastUnloads.value[`${modelId}:${variant}:${runtime}`]
 }
 
-function runtimeSize(modelId: string, runtime: string): number | null {
+function runtimeSize(model: ModelSummary, runtime: string): number | null {
   return (
-    resources.value[modelId]?.runtimes.find((item) => item.runtime === runtime)
+    modelResources(model)?.runtimes.find((item) => item.runtime === runtime)
       ?.size_bytes ?? null
   )
 }
 
-function sourceAvailable(modelId: string): boolean {
+function sourceAvailable(model: ModelSummary): boolean {
   return Boolean(
-    resources.value[modelId]?.artifacts.find(
+    modelResources(model)?.artifacts.find(
       (artifact) => artifact.artifact_id === "source",
     )?.available,
   )
@@ -189,39 +246,51 @@ function formatBytes(value: number | null): string {
         <h2>{{ model.name }}</h2>
         <code>{{ model.model_id }}</code>
         <p>{{ model.description }}</p>
+        <label class="variant-picker">
+          <span>WEIGHT VARIANT</span>
+          <select
+            v-model="selectedVariants[model.model_id]"
+            @change="selectVariant(model)"
+          >
+            <option v-for="variant in model.variants" :key="variant.name" :value="variant.name">
+              {{ variant.display_name }}{{ variant.default ? " · default" : "" }}
+            </option>
+          </select>
+          <small>{{ selectedVariantSummary(model).description }}</small>
+        </label>
         <div class="model-resource-summary">
           <span>
-            Local size
-            <strong>{{ formatBytes(resources[model.model_id]?.total_size_bytes ?? 0) }}</strong>
+            {{ selectedVariantSummary(model).display_name }} · local size
+            <strong>{{ formatBytes(modelResources(model)?.total_size_bytes ?? 0) }}</strong>
           </span>
           <div class="model-resource-actions">
             <button
               class="button button--compact"
               :disabled="
-                model.instance_count > 0 ||
-                isPending('download', model.model_id)
+                selectedVariantSummary(model).instance_count > 0 ||
+                isPending('download', `${model.model_id}:${selectedVariant(model)}`)
               "
               type="button"
               @click="handleDownload(model)"
             >
               {{
-                isPending("download", model.model_id)
+                isPending("download", `${model.model_id}:${selectedVariant(model)}`)
                   ? "Downloading…"
-                  : sourceAvailable(model.model_id)
+                  : sourceAvailable(model)
                     ? "Re-download"
                     : "Download"
               }}
             </button>
             <button
-              v-for="target in resources[model.model_id]?.conversion_targets ?? []"
+              v-for="target in modelResources(model)?.conversion_targets ?? []"
               :key="target.target_format"
               class="button button--compact"
               :disabled="
-                model.instance_count > 0 ||
-                !sourceAvailable(model.model_id) ||
+                selectedVariantSummary(model).instance_count > 0 ||
+                !sourceAvailable(model) ||
                 isPending(
                   'convert',
-                  `${model.model_id}:${target.target_format}`,
+                  `${model.model_id}:${selectedVariant(model)}:${target.target_format}`,
                 )
               "
               type="button"
@@ -230,7 +299,7 @@ function formatBytes(value: number | null): string {
               {{
                 isPending(
                   "convert",
-                  `${model.model_id}:${target.target_format}`,
+                  `${model.model_id}:${selectedVariant(model)}:${target.target_format}`,
                 )
                   ? `Converting to ${formatPlatformName(target.target_format)}…`
                   : target.available
@@ -241,21 +310,25 @@ function formatBytes(value: number | null): string {
             <button
               class="button button--compact button--danger"
               :disabled="
-                model.instance_count > 0 ||
-                !resources[model.model_id]?.total_size_bytes ||
-                isPending('delete', model.model_id)
+                selectedVariantSummary(model).instance_count > 0 ||
+                !modelResources(model)?.total_size_bytes ||
+                isPending('delete', `${model.model_id}:${selectedVariant(model)}`)
               "
               type="button"
               @click="handleDelete(model)"
             >
-              {{ isPending("delete", model.model_id) ? "Deleting…" : "Delete weights" }}
+              {{
+                isPending("delete", `${model.model_id}:${selectedVariant(model)}`)
+                  ? "Deleting…"
+                  : "Delete weights"
+              }}
             </button>
           </div>
-          <small v-if="model.instance_count > 0">
-            Unload all instances before changing weights.
+          <small v-if="selectedVariantSummary(model).instance_count > 0">
+            Unload this variant's instances before changing its weights.
           </small>
-          <small v-if="resourceErrors[model.model_id]">
-            {{ resourceErrors[model.model_id] }}
+          <small v-if="resourceErrors[resourceKey(model.model_id, selectedVariant(model))]">
+            {{ resourceErrors[resourceKey(model.model_id, selectedVariant(model))] }}
           </small>
         </div>
       </div>
@@ -268,36 +341,45 @@ function formatBytes(value: number | null): string {
           />
           <span>{{ runtime.devices.join(" · ") }}</span>
           <span>
-            Local files · {{ formatBytes(runtimeSize(model.model_id, runtime.name)) }}
+            Local files · {{ formatBytes(runtimeSize(model, runtime.name)) }}
           </span>
           <button
             class="button button--compact"
             :disabled="
               !runtime.available ||
-              isPending('load', `${model.model_id}:${runtime.name}`)
+              isPending('load', `${model.model_id}:${selectedVariant(model)}:${runtime.name}`)
             "
             type="button"
             @click="handleLoad(model, runtime)"
           >
             {{
-              isPending("load", `${model.model_id}:${runtime.name}`)
+              isPending(
+                "load",
+                `${model.model_id}:${selectedVariant(model)}:${runtime.name}`,
+              )
                 ? "Loading…"
                 : "Load instance"
             }}
           </button>
           <div
-            v-if="lastUnload(model.model_id, runtime.name)"
+            v-if="lastUnload(model.model_id, selectedVariant(model), runtime.name)"
             class="lifecycle-metric lifecycle-metric--released"
           >
             <strong>Last unload</strong>
             <span>
-              {{ formatDuration(lastUnload(model.model_id, runtime.name)!.metrics.duration_ms) }}
+              {{
+                formatDuration(
+                  lastUnload(model.model_id, selectedVariant(model), runtime.name)!.metrics
+                    .duration_ms,
+                )
+              }}
             </span>
             <span>
               RSS released
               {{
                 formatBytes(
-                  lastUnload(model.model_id, runtime.name)!.metrics.memory_released_bytes,
+                  lastUnload(model.model_id, selectedVariant(model), runtime.name)!.metrics
+                    .memory_released_bytes,
                 )
               }}
             </span>
@@ -317,7 +399,7 @@ function formatBytes(value: number | null): string {
         >
           <div class="instance-panel__header">
             <StatusPill :label="instance.state" tone="ready" />
-            <code>{{ instance.runtime }}</code>
+            <code>{{ instance.variant }} · {{ instance.runtime }}</code>
           </div>
           <small>{{ instance.instance_id.slice(0, 8) }} · refs {{ instance.reference_count }}</small>
           <div v-if="instance.load_metrics" class="lifecycle-metric">

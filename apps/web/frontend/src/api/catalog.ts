@@ -33,7 +33,7 @@ export async function fetchSystemInfo(): Promise<SystemInfo> {
 export async function loadModel(
   modelId: string,
   runtime: string,
-  options: { device?: string; warmup?: boolean } = {},
+  options: { variant?: string; device?: string; warmup?: boolean } = {},
 ): Promise<InstanceSummary> {
   const path = modelId.split("/").map(encodeURIComponent).join("/")
   return (
@@ -42,6 +42,7 @@ export async function loadModel(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         runtime,
+        variant: options.variant ?? null,
         device: options.device ?? null,
         warmup: options.warmup ?? false,
       }),
@@ -60,22 +61,26 @@ export async function unloadModel(instanceId: string): Promise<UnloadResult> {
 
 export async function fetchModelResources(
   modelId: string,
+  variant?: string,
 ): Promise<ModelResourceStatus> {
   const path = modelId.split("/").map(encodeURIComponent).join("/")
+  const query = variant ? `?variant=${encodeURIComponent(variant)}` : ""
   return (
     await request<ModelResourceStatus>(
-      `/api/v1/catalog/models/${path}/resources`,
+      `/api/v1/catalog/models/${path}/resources${query}`,
     )
   ).data
 }
 
 export async function downloadModelResources(
   modelId: string,
+  variant?: string,
 ): Promise<ModelResourceStatus> {
   const path = modelId.split("/").map(encodeURIComponent).join("/")
+  const query = variant ? `?variant=${encodeURIComponent(variant)}` : ""
   return (
     await request<ModelResourceStatus>(
-      `/api/v1/catalog/models/${path}/resources/download`,
+      `/api/v1/catalog/models/${path}/resources/download${query}`,
       { method: "POST" },
     )
   ).data
@@ -84,6 +89,7 @@ export async function downloadModelResources(
 export async function convertModelResources(
   modelId: string,
   targetFormat: string,
+  variant?: string,
 ): Promise<ModelResourceStatus> {
   const path = modelId.split("/").map(encodeURIComponent).join("/")
   return (
@@ -92,7 +98,7 @@ export async function convertModelResources(
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target_format: targetFormat }),
+        body: JSON.stringify({ target_format: targetFormat, variant: variant ?? null }),
       },
     )
   ).data
@@ -100,11 +106,13 @@ export async function convertModelResources(
 
 export async function deleteModelResources(
   modelId: string,
+  variant?: string,
 ): Promise<ModelResourceStatus> {
   const path = modelId.split("/").map(encodeURIComponent).join("/")
+  const query = variant ? `?variant=${encodeURIComponent(variant)}` : ""
   return (
     await request<ModelResourceStatus>(
-      `/api/v1/catalog/models/${path}/resources`,
+      `/api/v1/catalog/models/${path}/resources${query}`,
       { method: "DELETE" },
     )
   ).data

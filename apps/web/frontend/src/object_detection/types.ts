@@ -2,6 +2,7 @@ export type RuntimeChoice = "auto" | "coreml" | "pytorch-mps"
 
 export interface DetectOptions {
   runtime: RuntimeChoice
+  variant: string
   confidence: number
   iouThreshold: number
   maxDetections: number
@@ -10,6 +11,7 @@ export interface DetectOptions {
 export interface DetectionResult {
   input_cache_id: string | null
   model_id: string
+  variant: string
   instance_id: string
   runtime: string
   device: string
@@ -38,7 +40,14 @@ export interface DetectionResult {
 export interface ResourceStatus {
   model_id: string
   revision: string
+  variant: string
   default_runtime: string | null
+  variants: Array<{
+    name: string
+    display_name: string
+    description: string
+    default: boolean
+  }>
   artifacts: Array<{
     artifact_id: string
     format: string

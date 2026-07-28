@@ -86,7 +86,10 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert not any(item["available"] for item in resources.json()["data"]["artifacts"])
     assert "/api/v1/apps/object-detection/detect" in openapi.json()["paths"]
     model = models.json()["data"][0]
-    assert model["model_id"].startswith("ultralytics/yolov8")
+    assert model["model_id"] == "ultralytics/yolov8"
+    assert [variant["name"] for variant in model["variants"]] == ["n", "s", "m"]
+    assert model["variants"][0]["default"]
+    assert model["default_variant"] == "n"
     assert model["instance_count"] == 0
     assert model["instances"] == []
     assert {runtime["name"] for runtime in model["runtimes"]} == {
@@ -102,7 +105,7 @@ def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path)
 
     with TestClient(app) as client:
         registry = app.state.context.models.registry
-        current = registry.get("ultralytics/yolov8n")
+        current = registry.get("ultralytics/yolov8")
         registry.register(
             ModelDefinition(
                 manifest=current.manifest,
@@ -118,27 +121,33 @@ def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path)
         )
 
         loaded = client.post(
-            "/api/v1/catalog/models/ultralytics/yolov8n/instances",
-            json={"runtime": "coreml", "warmup": False},
+            "/api/v1/catalog/models/ultralytics/yolov8/instances",
+            json={"runtime": "coreml", "variant": "s", "warmup": False},
         )
         instance_id = loaded.json()["data"]["instance_id"]
         catalog = client.get("/api/v1/catalog/models")
         blocked_delete = client.delete(
-            "/api/v1/catalog/models/ultralytics/yolov8n/resources"
+            "/api/v1/catalog/models/ultralytics/yolov8/resources?variant=s"
+        )
+        independent_default_delete = client.delete(
+            "/api/v1/catalog/models/ultralytics/yolov8/resources"
         )
         blocked_convert = client.post(
-            "/api/v1/catalog/models/ultralytics/yolov8n/resources/convert",
-            json={"target_format": "coreml"},
+            "/api/v1/catalog/models/ultralytics/yolov8/resources/convert",
+            json={"target_format": "coreml", "variant": "s"},
         )
         unloaded = client.delete(f"/api/v1/catalog/instances/{instance_id}")
 
     assert loaded.status_code == 201
     assert loaded.json()["data"]["state"] == "ready"
+    assert loaded.json()["data"]["variant"] == "s"
     assert loaded.json()["data"]["load_metrics"]["operation"] == "load"
     assert loaded.json()["data"]["load_metrics"]["duration_ms"] >= 0
     assert catalog.json()["data"][0]["instance_count"] == 1
     assert blocked_delete.status_code == 409
     assert blocked_delete.json()["error"]["details"]["instance_count"] == 1
+    assert independent_default_delete.status_code == 200
+    assert independent_default_delete.json()["data"]["variant"] == "n"
     assert blocked_convert.status_code == 409
     assert unloaded.status_code == 200
     assert unloaded.json()["data"]["state"] == "unloaded"
@@ -189,28 +198,28 @@ def test_platform_downloads_overwrites_and_deletes_model_resources(
 
     with TestClient(app) as client:
         initial = client.get(
-            "/api/v1/catalog/models/ultralytics/yolov8n/resources"
+            "/api/v1/catalog/models/ultralytics/yolov8/resources"
         )
         downloaded = client.post(
-            "/api/v1/catalog/models/ultralytics/yolov8n/resources/download"
+            "/api/v1/catalog/models/ultralytics/yolov8/resources/download"
         )
         redownloaded = client.post(
-            "/api/v1/catalog/models/ultralytics/yolov8n/resources/download"
+            "/api/v1/catalog/models/ultralytics/yolov8/resources/download"
         )
         converted = client.post(
-            "/api/v1/catalog/models/ultralytics/yolov8n/resources/convert",
+            "/api/v1/catalog/models/ultralytics/yolov8/resources/convert",
             json={"target_format": "coreml"},
         )
         reconverted = client.post(
-            "/api/v1/catalog/models/ultralytics/yolov8n/resources/convert",
+            "/api/v1/catalog/models/ultralytics/yolov8/resources/convert",
             json={"target_format": "coreml"},
         )
         unsupported = client.post(
-            "/api/v1/catalog/models/ultralytics/yolov8n/resources/convert",
+            "/api/v1/catalog/models/ultralytics/yolov8/resources/convert",
             json={"target_format": "onnx"},
         )
         deleted = client.delete(
-            "/api/v1/catalog/models/ultralytics/yolov8n/resources"
+            "/api/v1/catalog/models/ultralytics/yolov8/resources"
         )
 
     assert initial.status_code == 200
@@ -262,7 +271,7 @@ def test_media_upload_is_validated_and_stored_in_local_cache(tmp_path: Path) -> 
 class FakeDetector:
     async def detect(self, request: Any) -> DetectionResponse:
         return DetectionResponse(
-            model_id="ultralytics/yolov8n",
+            model_id="ultralytics/yolov8",
             instance_id="fake-instance",
             runtime="coreml",
             device="all",
@@ -298,32 +307,48 @@ def test_object_detection_app_maps_sdk_result(tmp_path: Path) -> None:
     app = create_app(_settings(tmp_path))
 
     with TestClient(app) as client:
+        acquired_variants: list[str] = []
 
-        async def fake_acquire(*_: object, **__: object) -> FakeHandle:
+        async def fake_acquire(*_: object, **kwargs: object) -> FakeHandle:
+            acquired_variants.append(str(kwargs["variant"]))
             return FakeHandle()
 
         app.state.context.models.acquire = fake_acquire
+        resource_status = client.get(
+            "/api/v1/apps/object-detection/resources?variant=m"
+        )
         response = client.post(
             "/api/v1/apps/object-detection/detect",
             files={"file": ("sample.png", _png(), "image/png")},
             data={
                 "runtime": "auto",
+                "variant": "s",
                 "confidence": "0.25",
                 "iou_threshold": "0.7",
                 "max_detections": "100",
             },
         )
         uncached_response = client.post(
-            "/api/v1/apps/object-detection/detect/frame",
+            "/api/v1/apps/object-detection/detect/frame?variant=m",
             content=_png(),
             headers={"Content-Type": "image/png"},
         )
 
     assert response.status_code == 200
     result = response.json()["data"]
+    assert resource_status.status_code == 200
+    assert resource_status.json()["data"]["variant"] == "m"
+    assert [item["name"] for item in resource_status.json()["data"]["variants"]] == [
+        "n",
+        "s",
+        "m",
+    ]
+    assert result["variant"] == "s"
     assert result["runtime"] == "coreml"
     assert result["detections"][0]["label"] == "person"
     assert result["detections"][0]["confidence"] == 0.91
     assert result["input_cache_id"].startswith("object-detection-inputs:")
     assert uncached_response.status_code == 200
     assert uncached_response.json()["data"]["input_cache_id"] is None
+    assert uncached_response.json()["data"]["variant"] == "m"
+    assert acquired_variants == ["s", "m"]

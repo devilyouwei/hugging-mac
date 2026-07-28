@@ -2,25 +2,31 @@ import { request } from "@/api/client"
 
 import type { DetectOptions, DetectionResult, ResourceStatus } from "./types"
 
-export async function fetchResourceStatus(): Promise<ResourceStatus> {
+function variantQuery(variant: string): string {
+  return `?variant=${encodeURIComponent(variant)}`
+}
+
+export async function fetchResourceStatus(variant?: string): Promise<ResourceStatus> {
   return (
-    await request<ResourceStatus>("/api/v1/apps/object-detection/resources")
+    await request<ResourceStatus>(
+      `/api/v1/apps/object-detection/resources${variant ? variantQuery(variant) : ""}`,
+    )
   ).data
 }
 
-export async function downloadSource(): Promise<ResourceStatus> {
+export async function downloadSource(variant: string): Promise<ResourceStatus> {
   return (
     await request<ResourceStatus>(
-      "/api/v1/apps/object-detection/resources/source/download",
+      `/api/v1/apps/object-detection/resources/source/download${variantQuery(variant)}`,
       { method: "POST" },
     )
   ).data
 }
 
-export async function convertCoreMl(): Promise<ResourceStatus> {
+export async function convertCoreMl(variant: string): Promise<ResourceStatus> {
   return (
     await request<ResourceStatus>(
-      "/api/v1/apps/object-detection/resources/coreml/convert",
+      `/api/v1/apps/object-detection/resources/coreml/convert${variantQuery(variant)}`,
       { method: "POST" },
     )
   ).data
@@ -37,6 +43,7 @@ export async function detectObjects(
   if (requestOptions.cacheInput === false) {
     const query = new URLSearchParams({
       runtime: options.runtime,
+      variant: options.variant,
       confidence: String(options.confidence),
       iou_threshold: String(options.iouThreshold),
       max_detections: String(options.maxDetections),
@@ -57,6 +64,7 @@ export async function detectObjects(
   const body = new FormData()
   body.append("file", file)
   body.append("runtime", options.runtime)
+  body.append("variant", options.variant)
   body.append("confidence", String(options.confidence))
   body.append("iou_threshold", String(options.iouThreshold))
   body.append("max_detections", String(options.maxDetections))
