@@ -21,7 +21,13 @@ from hugging_mac_sdk.schemas.detection import (
     DetectionTimings,
     ImageSize,
 )
+from hugging_mac_sdk.schemas.pose import Keypoint, Pose, PoseEstimationResponse
 from hugging_mac_sdk.schemas.resources import ResolvedResource
+from hugging_mac_sdk.schemas.segmentation import (
+    PolygonPoint,
+    Segmentation,
+    SegmentationResponse,
+)
 from hugging_mac_web.config import WebSettings
 from hugging_mac_web.main import create_app
 from PIL import Image
@@ -80,12 +86,25 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         "gpu_cores",
         "neural_engine_cores",
     } <= info.json()["data"].keys()
-    app_summary = apps.json()["data"][0]
-    assert app_summary["manifest"]["app_id"] == "object-detection"
-    assert app_summary["status"] == "available"
+    app_summaries = {
+        item["manifest"]["app_id"]: item for item in apps.json()["data"]
+    }
+    assert set(app_summaries) == {
+        "instance-segmentation",
+        "object-detection",
+        "pose-estimation",
+    }
+    assert all(item["status"] == "available" for item in app_summaries.values())
     assert not any(item["available"] for item in resources.json()["data"]["artifacts"])
     assert "/api/v1/apps/object-detection/detect" in openapi.json()["paths"]
+    assert "/api/v1/apps/pose-estimation/estimate" in openapi.json()["paths"]
+    assert "/api/v1/apps/instance-segmentation/segment" in openapi.json()["paths"]
     model = models.json()["data"][0]
+    assert {item["model_id"] for item in models.json()["data"]} >= {
+        "ultralytics/yolov8",
+        "ultralytics/yolov8-pose",
+        "ultralytics/yolov8-seg",
+    }
     assert model["model_id"] == "ultralytics/yolov8"
     assert [variant["name"] for variant in model["variants"]] == ["n", "s", "m"]
     assert model["variants"][0]["default"]
@@ -352,3 +371,129 @@ def test_object_detection_app_maps_sdk_result(tmp_path: Path) -> None:
     assert uncached_response.json()["data"]["input_cache_id"] is None
     assert uncached_response.json()["data"]["variant"] == "m"
     assert acquired_variants == ["s", "m"]
+
+
+class FakePoseEstimator:
+    async def estimate_pose(self, request: Any) -> PoseEstimationResponse:
+        return PoseEstimationResponse(
+            model_id="ultralytics/yolov8-pose",
+            instance_id="fake-pose-instance",
+            runtime="coreml",
+            device="all",
+            image_size=ImageSize(width=8, height=6),
+            poses=(
+                Pose(
+                    box=BoundingBox(x1=1, y1=0, x2=7, y2=6),
+                    confidence=0.94,
+                    class_id=0,
+                    label="person",
+                    keypoints=(
+                        Keypoint(x=4, y=1, confidence=0.98),
+                        Keypoint(x=3, y=2, confidence=0.91),
+                    ),
+                ),
+            ),
+            timings=DetectionTimings(inference_ms=3.5),
+        )
+
+
+class FakeSegmenter:
+    async def segment(self, request: Any) -> SegmentationResponse:
+        return SegmentationResponse(
+            model_id="ultralytics/yolov8-seg",
+            instance_id="fake-seg-instance",
+            runtime="coreml",
+            device="all",
+            image_size=ImageSize(width=8, height=6),
+            segments=(
+                Segmentation(
+                    box=BoundingBox(x1=1, y1=1, x2=7, y2=5),
+                    confidence=0.89,
+                    class_id=0,
+                    label="person",
+                    polygons=(
+                        (
+                            PolygonPoint(x=1, y=1),
+                            PolygonPoint(x=7, y=1),
+                            PolygonPoint(x=7, y=5),
+                        ),
+                    ),
+                ),
+            ),
+            timings=DetectionTimings(inference_ms=5.0),
+        )
+
+
+class FakeCapabilityHandle:
+    def __init__(self, capability: object) -> None:
+        self.capability = capability
+
+    async def __aenter__(self) -> FakeCapabilityHandle:
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
+
+    def require(self, capability: object) -> object:
+        return self.capability
+
+
+def test_pose_and_segmentation_apps_map_sdk_results(tmp_path: Path) -> None:
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        acquired: list[tuple[str, str]] = []
+
+        async def fake_acquire(model_id: str, **kwargs: object) -> FakeCapabilityHandle:
+            acquired.append((model_id, str(kwargs["variant"])))
+            capability: object = (
+                FakePoseEstimator()
+                if model_id == "ultralytics/yolov8-pose"
+                else FakeSegmenter()
+            )
+            return FakeCapabilityHandle(capability)
+
+        app.state.context.models.acquire = fake_acquire
+        pose_resources = client.get(
+            "/api/v1/apps/pose-estimation/resources?variant=s"
+        )
+        pose_response = client.post(
+            "/api/v1/apps/pose-estimation/estimate",
+            files={"file": ("sample.png", _png(), "image/png")},
+            data={"runtime": "auto", "variant": "m"},
+        )
+        seg_resources = client.get(
+            "/api/v1/apps/instance-segmentation/resources?variant=m"
+        )
+        seg_response = client.post(
+            "/api/v1/apps/instance-segmentation/segment/frame?variant=s",
+            content=_png(),
+            headers={"Content-Type": "image/png"},
+        )
+
+    assert pose_resources.status_code == 200
+    assert pose_resources.json()["data"]["variant"] == "s"
+    assert pose_response.status_code == 200
+    pose_result = pose_response.json()["data"]
+    assert pose_result["variant"] == "m"
+    assert pose_result["poses"][0]["keypoints"][0] == {
+        "x": 4.0,
+        "y": 1.0,
+        "confidence": 0.98,
+    }
+    assert pose_result["input_cache_id"].startswith("pose-estimation-inputs:")
+
+    assert seg_resources.status_code == 200
+    assert seg_resources.json()["data"]["variant"] == "m"
+    assert seg_response.status_code == 200
+    seg_result = seg_response.json()["data"]
+    assert seg_result["variant"] == "s"
+    assert seg_result["segments"][0]["polygons"][0][2] == {
+        "x": 7.0,
+        "y": 5.0,
+    }
+    assert seg_result["input_cache_id"] is None
+    assert acquired == [
+        ("ultralytics/yolov8-pose", "m"),
+        ("ultralytics/yolov8-seg", "s"),
+    ]

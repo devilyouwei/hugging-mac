@@ -14,15 +14,6 @@ import { RouterLink, RouterView } from "vue-router"
         />
         <span>Hugging Mac</span>
       </RouterLink>
-      <nav class="main-nav" aria-label="主导航">
-        <RouterLink to="/">Studio</RouterLink>
-        <RouterLink to="/models">Models</RouterLink>
-        <RouterLink to="/apps/object-detection">Object Detection</RouterLink>
-      </nav>
-      <div class="local-badge">
-        <span class="status-dot" aria-hidden="true"></span>
-        Local runtime
-      </div>
     </header>
 
     <main>

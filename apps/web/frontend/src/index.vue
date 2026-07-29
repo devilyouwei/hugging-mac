@@ -15,6 +15,8 @@ const error = ref("")
 const readyInstances = computed(() =>
   models.value.reduce((total, model) => total + model.ready_count, 0),
 )
+const featuredModels = computed(() => models.value.slice(0, 2))
+const featuredApps = computed(() => apps.value.slice(0, 3))
 
 const chipLabel = computed(() => {
   const value = system.value?.chip_name
@@ -49,7 +51,7 @@ onMounted(loadHome)
             <span class="hero-icon" aria-hidden="true">
               <img src="/hugging-mac-icon.png" alt="" />
             </span>
-            <span class="hero-title-solid">One Mac.</span>
+            <span class="hero-title-solid">One Mac,</span>
           </span>
           <span class="hero-title-outline">Many minds.</span>
         </h1>
@@ -59,9 +61,6 @@ onMounted(loadHome)
         <div class="hero-actions">
           <RouterLink class="button button--primary" to="/apps/object-detection">
             Run first demo
-          </RouterLink>
-          <RouterLink class="button button--ghost" to="/models">
-            Browse models
           </RouterLink>
         </div>
       </div>
@@ -134,51 +133,63 @@ onMounted(loadHome)
       <button type="button" @click="loadHome">Retry</button>
     </div>
 
-    <section class="section-block">
-      <div class="section-heading">
-        <div>
-          <span class="section-index">01</span>
+    <div class="home-catalog-layout">
+      <section class="section-block home-catalog-column">
+        <div class="section-heading">
           <div>
-            <p class="kicker">MODEL LAYER</p>
-            <h2>Available models</h2>
+            <span class="section-index">01</span>
+            <div>
+              <p class="kicker">MODEL LAYER</p>
+              <h2>Models</h2>
+            </div>
           </div>
+          <RouterLink class="section-heading__link" to="/models">
+            全部 <span aria-hidden="true">→</span>
+          </RouterLink>
         </div>
-        <p>
-          {{ models.length }} registered · {{ readyInstances }} ready instance{{
-            readyInstances === 1 ? "" : "s"
-          }}
+        <p class="home-catalog-column__meta">
+          {{ models.length }} registered · {{ readyInstances }} ready
         </p>
-      </div>
-      <div v-if="loading" class="card-grid">
-        <div v-for="item in 2" :key="item" class="catalog-card skeleton-card"></div>
-      </div>
-      <div v-else class="card-grid">
-        <ModelCard v-for="model in models" :key="model.model_id" :model="model" />
-      </div>
-    </section>
+        <div v-if="loading" class="card-grid">
+          <div v-for="item in 2" :key="item" class="catalog-card skeleton-card"></div>
+        </div>
+        <div v-else class="card-grid">
+          <ModelCard
+            v-for="model in featuredModels"
+            :key="model.model_id"
+            :model="model"
+          />
+        </div>
+      </section>
 
-    <section class="section-block apps-block">
-      <div class="section-heading">
-        <div>
-          <span class="section-index">02</span>
+      <section class="section-block home-catalog-column home-catalog-column--apps">
+        <div class="section-heading">
           <div>
-            <p class="kicker">APPLICATION LAYER</p>
-            <h2>Model-powered apps</h2>
+            <span class="section-index">02</span>
+            <div>
+              <p class="kicker">APPLICATION LAYER</p>
+              <h2>Apps</h2>
+            </div>
+          </div>
+          <RouterLink class="section-heading__link" to="/apps">
+            全部 <span aria-hidden="true">→</span>
+          </RouterLink>
+        </div>
+        <p class="home-catalog-column__meta">
+          {{ apps.length }} registered · focused tools, shared SDK
+        </p>
+        <div class="app-list">
+          <AppCard
+            v-for="(app, appIndex) in featuredApps"
+            :key="app.manifest.app_id"
+            :app="app"
+            :index="appIndex"
+          />
+          <div v-if="!loading && !apps.length" class="empty-state">
+            No applications are registered.
           </div>
         </div>
-        <p>Focused tools, shared model SDK.</p>
-      </div>
-      <div class="app-list">
-        <AppCard
-          v-for="(app, appIndex) in apps"
-          :key="app.manifest.app_id"
-          :app="app"
-          :index="appIndex"
-        />
-        <div v-if="!loading && !apps.length" class="empty-state">
-          No applications are registered.
-        </div>
-      </div>
-    </section>
+      </section>
+    </div>
   </div>
 </template>

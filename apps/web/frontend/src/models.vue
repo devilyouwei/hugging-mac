@@ -16,7 +16,6 @@ import type {
   ModelResourceStatus,
   ModelSummary,
   RuntimeSummary,
-  UnloadResult,
   VariantSummary,
 } from "@/api/types"
 import StatusPill from "@/components/StatusPill.vue"
@@ -25,7 +24,6 @@ const models = ref<ModelSummary[]>([])
 const loading = ref(true)
 const error = ref("")
 const pending = ref<Record<string, boolean>>({})
-const lastUnloads = ref<Record<string, UnloadResult>>({})
 const resources = ref<Record<string, ModelResourceStatus>>({})
 const resourceErrors = ref<Record<string, string>>({})
 const selectedVariants = ref<Record<string, string>>({})
@@ -127,8 +125,7 @@ async function handleLoad(model: ModelSummary, runtime: RuntimeSummary): Promise
 async function handleUnload(instance: InstanceSummary): Promise<void> {
   const key = operationKey("unload", instance.instance_id)
   await runOperation(key, async () => {
-    const result = await unloadModel(instance.instance_id)
-    lastUnloads.value[`${result.model_id}:${result.variant}:${result.runtime}`] = result
+    await unloadModel(instance.instance_id)
   })
 }
 
@@ -174,14 +171,6 @@ async function handleDelete(model: ModelSummary): Promise<void> {
       variant,
     )
   })
-}
-
-function lastUnload(
-  modelId: string,
-  variant: string,
-  runtime: string,
-): UnloadResult | undefined {
-  return lastUnloads.value[`${modelId}:${variant}:${runtime}`]
 }
 
 function runtimeSize(model: ModelSummary, runtime: string): number | null {
@@ -230,8 +219,9 @@ function formatBytes(value: number | null): string {
 </script>
 
 <template>
-  <div class="page inner-page">
+  <div class="page inner-page models-directory-page">
     <header class="page-title">
+      <RouterLink class="back-link" to="/">← Studio</RouterLink>
       <p class="kicker">MODEL REGISTRY / LIVE INSTANCES</p>
       <h1>Models</h1>
       <p>模型定义与当前进程中的实例快照。浏览目录不会触发下载、转换或加载。</p>
@@ -246,183 +236,173 @@ function formatBytes(value: number | null): string {
         <h2>{{ model.name }}</h2>
         <code>{{ model.model_id }}</code>
         <p>{{ model.description }}</p>
-        <label class="variant-picker">
-          <span>WEIGHT VARIANT</span>
-          <select
-            v-model="selectedVariants[model.model_id]"
-            @change="selectVariant(model)"
-          >
-            <option v-for="variant in model.variants" :key="variant.name" :value="variant.name">
-              {{ variant.display_name }}{{ variant.default ? " · default" : "" }}
-            </option>
-          </select>
-          <small>{{ selectedVariantSummary(model).description }}</small>
-        </label>
-        <div class="model-resource-summary">
-          <span>
-            {{ selectedVariantSummary(model).display_name }} · local size
-            <strong>{{ formatBytes(modelResources(model)?.total_size_bytes ?? 0) }}</strong>
-          </span>
-          <div class="model-resource-actions">
-            <button
-              class="button button--compact"
-              :disabled="
-                selectedVariantSummary(model).instance_count > 0 ||
-                isPending('download', `${model.model_id}:${selectedVariant(model)}`)
-              "
-              type="button"
-              @click="handleDownload(model)"
+        <div class="model-config-grid">
+          <label class="variant-picker">
+            <span>WEIGHT VARIANT</span>
+            <select
+              v-model="selectedVariants[model.model_id]"
+              @change="selectVariant(model)"
             >
-              {{
-                isPending("download", `${model.model_id}:${selectedVariant(model)}`)
-                  ? "Downloading…"
-                  : sourceAvailable(model)
-                    ? "Re-download"
-                    : "Download"
-              }}
-            </button>
-            <button
-              v-for="target in modelResources(model)?.conversion_targets ?? []"
-              :key="target.target_format"
-              class="button button--compact"
-              :disabled="
-                selectedVariantSummary(model).instance_count > 0 ||
-                !sourceAvailable(model) ||
-                isPending(
-                  'convert',
-                  `${model.model_id}:${selectedVariant(model)}:${target.target_format}`,
-                )
-              "
-              type="button"
-              @click="handleConvert(model, target)"
-            >
-              {{
-                isPending(
-                  "convert",
-                  `${model.model_id}:${selectedVariant(model)}:${target.target_format}`,
-                )
-                  ? `Converting to ${formatPlatformName(target.target_format)}…`
-                  : target.available
-                    ? `Re-convert to ${formatPlatformName(target.target_format)}`
-                    : `Convert to ${formatPlatformName(target.target_format)}`
-              }}
-            </button>
-            <button
-              class="button button--compact button--danger"
-              :disabled="
-                selectedVariantSummary(model).instance_count > 0 ||
-                !modelResources(model)?.total_size_bytes ||
-                isPending('delete', `${model.model_id}:${selectedVariant(model)}`)
-              "
-              type="button"
-              @click="handleDelete(model)"
-            >
-              {{
-                isPending("delete", `${model.model_id}:${selectedVariant(model)}`)
-                  ? "Deleting…"
-                  : "Delete weights"
-              }}
-            </button>
-          </div>
-          <small v-if="selectedVariantSummary(model).instance_count > 0">
-            Unload this variant's instances before changing its weights.
-          </small>
-          <small v-if="resourceErrors[resourceKey(model.model_id, selectedVariant(model))]">
-            {{ resourceErrors[resourceKey(model.model_id, selectedVariant(model))] }}
-          </small>
-        </div>
-      </div>
-      <div class="model-row__runtime">
-        <p class="column-label">RUNTIMES</p>
-        <div v-for="runtime in model.runtimes" :key="runtime.name" class="runtime-row">
-          <StatusPill
-            :label="runtime.available ? runtime.name : `${runtime.name} unavailable`"
-            :tone="runtime.available ? 'ready' : 'warning'"
-          />
-          <span>{{ runtime.devices.join(" · ") }}</span>
-          <span>
-            Local files · {{ formatBytes(runtimeSize(model, runtime.name)) }}
-          </span>
-          <button
-            class="button button--compact"
-            :disabled="
-              !runtime.available ||
-              isPending('load', `${model.model_id}:${selectedVariant(model)}:${runtime.name}`)
-            "
-            type="button"
-            @click="handleLoad(model, runtime)"
-          >
-            {{
-              isPending(
-                "load",
-                `${model.model_id}:${selectedVariant(model)}:${runtime.name}`,
-              )
-                ? "Loading…"
-                : "Load instance"
-            }}
-          </button>
-          <div
-            v-if="lastUnload(model.model_id, selectedVariant(model), runtime.name)"
-            class="lifecycle-metric lifecycle-metric--released"
-          >
-            <strong>Last unload</strong>
+              <option v-for="variant in model.variants" :key="variant.name" :value="variant.name">
+                {{ variant.display_name }}{{ variant.default ? " · default" : "" }}
+              </option>
+            </select>
+            <small>{{ selectedVariantSummary(model).description }}</small>
+          </label>
+          <div class="model-resource-summary">
             <span>
-              {{
-                formatDuration(
-                  lastUnload(model.model_id, selectedVariant(model), runtime.name)!.metrics
-                    .duration_ms,
-                )
-              }}
+              {{ selectedVariantSummary(model).display_name }} · local size
+              <strong>{{ formatBytes(modelResources(model)?.total_size_bytes ?? 0) }}</strong>
             </span>
-            <span>
-              RSS released
-              {{
-                formatBytes(
-                  lastUnload(model.model_id, selectedVariant(model), runtime.name)!.metrics
-                    .memory_released_bytes,
-                )
-              }}
-            </span>
+            <div class="model-resource-actions">
+              <button
+                class="button button--compact"
+                :disabled="
+                  selectedVariantSummary(model).instance_count > 0 ||
+                  isPending('download', `${model.model_id}:${selectedVariant(model)}`)
+                "
+                type="button"
+                @click="handleDownload(model)"
+              >
+                {{
+                  isPending("download", `${model.model_id}:${selectedVariant(model)}`)
+                    ? "Downloading…"
+                    : sourceAvailable(model)
+                      ? "Re-download"
+                      : "Download"
+                }}
+              </button>
+              <button
+                v-for="target in modelResources(model)?.conversion_targets ?? []"
+                :key="target.target_format"
+                class="button button--compact"
+                :disabled="
+                  selectedVariantSummary(model).instance_count > 0 ||
+                  !sourceAvailable(model) ||
+                  isPending(
+                    'convert',
+                    `${model.model_id}:${selectedVariant(model)}:${target.target_format}`,
+                  )
+                "
+                type="button"
+                @click="handleConvert(model, target)"
+              >
+                {{
+                  isPending(
+                    "convert",
+                    `${model.model_id}:${selectedVariant(model)}:${target.target_format}`,
+                  )
+                    ? `Converting to ${formatPlatformName(target.target_format)}…`
+                    : target.available
+                      ? `Re-convert to ${formatPlatformName(target.target_format)}`
+                      : `Convert to ${formatPlatformName(target.target_format)}`
+                }}
+              </button>
+              <button
+                class="button button--compact button--danger"
+                :disabled="
+                  selectedVariantSummary(model).instance_count > 0 ||
+                  !modelResources(model)?.total_size_bytes ||
+                  isPending('delete', `${model.model_id}:${selectedVariant(model)}`)
+                "
+                type="button"
+                @click="handleDelete(model)"
+              >
+                {{
+                  isPending("delete", `${model.model_id}:${selectedVariant(model)}`)
+                    ? "Deleting…"
+                    : "Delete weights"
+                }}
+              </button>
+            </div>
+            <small v-if="selectedVariantSummary(model).instance_count > 0">
+              Unload this variant's instances before changing its weights.
+            </small>
+            <small v-if="resourceErrors[resourceKey(model.model_id, selectedVariant(model))]">
+              {{ resourceErrors[resourceKey(model.model_id, selectedVariant(model))] }}
+            </small>
           </div>
         </div>
       </div>
-      <div class="model-row__instances">
-        <p class="column-label">INSTANCES</p>
-        <strong>{{ model.instance_count }}</strong>
-        <span>{{ model.ready_count }} ready</span>
-        <small v-if="!model.instances.length">Not instantiated</small>
-        <article
-          v-for="instance in model.instances"
-          v-else
-          :key="instance.instance_id"
-          class="instance-panel"
-        >
-          <div class="instance-panel__header">
-            <StatusPill :label="instance.state" tone="ready" />
-            <code>{{ instance.variant }} · {{ instance.runtime }}</code>
+      <div class="model-row__operations">
+        <div class="model-row__runtime">
+          <p class="column-label">RUNTIMES</p>
+          <div class="runtime-grid">
+            <div v-for="runtime in model.runtimes" :key="runtime.name" class="runtime-row">
+              <StatusPill
+                :label="runtime.available ? runtime.name : `${runtime.name} unavailable`"
+                :tone="runtime.available ? 'ready' : 'warning'"
+              />
+              <span>{{ runtime.devices.join(" · ") }}</span>
+              <span>
+                Local files · {{ formatBytes(runtimeSize(model, runtime.name)) }}
+              </span>
+              <button
+                class="button button--compact"
+                :disabled="
+                  !runtime.available ||
+                  isPending('load', `${model.model_id}:${selectedVariant(model)}:${runtime.name}`)
+                "
+                type="button"
+                @click="handleLoad(model, runtime)"
+              >
+                {{
+                  isPending(
+                    "load",
+                    `${model.model_id}:${selectedVariant(model)}:${runtime.name}`,
+                  )
+                    ? "Loading…"
+                    : "Load instance"
+                }}
+              </button>
+            </div>
           </div>
-          <small>{{ instance.instance_id.slice(0, 8) }} · refs {{ instance.reference_count }}</small>
-          <div v-if="instance.load_metrics" class="lifecycle-metric">
-            <span>Load {{ formatDuration(instance.load_metrics.duration_ms) }}</span>
-            <span>
-              RSS allocated {{ formatBytes(instance.load_metrics.memory_allocated_bytes) }}
-            </span>
-            <span>
-              Process RSS {{ formatBytes(instance.load_metrics.process_rss_after_bytes) }}
-            </span>
+        </div>
+        <div class="model-row__instances">
+          <p class="column-label">INSTANCES</p>
+          <div class="instance-count">
+            <strong>{{ model.instance_count }}</strong>
+            <div>
+              <span>{{ model.ready_count }} ready</span>
+              <small v-if="!model.instances.length">Not instantiated</small>
+            </div>
           </div>
-          <button
-            class="button button--compact button--danger"
-            :disabled="
-              instance.reference_count > 0 ||
-              isPending('unload', instance.instance_id)
-            "
-            type="button"
-            @click="handleUnload(instance)"
-          >
-            {{ isPending("unload", instance.instance_id) ? "Unloading…" : "Unload" }}
-          </button>
-        </article>
+          <template v-if="model.instances.length">
+            <div class="instance-list">
+              <article
+                v-for="instance in model.instances"
+                :key="instance.instance_id"
+                class="instance-panel"
+              >
+                <div class="instance-panel__header">
+                  <StatusPill :label="instance.state" tone="ready" />
+                  <code>{{ instance.variant }} · {{ instance.runtime }}</code>
+                </div>
+                <small>{{ instance.instance_id.slice(0, 8) }} · refs {{ instance.reference_count }}</small>
+                <div v-if="instance.load_metrics" class="lifecycle-metric">
+                  <span>Load {{ formatDuration(instance.load_metrics.duration_ms) }}</span>
+                  <span>
+                    RSS allocated {{ formatBytes(instance.load_metrics.memory_allocated_bytes) }}
+                  </span>
+                  <span>
+                    Process RSS {{ formatBytes(instance.load_metrics.process_rss_after_bytes) }}
+                  </span>
+                </div>
+                <button
+                  class="button button--compact button--danger"
+                  :disabled="
+                    instance.reference_count > 0 ||
+                    isPending('unload', instance.instance_id)
+                  "
+                  type="button"
+                  @click="handleUnload(instance)"
+                >
+                  {{ isPending("unload", instance.instance_id) ? "Unloading…" : "Unload" }}
+                </button>
+              </article>
+            </div>
+          </template>
+        </div>
       </div>
     </section>
     <p class="measurement-note">

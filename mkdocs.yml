@@ -71,6 +71,7 @@ nav:
       - 评估体系: 06-evaluation.md
       - 训练体系: 07-training.md
       - YOLOv8 SDK: 14-yolov8-sdk.md
+      - YOLOv8 Pose 与 Seg SDK: 19-yolov8-pose-seg-sdk.md
   - 应用与工程:
       - 前后端与 API: 08-frontend-backend.md
       - Web 应用层与 Index: 15-web-application-architecture.md

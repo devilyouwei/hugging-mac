@@ -10,6 +10,8 @@ from collections.abc import AsyncIterator
 from typing import Protocol, TypeVar
 
 from hugging_mac_sdk.schemas.detection import DetectionRequest, DetectionResponse
+from hugging_mac_sdk.schemas.pose import PoseEstimationResponse, PoseRequest
+from hugging_mac_sdk.schemas.segmentation import SegmentationRequest, SegmentationResponse
 
 RequestT = TypeVar("RequestT", contravariant=True)
 ResponseT = TypeVar("ResponseT", covariant=True)
@@ -20,6 +22,18 @@ class ObjectDetection(Protocol):
     """Detect objects in an image or image batch."""
 
     async def detect(self, request: DetectionRequest) -> DetectionResponse: ...
+
+
+class PoseEstimation(Protocol):
+    """Estimate person keypoints in an image."""
+
+    async def estimate_pose(self, request: PoseRequest) -> PoseEstimationResponse: ...
+
+
+class InstanceSegmentation(Protocol):
+    """Detect objects and return their visible instance polygons."""
+
+    async def segment(self, request: SegmentationRequest) -> SegmentationResponse: ...
 
 
 class Chat(Protocol[RequestT, ResponseT, EventT]):

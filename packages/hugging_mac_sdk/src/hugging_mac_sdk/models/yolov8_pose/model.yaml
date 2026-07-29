@@ -1,0 +1,57 @@
+manifest:
+  schema_version: "1"
+  model_id: ultralytics/yolov8-pose
+  revision: v8.2.0
+  display_name: Ultralytics YOLOv8 Pose
+  description: 基于 COCO 17 关键点的人体姿态估计模型。
+  tags: [vision, pose-estimation, yolo]
+  family: yolov8
+  capabilities: [pose-estimation]
+  runtimes:
+    - name: pytorch-mps
+      devices: [mps, cpu]
+      dtypes: [float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [torch, ultralytics]
+    - name: coreml
+      devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
+      dtypes: [float16, float32]
+      quantizations: [float16, int8]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [coremltools, ultralytics]
+  variants:
+    - name: n
+      display_name: YOLOv8 Pose Nano
+      description: 轻量人体姿态估计权重。
+      metadata: {source_size_bytes: 6832633}
+      resources:
+        - kind: url_file
+          url: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n-pose.pt
+    - name: s
+      display_name: YOLOv8 Pose Small
+      description: 平衡速度和精度的人体姿态估计权重。
+      metadata: {source_size_bytes: 23513657}
+      resources:
+        - kind: url_file
+          url: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8s-pose.pt
+    - name: m
+      display_name: YOLOv8 Pose Medium
+      description: 更高精度的人体姿态估计权重。
+      metadata: {source_size_bytes: 53266977}
+      resources:
+        - kind: url_file
+          url: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8m-pose.pt
+  default_variant: n
+  license: AGPL-3.0
+  source_url: https://github.com/ultralytics/assets/releases/tag/v8.2.0
+  default_runtime: coreml
+
+artifacts:
+  - {artifact_id: source, variant: n, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-pose/v8.2.0/n/source/yolov8n-pose.pt, kind: file}
+  - {artifact_id: coreml, variant: n, runtime: coreml, format: coreml, path: ultralytics/yolov8-pose/v8.2.0/n/coreml/yolov8n-pose.mlpackage, kind: directory}
+  - {artifact_id: source, variant: s, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-pose/v8.2.0/s/source/yolov8s-pose.pt, kind: file}
+  - {artifact_id: coreml, variant: s, runtime: coreml, format: coreml, path: ultralytics/yolov8-pose/v8.2.0/s/coreml/yolov8s-pose.mlpackage, kind: directory}
+  - {artifact_id: source, variant: m, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-pose/v8.2.0/m/source/yolov8m-pose.pt, kind: file}
+  - {artifact_id: coreml, variant: m, runtime: coreml, format: coreml, path: ultralytics/yolov8-pose/v8.2.0/m/coreml/yolov8m-pose.mlpackage, kind: directory}

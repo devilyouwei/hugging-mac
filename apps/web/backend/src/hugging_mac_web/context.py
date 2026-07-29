@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from hugging_mac_sdk import ModelSdk, RuntimePolicy
 from hugging_mac_sdk.converters import ConverterRegistry
 from hugging_mac_sdk.models.yolov8 import register_yolov8
+from hugging_mac_sdk.models.yolov8_pose import register_yolov8_pose
+from hugging_mac_sdk.models.yolov8_seg import register_yolov8_seg
 
 from hugging_mac_web.app_registry import AppRegistry
 from hugging_mac_web.config import WebSettings
@@ -35,6 +37,8 @@ def create_context(settings: WebSettings) -> PlatformContext:
     )
     converters = ConverterRegistry()
     register_yolov8(models.registry, converters)
+    register_yolov8_pose(models.registry, converters)
+    register_yolov8_seg(models.registry, converters)
     documents = TinyDocumentStore(settings.resolved_database_path)
     return PlatformContext(
         settings=settings,

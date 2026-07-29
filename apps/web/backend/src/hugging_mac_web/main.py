@@ -14,10 +14,14 @@ from hugging_mac_web.config import WebSettings
 from hugging_mac_web.context import create_context
 from hugging_mac_web.error_handlers import install_error_handlers
 from hugging_mac_web.index import create_index_router
+from hugging_mac_web.instance_segmentation import (
+    create_blueprint as create_segmentation_blueprint,
+)
 from hugging_mac_web.media import create_media_router
 from hugging_mac_web.middleware import TraceIdMiddleware
 from hugging_mac_web.models import create_models_router
 from hugging_mac_web.object_detection import create_blueprint as create_detection_blueprint
+from hugging_mac_web.pose_estimation import create_blueprint as create_pose_blueprint
 from hugging_mac_web.shared.utils.log_util import configure_logging
 from hugging_mac_web.system import create_system_router
 
@@ -29,7 +33,13 @@ def create_app(
 ) -> FastAPI:
     resolved = settings or WebSettings()
     selected_blueprints = (
-        tuple(blueprints) if blueprints is not None else (create_detection_blueprint(),)
+        tuple(blueprints)
+        if blueprints is not None
+        else (
+            create_detection_blueprint(),
+            create_pose_blueprint(),
+            create_segmentation_blueprint(),
+        )
     )
     registered_blueprints = tuple(
         (blueprint, blueprint.create_router()) for blueprint in selected_blueprints

@@ -37,6 +37,7 @@ uv run --group docs mkdocs serve
 | 决策 | [12-architecture-decisions.md](12-architecture-decisions.md) | 如何记录影响长期架构的决定 |
 | 转换 | [13-model-conversion.md](13-model-conversion.md) | 通用与模型专用转换器如何选择 |
 | YOLOv8 | [14-yolov8-sdk.md](14-yolov8-sdk.md) | 首个可运行模型 SDK 的契约与使用方式 |
+| YOLOv8 Pose / Seg | [19-yolov8-pose-seg-sdk.md](19-yolov8-pose-seg-sdk.md) | 姿态与实例分割模型包、输出与资源边界 |
 | Web | [15-web-application-architecture.md](15-web-application-architecture.md) | Index、模型状态与应用目录 |
 | App 模块 | [16-app-blueprint-specification.md](16-app-blueprint-specification.md) | Blueprint 目录、注册、模型调用和错误边界 |
 | Platform 后端 | [17-platform-backend.md](17-platform-backend.md) | FastAPI、TinyDB、缓存、SSE 与启动方式 |

@@ -1,0 +1,57 @@
+manifest:
+  schema_version: "1"
+  model_id: ultralytics/yolov8-seg
+  revision: v8.2.0
+  display_name: Ultralytics YOLOv8 Seg
+  description: 为每个检测目标输出实例轮廓的 YOLOv8 分割模型。
+  tags: [vision, instance-segmentation, yolo]
+  family: yolov8
+  capabilities: [instance-segmentation]
+  runtimes:
+    - name: pytorch-mps
+      devices: [mps, cpu]
+      dtypes: [float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [torch, ultralytics]
+    - name: coreml
+      devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
+      dtypes: [float16, float32]
+      quantizations: [float16, int8]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [coremltools, ultralytics]
+  variants:
+    - name: n
+      display_name: YOLOv8 Seg Nano
+      description: 轻量实例分割权重。
+      metadata: {source_size_bytes: 7071756}
+      resources:
+        - kind: url_file
+          url: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n-seg.pt
+    - name: s
+      display_name: YOLOv8 Seg Small
+      description: 平衡速度和精度的实例分割权重。
+      metadata: {source_size_bytes: 23914764}
+      resources:
+        - kind: url_file
+          url: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8s-seg.pt
+    - name: m
+      display_name: YOLOv8 Seg Medium
+      description: 更高精度的实例分割权重。
+      metadata: {source_size_bytes: 54921020}
+      resources:
+        - kind: url_file
+          url: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8m-seg.pt
+  default_variant: n
+  license: AGPL-3.0
+  source_url: https://github.com/ultralytics/assets/releases/tag/v8.2.0
+  default_runtime: coreml
+
+artifacts:
+  - {artifact_id: source, variant: n, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-seg/v8.2.0/n/source/yolov8n-seg.pt, kind: file}
+  - {artifact_id: coreml, variant: n, runtime: coreml, format: coreml, path: ultralytics/yolov8-seg/v8.2.0/n/coreml/yolov8n-seg.mlpackage, kind: directory}
+  - {artifact_id: source, variant: s, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-seg/v8.2.0/s/source/yolov8s-seg.pt, kind: file}
+  - {artifact_id: coreml, variant: s, runtime: coreml, format: coreml, path: ultralytics/yolov8-seg/v8.2.0/s/coreml/yolov8s-seg.mlpackage, kind: directory}
+  - {artifact_id: source, variant: m, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-seg/v8.2.0/m/source/yolov8m-seg.pt, kind: file}
+  - {artifact_id: coreml, variant: m, runtime: coreml, format: coreml, path: ultralytics/yolov8-seg/v8.2.0/m/coreml/yolov8m-seg.mlpackage, kind: directory}

@@ -55,6 +55,7 @@ from hugging_mac_sdk.schemas.detection import (
 )
 from hugging_mac_sdk.schemas.health import HealthReport, HealthStatus
 from hugging_mac_sdk.schemas.manifest import ModelManifest, ModelVariantSpec, RuntimeSpec
+from hugging_mac_sdk.schemas.pose import Keypoint, Pose, PoseEstimationResponse, PoseRequest
 from hugging_mac_sdk.schemas.resources import (
     ConversionTargetStatus,
     HuggingFaceSource,
@@ -64,6 +65,12 @@ from hugging_mac_sdk.schemas.resources import (
     RuntimeResourceStatus,
     UrlArchiveSource,
     UrlFileSource,
+)
+from hugging_mac_sdk.schemas.segmentation import (
+    PolygonPoint,
+    Segmentation,
+    SegmentationRequest,
+    SegmentationResponse,
 )
 
 __all__ = [
@@ -92,6 +99,7 @@ __all__ = [
     "InstanceManager",
     "InstanceSnapshot",
     "InsufficientResourceError",
+    "Keypoint",
     "LifecycleMetrics",
     "LifecycleOperation",
     "ManifestError",
@@ -113,6 +121,10 @@ __all__ = [
     "ModelState",
     "ModelSummary",
     "ModelVariantSpec",
+    "PolygonPoint",
+    "Pose",
+    "PoseEstimationResponse",
+    "PoseRequest",
     "RegistrationConflictError",
     "ResolvedResource",
     "ResourceDownloader",
@@ -127,6 +139,9 @@ __all__ = [
     "RuntimeSession",
     "RuntimeSpec",
     "RuntimeSummary",
+    "Segmentation",
+    "SegmentationRequest",
+    "SegmentationResponse",
     "UnloadResult",
     "UnsupportedCapabilityError",
     "UnsupportedRuntimeError",
