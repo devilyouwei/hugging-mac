@@ -4,6 +4,7 @@ import io
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from fastapi.testclient import TestClient
 from hugging_mac_sdk import (
     ArtifactFormat,
@@ -31,10 +32,17 @@ from hugging_mac_sdk.schemas.segmentation import (
     SegmentationResponse,
 )
 from hugging_mac_web.config import WebSettings
-from hugging_mac_web.live_transcription.config import LiveTranscriptionSettings
+from hugging_mac_web.live_transcription.config import (
+    AUDIO8_PROFILE,
+    SENSEVOICE_PROFILE,
+)
 from hugging_mac_web.live_transcription.manifest import LIVE_TRANSCRIPTION_MANIFEST
 from hugging_mac_web.live_transcription.schemas import TranscriptionResultView
 from hugging_mac_web.main import create_app
+from hugging_mac_web.text_to_speech.audio import float32le_to_wav
+from hugging_mac_web.text_to_speech.config import KOKORO_82M_PROFILE
+from hugging_mac_web.text_to_speech.schemas import TtsArtifactView, TtsResourceView
+from hugging_mac_web.text_to_speech.service import TextToSpeechService
 from PIL import Image
 
 YOLOV8_N_SHA256 = YOLOV8_SHA256["n"]
@@ -74,6 +82,8 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         models = client.get("/api/v1/catalog/models")
         apps = client.get("/api/v1/catalog/apps")
         games = client.get("/api/v1/catalog/games")
+        asr_models = client.get("/api/v1/apps/live-transcription/models")
+        tts_models = client.get("/api/v1/apps/text-to-speech/models")
         resources = client.get("/api/v1/apps/object-detection/resources")
         openapi = client.get("/openapi.json")
         preflight = client.options(
@@ -100,8 +110,18 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         "live-transcription",
         "object-detection",
         "pose-estimation",
+        "text-to-speech",
     }
     assert all(item["status"] == "available" for item in app_summaries.values())
+    assert {item["model_id"] for item in asr_models.json()["data"]} == {
+        AUDIO8_PROFILE.model_id,
+        SENSEVOICE_PROFILE.model_id,
+    }
+    assert all(item["ready_instance_id"] is None for item in asr_models.json()["data"])
+    assert {item["model_id"] for item in tts_models.json()["data"]} == {
+        "audio8/audio8-tts-preview-0.6b",
+        "hexgrad/kokoro-82m",
+    }
     assert games.status_code == 200
     game_summaries = {item["manifest"]["app_id"]: item for item in games.json()["data"]}
     assert set(game_summaries) == {"yolo-pose-follow"}
@@ -112,11 +132,17 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert "/api/v1/apps/pose-estimation/estimate" in openapi.json()["paths"]
     assert "/api/v1/apps/instance-segmentation/segment" in openapi.json()["paths"]
     assert "/api/v1/apps/live-transcription/transcribe" in openapi.json()["paths"]
+    assert "/api/v1/apps/live-transcription/models/load" in openapi.json()["paths"]
+    assert "/api/v1/apps/text-to-speech/synthesize" in openapi.json()["paths"]
+    assert "/api/v1/apps/text-to-speech/models/load" in openapi.json()["paths"]
     assert "/api/v1/games/yolo-pose-follow/templates" in openapi.json()["paths"]
     assert "/api/v1/games/yolo-pose-follow/match" in openapi.json()["paths"]
     model = next(item for item in models.json()["data"] if item["model_id"] == "ultralytics/yolov8")
     assert {item["model_id"] for item in models.json()["data"]} >= {
         "audio8/audio8-asr-0.1b",
+        "audio8/audio8-tts-preview-0.6b",
+        "hexgrad/kokoro-82m",
+        "funaudiollm/sensevoice-small",
         "ultralytics/yolov8",
         "ultralytics/yolov8-pose",
         "ultralytics/yolov8-seg",
@@ -169,7 +195,7 @@ def test_live_transcription_accepts_vad_wave_segments(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
-    async def fake_transcribe(*_: object) -> TranscriptionResultView:
+    async def fake_transcribe(*_: object, **__: object) -> TranscriptionResultView:
         return TranscriptionResultView(
             text="你好 Hugging Mac",
             model_id="audio8/audio8-asr-0.1b",
@@ -192,6 +218,10 @@ def test_live_transcription_accepts_vad_wave_segments(
         response = client.post(
             "/api/v1/apps/live-transcription/transcribe",
             files={"file": ("utterance.wav", b"RIFF-test-wave", "audio/wav")},
+            data={
+                "model_id": AUDIO8_PROFILE.model_id,
+                "instance_id": "test-instance",
+            },
         )
 
     assert response.status_code == 200
@@ -199,12 +229,103 @@ def test_live_transcription_accepts_vad_wave_segments(
     assert response.json()["data"]["duration_seconds"] == 1.25
 
 
-def test_live_transcription_defaults_to_coreml() -> None:
-    settings = LiveTranscriptionSettings(_env_file=None)
-    requirement = LIVE_TRANSCRIPTION_MANIFEST.required_models[0]
+def test_live_transcription_declares_both_asr_models() -> None:
+    requirements = {
+        requirement.model_id: requirement
+        for requirement in LIVE_TRANSCRIPTION_MANIFEST.required_models
+    }
 
-    assert settings.runtime == "coreml"
-    assert requirement.preferred_runtime == "coreml"
+    assert AUDIO8_PROFILE.runtime == "coreml"
+    assert SENSEVOICE_PROFILE.runtime == "pytorch-mps"
+    assert requirements[AUDIO8_PROFILE.model_id].preferred_runtime == "coreml"
+    assert requirements[SENSEVOICE_PROFILE.model_id].preferred_runtime == "pytorch-mps"
+
+
+def test_text_to_speech_returns_playable_wave(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_synthesize(*_: object, **__: object) -> tuple[bytes, dict[str, str]]:
+        return (
+            float32le_to_wav(np.zeros(2400, dtype=np.float32).tobytes(), 24000),
+            {
+                "x-model-id": "hexgrad/kokoro-82m",
+                "x-runtime": "coreml",
+                "x-device": "cpu-and-neural-engine",
+                "x-duration-seconds": "0.1",
+                "x-inference-ms": "12.0",
+            },
+        )
+
+    monkeypatch.setattr(
+        "hugging_mac_web.text_to_speech.service.TextToSpeechService.synthesize",
+        fake_synthesize,
+    )
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/apps/text-to-speech/synthesize",
+            json={
+                "model_id": "hexgrad/kokoro-82m",
+                "instance_id": "test-instance",
+                "text": "Hello from Kokoro.",
+                "voice": "af_heart",
+                "language": "a",
+                "speed": 1.0,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "audio/wav"
+    assert response.headers["x-runtime"] == "coreml"
+    assert response.content.startswith(b"RIFF")
+
+
+def test_kokoro_tts_uses_torch_until_coreml_is_available() -> None:
+    source_only = TtsResourceView(
+        model_id=KOKORO_82M_PROFILE.model_id,
+        revision="test",
+        variant="v1.0",
+        artifacts=(
+            TtsArtifactView(
+                artifact_id="source",
+                format="pytorch",
+                runtime="pytorch-mps",
+                available=True,
+                size_bytes=1,
+            ),
+            TtsArtifactView(
+                artifact_id="coreml",
+                format="coreml",
+                runtime="coreml",
+                available=False,
+                size_bytes=None,
+            ),
+        ),
+    )
+    converted = source_only.model_copy(
+        update={
+            "artifacts": (
+                source_only.artifacts[0],
+                source_only.artifacts[1].model_copy(update={"available": True}),
+            )
+        }
+    )
+
+    torch_profile = TextToSpeechService._effective_profile(
+        KOKORO_82M_PROFILE,
+        source_only,
+    )
+    coreml_profile = TextToSpeechService._effective_profile(
+        KOKORO_82M_PROFILE,
+        converted,
+    )
+
+    assert torch_profile.runtime == "pytorch-mps"
+    assert torch_profile.required_artifact_id == "source"
+    assert coreml_profile.runtime == "coreml"
+    assert coreml_profile.required_artifact_id == "coreml"
 
 
 def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path) -> None:

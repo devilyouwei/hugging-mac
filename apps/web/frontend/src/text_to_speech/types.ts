@@ -1,0 +1,59 @@
+export interface TtsResource {
+  model_id: string
+  revision: string
+  variant: string
+  artifacts: Array<{
+    artifact_id: string
+    format: string
+    runtime: string | null
+    available: boolean
+    size_bytes: number | null
+  }>
+}
+
+export interface TtsModel {
+  model_id: string
+  display_name: string
+  short_name: string
+  description: string
+  variant: string
+  runtime: string
+  required_artifact_id: string
+  supports_coreml_conversion: boolean
+  voices: string[]
+  languages: string[]
+  resource: TtsResource
+  ready_instance_id: string | null
+}
+
+export interface LoadedTtsModel {
+  instance_id: string
+  model_id: string
+  variant: string
+  runtime: string
+  device: string
+  state: string
+}
+
+export interface SynthesisOptions {
+  model_id: string
+  instance_id: string
+  text: string
+  voice: string | null
+  language: string | null
+  speed: number
+}
+
+export interface GeneratedSpeech {
+  id: number
+  modelId: string
+  modelName: string
+  text: string
+  voice: string | null
+  runtime: string
+  device: string
+  durationSeconds: number
+  inferenceMs: number
+  url: string
+  createdAt: Date
+}

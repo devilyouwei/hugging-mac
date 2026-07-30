@@ -13,6 +13,7 @@ const icon = computed(() => {
     "instance-segmentation": "🎨",
     "yolo-pose-follow": "🕺",
     "live-transcription": "🎙️",
+    "text-to-speech": "🔊",
   }
   return icons[props.app.manifest.app_id] ?? "🧩"
 })

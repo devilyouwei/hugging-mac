@@ -49,6 +49,11 @@ const router = createRouter({
       component: () => import("./live_transcription/index.vue"),
     },
     {
+      path: "/apps/text-to-speech",
+      name: "text-to-speech",
+      component: () => import("./text_to_speech/index.vue"),
+    },
+    {
       path: "/:pathMatch(.*)*",
       redirect: "/",
     },

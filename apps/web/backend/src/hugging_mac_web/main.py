@@ -27,6 +27,9 @@ from hugging_mac_web.object_detection import create_blueprint as create_detectio
 from hugging_mac_web.pose_estimation import create_blueprint as create_pose_blueprint
 from hugging_mac_web.shared.utils.log_util import configure_logging
 from hugging_mac_web.system import create_system_router
+from hugging_mac_web.text_to_speech import (
+    create_blueprint as create_text_to_speech_blueprint,
+)
 from hugging_mac_web.yolo_pose_follow import create_blueprint as create_pose_follow_blueprint
 
 
@@ -44,6 +47,7 @@ def create_app(
             create_pose_blueprint(),
             create_segmentation_blueprint(),
             create_live_transcription_blueprint(),
+            create_text_to_speech_blueprint(),
             create_pose_follow_blueprint(),
         )
     )

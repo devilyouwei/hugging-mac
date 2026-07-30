@@ -4,11 +4,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
 import {
   convertAsrCoreMl,
   downloadAsrWeights,
-  fetchAsrResourceStatus,
+  fetchAsrModels,
+  loadAsrModel,
   transcribeUtterance,
 } from "./api"
 import type {
+  AsrModel,
   AsrResourceStatus,
+  LoadedAsrModel,
   TranscriptSegment,
 } from "./types"
 import { encodeWave } from "./wav"
@@ -18,8 +21,11 @@ const MIN_UTTERANCE_SECONDS = 0.35
 const MAX_UTTERANCE_SECONDS = 25
 const PRE_ROLL_SECONDS = 0.18
 
-const resource = ref<AsrResourceStatus | null>(null)
+const models = ref<AsrModel[]>([])
+const selectedModelId = ref("")
+const loadedModel = ref<LoadedAsrModel | null>(null)
 const resourceBusy = ref(false)
+const loadBusy = ref(false)
 const listening = ref(false)
 const speaking = ref(false)
 const inputLevel = ref(0)
@@ -46,6 +52,10 @@ let segmentSequence = 0
 let recognitionQueue = Promise.resolve()
 const requests = new Set<AbortController>()
 
+const selectedModel = computed(() =>
+  models.value.find((model) => model.model_id === selectedModelId.value) ?? null,
+)
+const resource = computed(() => selectedModel.value?.resource ?? null)
 const sourceArtifact = computed(() =>
   resource.value?.artifacts.find((artifact) => artifact.artifact_id === "source"),
 )
@@ -54,6 +64,20 @@ const coremlArtifact = computed(() =>
 )
 const sourceReady = computed(() => Boolean(sourceArtifact.value?.available))
 const coremlReady = computed(() => Boolean(coremlArtifact.value?.available))
+const requiredArtifactReady = computed(() =>
+  Boolean(
+    resource.value?.artifacts.find(
+      (artifact) => artifact.artifact_id === selectedModel.value?.required_artifact_id,
+    )?.available,
+  ),
+)
+const modelReady = computed(() =>
+  Boolean(
+    loadedModel.value
+      && loadedModel.value.model_id === selectedModelId.value
+      && loadedModel.value.state === "ready",
+  ),
+)
 const threshold = computed(() => 0.036 - sensitivity.value * 0.026)
 const transcriptText = computed(() =>
   segments.value
@@ -67,31 +91,34 @@ function formatBytes(value: number | null | undefined): string {
   return `${(value / 1024 ** 2).toFixed(0)} MB`
 }
 
-async function loadResource() {
+async function loadModels() {
   try {
-    resource.value = await fetchAsrResourceStatus()
+    models.value = await fetchAsrModels()
+    selectedModelId.value ||= models.value[0]?.model_id ?? ""
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "模型状态读取失败"
+    error.value = caught instanceof Error ? caught.message : "ASR 模型列表读取失败"
   }
 }
 
 async function downloadModel() {
+  if (!selectedModel.value) return
   resourceBusy.value = true
   error.value = ""
   try {
-    resource.value = await downloadAsrWeights()
+    selectedModel.value.resource = await downloadAsrWeights(selectedModel.value.model_id)
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "Audio8-ASR 下载失败"
+    error.value = caught instanceof Error ? caught.message : "ASR 模型下载失败"
   } finally {
     resourceBusy.value = false
   }
 }
 
 async function convertModel() {
+  if (!selectedModel.value) return
   resourceBusy.value = true
   error.value = ""
   try {
-    resource.value = await convertAsrCoreMl()
+    selectedModel.value.resource = await convertAsrCoreMl(selectedModel.value.model_id)
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "Audio8-ASR Core ML 转换失败"
   } finally {
@@ -99,12 +126,32 @@ async function convertModel() {
   }
 }
 
+function selectModel(modelId: string) {
+  if (listening.value || pendingCount.value) return
+  stopAudioGraph()
+  selectedModelId.value = modelId
+  loadedModel.value = null
+  error.value = ""
+}
+
+async function prepareModel() {
+  if (!selectedModel.value || !requiredArtifactReady.value) return
+  loadBusy.value = true
+  error.value = ""
+  try {
+    loadedModel.value = await loadAsrModel(selectedModel.value.model_id)
+  } catch (caught) {
+    loadedModel.value = null
+    error.value = caught instanceof Error ? caught.message : "ASR 模型加载失败"
+  } finally {
+    loadBusy.value = false
+  }
+}
+
 async function startListening() {
   if (listening.value) return
-  if (!coremlReady.value) {
-    error.value = sourceReady.value
-      ? "请先将 Audio8-ASR 转换为 Core ML"
-      : "请先下载 Audio8-ASR 模型权重并转换为 Core ML"
+  if (!modelReady.value) {
+    error.value = "请先加载当前选择的 ASR 模型"
     return
   }
   error.value = ""
@@ -191,6 +238,9 @@ function finishUtterance(sampleRate: number) {
 }
 
 function enqueueRecognition(audio: Blob, durationSeconds: number) {
+  const model = selectedModel.value
+  const instance = loadedModel.value
+  if (!model || !instance) return
   const segment: TranscriptSegment = {
     id: ++segmentSequence,
     createdAt: new Date(),
@@ -198,6 +248,10 @@ function enqueueRecognition(audio: Blob, durationSeconds: number) {
     status: "recognizing",
     text: "",
     inferenceMs: null,
+    modelName: model.short_name,
+    languages: [],
+    emotion: null,
+    events: [],
   }
   segments.value.push(segment)
   pendingCount.value += 1
@@ -206,11 +260,19 @@ function enqueueRecognition(audio: Blob, durationSeconds: number) {
     const controller = new AbortController()
     requests.add(controller)
     try {
-      const response = await transcribeUtterance(audio, controller.signal)
+      const response = await transcribeUtterance(
+        audio,
+        model.model_id,
+        instance.instance_id,
+        controller.signal,
+      )
       const liveSegment = segments.value.find((item) => item.id === segment.id)
       if (!liveSegment) return
       liveSegment.text = response.text || "（未识别到清晰语音）"
       liveSegment.inferenceMs = response.inference_ms
+      liveSegment.languages = response.languages
+      liveSegment.emotion = response.emotion
+      liveSegment.events = response.events
       liveSegment.status = "complete"
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return
@@ -266,7 +328,7 @@ function clearTranscript() {
   segments.value = []
 }
 
-onMounted(loadResource)
+onMounted(loadModels)
 onBeforeUnmount(() => {
   stopAudioGraph()
   requests.forEach((request) => request.abort())
@@ -278,28 +340,51 @@ onBeforeUnmount(() => {
     <header class="transcription-hero">
       <div>
         <RouterLink class="back-link" to="/apps">← Neural Apps</RouterLink>
-        <p class="kicker">AUDIO8-ASR · VAD-DRIVEN LIVE TRANSCRIPTION</p>
+        <p class="kicker">MULTI-MODEL ASR · VAD-DRIVEN LIVE TRANSCRIPTION</p>
         <h1><span aria-hidden="true">🎙️</span> Voice,<br /><em>made visible.</em></h1>
-        <p>声音留在本机。VAD 自动感知说话与停顿，每次停顿都会形成一句新的识别文本。</p>
+        <p>选择模型、在本机加载，然后开始聆听。VAD 自动感知说话与停顿，每次停顿都会形成一句新的识别文本。</p>
       </div>
       <aside class="asr-model-card">
-        <div class="asr-model-card__top"><span>LOCAL MODEL</span><i :class="{ ready: coremlReady }"></i></div>
-        <strong>Audio8-ASR</strong>
-        <span>0.1B · CORE ML / ANE + MPS</span>
+        <div class="asr-model-card__top"><span>SELECTED MODEL</span><i :class="{ ready: modelReady }"></i></div>
+        <strong>{{ selectedModel?.short_name ?? "Loading…" }}</strong>
+        <span>{{ selectedModel?.variant.toUpperCase() }} · {{ selectedModel?.runtime.toUpperCase() }}</span>
         <div class="model-download">
           <div>
-            <b>{{ coremlReady ? "READY" : sourceReady ? "CORE ML REQUIRED" : "WEIGHTS REQUIRED" }}</b>
-            <small>{{ coremlReady ? formatBytes(coremlArtifact?.size_bytes) : formatBytes(sourceArtifact?.size_bytes) }}</small>
+            <b>{{ modelReady ? "LOADED" : requiredArtifactReady ? "READY TO LOAD" : sourceReady && selectedModel?.supports_coreml_conversion ? "CORE ML REQUIRED" : "WEIGHTS REQUIRED" }}</b>
+            <small v-if="modelReady">{{ loadedModel?.device }} · instance ready</small>
+            <small v-else>{{ requiredArtifactReady ? "assets prepared" : formatBytes(sourceArtifact?.size_bytes) }}</small>
           </div>
           <button v-if="!sourceReady" type="button" :disabled="resourceBusy || !resource" @click="downloadModel">
             {{ resourceBusy ? "DOWNLOADING…" : "DOWNLOAD" }}
           </button>
-          <button v-else-if="!coremlReady" type="button" :disabled="resourceBusy" @click="convertModel">
+          <button v-else-if="selectedModel?.supports_coreml_conversion && !coremlReady" type="button" :disabled="resourceBusy" @click="convertModel">
             {{ resourceBusy ? "CONVERTING…" : "CONVERT" }}
+          </button>
+          <button v-else-if="!modelReady" type="button" :disabled="loadBusy || !requiredArtifactReady" @click="prepareModel">
+            {{ loadBusy ? "LOADING…" : "LOAD MODEL" }}
           </button>
         </div>
       </aside>
     </header>
+
+    <section class="asr-model-picker" aria-label="选择语音识别模型">
+      <button
+        v-for="model in models"
+        :key="model.model_id"
+        type="button"
+        :class="{ selected: selectedModelId === model.model_id }"
+        :disabled="listening || pendingCount > 0 || loadBusy"
+        @click="selectModel(model.model_id)"
+      >
+        <span>{{ model.rich_understanding ? "🧠" : "⚡" }}</span>
+        <div>
+          <small>{{ model.runtime }} · {{ model.variant }}</small>
+          <strong>{{ model.display_name }}</strong>
+          <p>{{ model.description }}</p>
+        </div>
+        <i>{{ selectedModelId === model.model_id ? "SELECTED" : "SELECT →" }}</i>
+      </button>
+    </section>
 
     <div v-if="error" class="error-banner" role="alert">{{ error }}</div>
 
@@ -331,7 +416,7 @@ onBeforeUnmount(() => {
           class="record-button"
           :class="{ recording: listening }"
           type="button"
-          :disabled="!coremlReady"
+          :disabled="!modelReady"
           @click="listening ? stopListening() : startListening()"
         >
           <i></i>{{ listening ? "STOP LISTENING" : "START LISTENING" }}
@@ -362,10 +447,17 @@ onBeforeUnmount(() => {
               <div class="segment-meta">
                 <span>{{ String(segment.id).padStart(2, "0") }}</span>
                 <time>{{ segment.createdAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) }}</time>
-                <small>{{ segment.durationSeconds.toFixed(1) }}s</small>
+                <small>{{ segment.durationSeconds.toFixed(1) }}s · {{ segment.modelName }}</small>
               </div>
-              <p v-if="segment.status === 'recognizing'"><i></i><i></i><i></i></p>
-              <p v-else>{{ segment.text }}</p>
+              <div class="segment-content">
+                <p v-if="segment.status === 'recognizing'"><i></i><i></i><i></i></p>
+                <p v-else>{{ segment.text }}</p>
+                <div v-if="segment.languages.length || segment.emotion || segment.events.length" class="speech-tags">
+                  <span v-for="language in segment.languages" :key="language">🌐 {{ language }}</span>
+                  <span v-if="segment.emotion">🙂 {{ segment.emotion }}</span>
+                  <span v-for="event in segment.events" :key="event">🔊 {{ event }}</span>
+                </div>
+              </div>
               <small v-if="segment.inferenceMs != null">{{ segment.inferenceMs.toFixed(0) }}ms inference</small>
             </li>
           </ol>
@@ -394,6 +486,17 @@ onBeforeUnmount(() => {
 .model-download b,.model-download small,.model-download button { font:.54rem var(--font-mono); }
 .model-download small { color:#888; margin-top:.25rem; }
 .model-download button { background:var(--signal); border:0; cursor:pointer; font-weight:700; padding:.65rem; }
+.asr-model-picker { display:grid; gap:.8rem; grid-template-columns:repeat(2,minmax(0,1fr)); margin-bottom:1.2rem; }
+.asr-model-picker > button { align-items:center; background:transparent; border:1px solid var(--line); color:var(--ink); cursor:pointer; display:grid; gap:1rem; grid-template-columns:auto 1fr auto; padding:1rem; text-align:left; transition:.2s ease; }
+.asr-model-picker > button:hover { border-color:var(--ink); transform:translateY(-2px); }
+.asr-model-picker > button.selected { background:#c8ff4618; border-color:var(--ink); box-shadow:inset 0 -3px var(--signal); }
+.asr-model-picker > button:disabled { cursor:not-allowed; opacity:.55; transform:none; }
+.asr-model-picker > button > span { font-size:1.8rem; }
+.asr-model-picker > button div { display:flex; flex-direction:column; gap:.22rem; }
+.asr-model-picker small,.asr-model-picker i { color:var(--muted); font:.5rem var(--font-mono); text-transform:uppercase; }
+.asr-model-picker strong { font-size:1rem; }
+.asr-model-picker p { color:var(--muted); font-size:.67rem; line-height:1.4; margin:0; }
+.asr-model-picker i { color:var(--ink); font-style:normal; }
 .transcription-studio { border:1px solid var(--ink); display:grid; grid-template-columns:minmax(17rem,.7fr) minmax(0,1.3fr); min-height:38rem; }
 .recorder-panel { background:#141614; color:var(--paper); display:flex; flex-direction:column; padding:2rem; }
 .recorder-state { align-items:center; display:flex; flex-direction:column; text-align:center; }
@@ -432,7 +535,9 @@ onBeforeUnmount(() => {
 .segment-meta { display:grid; font: .52rem var(--font-mono); gap:.3rem; grid-template-columns:1.5rem 1fr; }
 .segment-meta > span { align-items:center; background:var(--ink); color:var(--paper); display:flex; grid-row:span 2; justify-content:center; }
 .segment-meta small,.transcript-list li > small { color:var(--muted); }
-.transcript-list li > p { font-size:1.15rem; line-height:1.55; margin:0; }
+.segment-content > p { font-size:1.15rem; line-height:1.55; margin:0; }
+.speech-tags { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.65rem; }
+.speech-tags span { background:#e4e8dc; font:.52rem var(--font-mono); padding:.3rem .45rem; }
 .segment--recognizing p i { animation:typing 1s infinite; background:var(--ink); border-radius:50%; display:inline-block; height:.4rem; margin:.25rem; width:.4rem; }
 .segment--recognizing p i:nth-child(2) { animation-delay:.15s; }.segment--recognizing p i:nth-child(3) { animation-delay:.3s; }
 .segment--error p { color:#cf3f27; }
@@ -443,6 +548,9 @@ onBeforeUnmount(() => {
   .transcription-hero { align-items:stretch; gap:1.5rem; grid-template-columns:1fr; }
   .transcription-hero h1 { font-size:4rem; }
   .asr-model-card { padding:1rem; }
+  .asr-model-picker { grid-template-columns:1fr; }
+  .asr-model-picker > button { grid-template-columns:auto 1fr; }
+  .asr-model-picker i { display:none; }
   .transcription-studio { grid-template-columns:1fr; }
   .recorder-panel { min-height:34rem; padding:1.3rem; }
   .transcript-scroll { max-height:none; min-height:30rem; }
