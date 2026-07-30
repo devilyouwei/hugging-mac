@@ -50,6 +50,19 @@ def create_router(settings: LiveTranscriptionSettings) -> APIRouter:
         )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
+    @router.post(
+        "/resources/coreml/convert",
+        response_model=ApiResponse[ResourceStatusView],
+    )
+    async def convert_coreml(
+        context: ContextDependency,
+        overwrite: bool = False,
+    ) -> ApiResponse[ResourceStatusView]:
+        data = await LiveTranscriptionService(context, settings).convert_coreml(
+            overwrite=overwrite
+        )
+        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
+
     @router.post("/transcribe", response_model=ApiResponse[TranscriptionResultView])
     async def transcribe(
         context: ContextDependency,

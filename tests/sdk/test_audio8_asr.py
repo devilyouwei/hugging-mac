@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from hugging_mac_sdk.capabilities import SpeechTranscription
+from hugging_mac_sdk.converters.registry import ConverterRegistry
 from hugging_mac_sdk.core.instance import ModelState
 from hugging_mac_sdk.core.registry import ModelRegistry
 from hugging_mac_sdk.errors import UnsupportedRuntimeError
@@ -64,20 +65,37 @@ def test_audio8_manifest_downloads_only_weights_and_json() -> None:
     assert AUDIO8_ASR_MANIFEST.default_variant == "base"
     assert AUDIO8_ASR_MANIFEST.capabilities == {"speech-transcription"}
     assert AUDIO8_ASR_MANIFEST.license == "CC-BY-NC-4.0"
+    assert {runtime.name for runtime in AUDIO8_ASR_MANIFEST.runtimes} == {
+        "pytorch-mps",
+        "coreml",
+    }
     source = AUDIO8_ASR_MANIFEST.get_variant().resources[0]
     assert source.allow_patterns == ("model.safetensors", "*.json")  # type: ignore[union-attr]
 
 
 def test_registered_factory_exposes_speech_transcription() -> None:
     registry = ModelRegistry()
-    definition = register_audio8_asr(registry)
+    converters = ConverterRegistry()
+    definition = register_audio8_asr(registry, converters)
 
-    instance = definition.create(runtime="pytorch-mps", variant="base")
+    pytorch = definition.create(runtime="pytorch-mps", variant="base")
+    coreml = definition.create(
+        runtime="coreml",
+        variant="base",
+        options={"device": "cpu-and-neural-engine"},
+    )
 
-    assert isinstance(instance, Audio8AsrInstance)
-    assert instance.supports(SpeechTranscription)  # type: ignore[type-abstract]
-    assert instance.info().variant == "base"
-    assert instance.info().runtime == "pytorch-mps"
+    assert isinstance(pytorch, Audio8AsrInstance)
+    assert isinstance(coreml, Audio8AsrInstance)
+    assert pytorch.supports(SpeechTranscription)  # type: ignore[type-abstract]
+    assert coreml.supports(SpeechTranscription)  # type: ignore[type-abstract]
+    assert pytorch.info().variant == "base"
+    assert pytorch.info().runtime == "pytorch-mps"
+    assert coreml.info().runtime == "coreml"
+    assert coreml.info().device == "cpu-and-neural-engine"
+    assert converters.get("audio8.audio8-asr-0.1b").converter_id == (
+        "audio8.audio8-asr-0.1b"
+    )
 
 
 async def test_audio8_instance_orchestrates_transcription(
@@ -120,7 +138,7 @@ async def test_audio8_instance_orchestrates_transcription(
     assert instance.state is ModelState.UNLOADED
 
 
-async def test_audio8_resource_provider_rejects_conversion() -> None:
+async def test_audio8_resource_provider_rejects_unsupported_conversion() -> None:
     source = AUDIO8_ASR_MANIFEST.get_variant().resources[0]
     provider = Audio8AsrResourceProvider(source)  # type: ignore[arg-type]
 

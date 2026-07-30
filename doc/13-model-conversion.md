@@ -65,6 +65,26 @@ pack 的 `converter.py` 绑定自己 `utils/` 内的 `checkpoint.py`，并拥有
 `torch.jit.trace`、`coremltools.convert` 和 `torch.onnx.export`，不安装、不导入也不执行
 Ultralytics Python 包。三个 YOLO resource provider 均把 Core ML 与 ONNX 暴露为受管转换目标。
 
+## Audio8-ASR Core ML 混合转换
+
+| 字段 | 值 |
+|---|---|
+| Model ID | `audio8/audio8-asr-0.1b` |
+| Variant | `base` |
+| 源格式 | safetensors 目录 |
+| 目标格式 | Core ML 混合 artifact |
+| 专用 converter | `audio8.audio8-asr-0.1b` |
+| Core ML 部分 | audio encoder + MLP tower |
+| Functions | `tower_5s`、`tower_10s`、`tower_30s` |
+| 音频塔权重 | 默认 INT8 |
+| Decoder | PyTorch MPS + KV cache |
+| 最低系统目标 | macOS 15 |
+
+该模型必须使用专用 converter：它不仅转换图，还拆分 checkpoint、合并共享权重的 multifunction
+ML Program、复制 tokenizer/processor 配置，并保存 projector 与 decoder 权重。runtime 根据输入长度
+选择最小固定 bucket。Qwen2 decoder 当前不宣称运行在 Core ML/ANE 上；未来的 stateful Core ML decoder
+应作为新的明确实现接入，而不是用无缓存的全序列重算替换现有生成逻辑。
+
 ## 安全与复现
 
 - 转换输入必须来自已经解析和校验的 `ResolvedResource`；

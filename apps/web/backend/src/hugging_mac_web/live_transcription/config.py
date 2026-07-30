@@ -13,6 +13,6 @@ class LiveTranscriptionSettings(BaseSettings):
 
     model_id: str = "audio8/audio8-asr-0.1b"
     model_variant: str = "base"
-    runtime: str = "pytorch-mps"
+    runtime: str = "coreml"
     prompt: str = "Transcribe the speech accurately in its original language."
     max_new_tokens: int = Field(default=128, ge=1, le=512)

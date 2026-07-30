@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
 
 import {
+  convertAsrCoreMl,
   downloadAsrWeights,
   fetchAsrResourceStatus,
   transcribeUtterance,
@@ -48,7 +49,11 @@ const requests = new Set<AbortController>()
 const sourceArtifact = computed(() =>
   resource.value?.artifacts.find((artifact) => artifact.artifact_id === "source"),
 )
+const coremlArtifact = computed(() =>
+  resource.value?.artifacts.find((artifact) => artifact.artifact_id === "coreml"),
+)
 const sourceReady = computed(() => Boolean(sourceArtifact.value?.available))
+const coremlReady = computed(() => Boolean(coremlArtifact.value?.available))
 const threshold = computed(() => 0.036 - sensitivity.value * 0.026)
 const transcriptText = computed(() =>
   segments.value
@@ -82,10 +87,24 @@ async function downloadModel() {
   }
 }
 
+async function convertModel() {
+  resourceBusy.value = true
+  error.value = ""
+  try {
+    resource.value = await convertAsrCoreMl()
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "Audio8-ASR Core ML 转换失败"
+  } finally {
+    resourceBusy.value = false
+  }
+}
+
 async function startListening() {
   if (listening.value) return
-  if (!sourceReady.value) {
-    error.value = "请先下载 Audio8-ASR 模型权重"
+  if (!coremlReady.value) {
+    error.value = sourceReady.value
+      ? "请先将 Audio8-ASR 转换为 Core ML"
+      : "请先下载 Audio8-ASR 模型权重并转换为 Core ML"
     return
   }
   error.value = ""
@@ -264,13 +283,19 @@ onBeforeUnmount(() => {
         <p>声音留在本机。VAD 自动感知说话与停顿，每次停顿都会形成一句新的识别文本。</p>
       </div>
       <aside class="asr-model-card">
-        <div class="asr-model-card__top"><span>LOCAL MODEL</span><i :class="{ ready: sourceReady }"></i></div>
+        <div class="asr-model-card__top"><span>LOCAL MODEL</span><i :class="{ ready: coremlReady }"></i></div>
         <strong>Audio8-ASR</strong>
-        <span>0.1B · PYTORCH MPS</span>
+        <span>0.1B · CORE ML / ANE + MPS</span>
         <div class="model-download">
-          <div><b>{{ sourceReady ? "READY" : "WEIGHTS REQUIRED" }}</b><small>{{ formatBytes(sourceArtifact?.size_bytes) }}</small></div>
+          <div>
+            <b>{{ coremlReady ? "READY" : sourceReady ? "CORE ML REQUIRED" : "WEIGHTS REQUIRED" }}</b>
+            <small>{{ coremlReady ? formatBytes(coremlArtifact?.size_bytes) : formatBytes(sourceArtifact?.size_bytes) }}</small>
+          </div>
           <button v-if="!sourceReady" type="button" :disabled="resourceBusy || !resource" @click="downloadModel">
             {{ resourceBusy ? "DOWNLOADING…" : "DOWNLOAD" }}
+          </button>
+          <button v-else-if="!coremlReady" type="button" :disabled="resourceBusy" @click="convertModel">
+            {{ resourceBusy ? "CONVERTING…" : "CONVERT" }}
           </button>
         </div>
       </aside>
@@ -306,7 +331,7 @@ onBeforeUnmount(() => {
           class="record-button"
           :class="{ recording: listening }"
           type="button"
-          :disabled="!sourceReady"
+          :disabled="!coremlReady"
           @click="listening ? stopListening() : startListening()"
         >
           <i></i>{{ listening ? "STOP LISTENING" : "START LISTENING" }}

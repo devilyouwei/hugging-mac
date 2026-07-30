@@ -207,3 +207,75 @@ def load_audio8_asr_model(
         )
     model.to(device=device, dtype=dtype)
     return model.eval()
+
+
+def load_audio8_language_model(
+    artifact: Path,
+    *,
+    device: str,
+    dtype: torch.dtype,
+) -> Qwen2ForCausalLM:
+    config = json.loads((artifact / "config.json").read_text(encoding="utf-8"))
+    config.pop("model_type", None)
+    language_model = Qwen2ForCausalLM(  # type: ignore[no-untyped-call]
+        Qwen2Config(**config)
+    )
+    missing, unexpected = load_model(
+        language_model,
+        artifact / "language_model.safetensors",
+        strict=False,
+        device="cpu",
+    )
+    actual_missing = set(missing) - {"lm_head.weight"}
+    if actual_missing or unexpected:
+        raise RuntimeError(
+            "Audio8-ASR decoder weights do not match Qwen2: "
+            f"missing={sorted(actual_missing)}, unexpected={sorted(unexpected)}"
+        )
+    language_model.to(device=device, dtype=dtype)  # type: ignore[call-arg]
+    language_model.eval()  # type: ignore[no-untyped-call]
+    return language_model
+
+
+def greedy_decode_embeddings(
+    language_model: Qwen2ForCausalLM,
+    *,
+    inputs_embeds: torch.Tensor,
+    attention_mask: torch.Tensor,
+    max_new_tokens: int,
+    eos_token_id: int,
+) -> torch.Tensor:
+    output = language_model(
+        inputs_embeds=inputs_embeds,
+        attention_mask=attention_mask,
+        use_cache=True,
+        return_dict=True,
+    )
+    generated: list[torch.Tensor] = []
+    current_mask = attention_mask
+    for _ in range(max_new_tokens):
+        token = output.logits[:, -1, :].argmax(dim=-1)
+        generated.append(token)
+        if bool(token.eq(eos_token_id).all()):
+            break
+        current_mask = torch.cat(
+            (
+                current_mask,
+                torch.ones(
+                    (current_mask.size(0), 1),
+                    dtype=current_mask.dtype,
+                    device=current_mask.device,
+                ),
+            ),
+            dim=1,
+        )
+        output = language_model(
+            input_ids=token[:, None],
+            attention_mask=current_mask,
+            past_key_values=output.past_key_values,
+            use_cache=True,
+            return_dict=True,
+        )
+    if not generated:
+        return attention_mask.new_empty((attention_mask.size(0), 0))
+    return torch.stack(generated, dim=1)

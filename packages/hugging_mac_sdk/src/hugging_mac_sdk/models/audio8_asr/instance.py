@@ -53,7 +53,7 @@ class Audio8AsrInstance(BaseModelInstance):
             revision=AUDIO8_ASR_REVISION,
             variant=config.variant,
             runtime=config.runtime,
-            device=config.device,
+            device=(config.compute_units if config.runtime == "coreml" else config.device),
         )
         self._config = config
         self._engine = engine

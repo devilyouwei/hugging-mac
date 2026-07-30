@@ -289,7 +289,28 @@ result = await handle.require(SpeechTranscription).transcribe(
 print(result.text)
 ```
 
-源模型许可证为 `CC-BY-NC-4.0`，且当前集成针对最长 30 秒的短音频。
+转换并使用 Core ML/ANE 音频塔：
+
+```python
+from hugging_mac_sdk import ArtifactFormat
+
+await sdk.resources.convert(
+    "audio8/audio8-asr-0.1b",
+    ArtifactFormat.COREML,
+    options=options,
+    overwrite=True,
+)
+handle = await sdk.load(
+    "audio8/audio8-asr-0.1b",
+    runtime="coreml",
+    device="cpu-and-neural-engine",
+    options=options,
+)
+```
+
+该 runtime 使用三档固定 shape 的 multifunction Core ML 音频塔（5/10/30 秒），并保留 PyTorch MPS
+Qwen2 decoder 的 KV cache；它是明确的混合 runtime，不把 decoder 标注为 ANE。源模型许可证为
+`CC-BY-NC-4.0`，且当前集成针对最长 30 秒的短音频。
 
 ## YOLOv8 推理
 

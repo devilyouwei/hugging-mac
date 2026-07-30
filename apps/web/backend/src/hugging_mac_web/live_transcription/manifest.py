@@ -14,7 +14,7 @@ LIVE_TRANSCRIPTION_MANIFEST = AppManifest(
         AppModelRequirement(
             model_id="audio8/audio8-asr-0.1b",
             capabilities=("speech-transcription",),
-            preferred_runtime="pytorch-mps",
+            preferred_runtime="coreml",
             required=True,
         ),
     ),

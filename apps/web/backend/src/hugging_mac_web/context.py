@@ -37,7 +37,7 @@ def create_context(settings: WebSettings) -> PlatformContext:
         runtime_policy=RuntimePolicy(settings.runtime_preferences),
     )
     converters = ConverterRegistry()
-    register_audio8_asr(models.registry)
+    register_audio8_asr(models.registry, converters)
     register_yolov8(models.registry, converters)
     register_yolov8_pose(models.registry, converters)
     register_yolov8_seg(models.registry, converters)

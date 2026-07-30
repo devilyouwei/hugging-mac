@@ -66,6 +66,11 @@ def test_audio8_asr_follows_the_integration_layout() -> None:
     package = MODEL_ROOT / "audio8_asr"
     root_files = {path.name for path in package.iterdir() if path.is_file()}
 
-    assert root_files >= REQUIRED_INTEGRATION_FILES | {"resources.py", "torch.py"}
+    assert root_files >= REQUIRED_INTEGRATION_FILES | {
+        "converter.py",
+        "coreml.py",
+        "resources.py",
+        "torch.py",
+    }
     assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
     assert (package / "utils" / "__init__.py").is_file()

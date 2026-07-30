@@ -31,6 +31,8 @@ from hugging_mac_sdk.schemas.segmentation import (
     SegmentationResponse,
 )
 from hugging_mac_web.config import WebSettings
+from hugging_mac_web.live_transcription.config import LiveTranscriptionSettings
+from hugging_mac_web.live_transcription.manifest import LIVE_TRANSCRIPTION_MANIFEST
 from hugging_mac_web.live_transcription.schemas import TranscriptionResultView
 from hugging_mac_web.main import create_app
 from PIL import Image
@@ -172,8 +174,8 @@ def test_live_transcription_accepts_vad_wave_segments(
             text="你好 Hugging Mac",
             model_id="audio8/audio8-asr-0.1b",
             instance_id="test-instance",
-            runtime="pytorch-mps",
-            device="mps",
+            runtime="coreml",
+            device="cpu-and-neural-engine",
             sample_rate=16000,
             duration_seconds=1.25,
             generated_tokens=8,
@@ -195,6 +197,14 @@ def test_live_transcription_accepts_vad_wave_segments(
     assert response.status_code == 200
     assert response.json()["data"]["text"] == "你好 Hugging Mac"
     assert response.json()["data"]["duration_seconds"] == 1.25
+
+
+def test_live_transcription_defaults_to_coreml() -> None:
+    settings = LiveTranscriptionSettings(_env_file=None)
+    requirement = LIVE_TRANSCRIPTION_MANIFEST.required_models[0]
+
+    assert settings.runtime == "coreml"
+    assert requirement.preferred_runtime == "coreml"
 
 
 def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path) -> None:

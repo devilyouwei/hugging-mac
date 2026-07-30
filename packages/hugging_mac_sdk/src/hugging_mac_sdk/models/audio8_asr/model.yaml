@@ -14,6 +14,13 @@ manifest:
       platforms: [darwin]
       architectures: [arm64]
       required_modules: [torch, transformers, safetensors, numpy, soundfile, scipy]
+    - name: coreml
+      devices: [cpu-and-neural-engine, all, cpu-and-gpu, cpu-only]
+      dtypes: [float16]
+      quantizations: [float16, int8]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [coremltools, torch, transformers, safetensors, numpy, soundfile, scipy]
   variants:
     - name: base
       display_name: Audio8-ASR 0.1B
@@ -49,3 +56,9 @@ artifacts:
       allow_patterns:
         - model.safetensors
         - "*.json"
+  - artifact_id: coreml
+    variant: base
+    runtime: coreml
+    format: coreml
+    path: audio8/audio8-asr-0.1b/8487da63d581fa4fc9b5c60444cb57c3a523d7aa/base/coreml/audio8-asr-coreml
+    kind: directory

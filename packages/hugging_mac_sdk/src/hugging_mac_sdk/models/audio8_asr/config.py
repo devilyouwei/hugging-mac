@@ -33,13 +33,21 @@ class Audio8AsrInstanceConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
 
-    runtime: Literal["pytorch-mps"] = "pytorch-mps"
+    runtime: Literal["pytorch-mps", "coreml"] = "pytorch-mps"
     variant: Literal["base"] = "base"
     model_home: Path = Field(default_factory=lambda: user_cache_path("hugging-mac") / "models")
     source_path: Path | None = None
+    artifact_path: Path | None = None
     hf_token: str | None = Field(default=None, repr=False, exclude=True)
     device: Literal["mps", "cpu"] | None = None
+    decoder_device: Literal["mps", "cpu"] | None = None
     dtype: Audio8AsrDType = "auto"
     allow_cpu_fallback: bool = True
+    compute_units: Literal[
+        "all",
+        "cpu-only",
+        "cpu-and-gpu",
+        "cpu-and-neural-engine",
+    ] = "cpu-and-neural-engine"
     sample_rate: Literal[16000] = 16000
     max_audio_seconds: float = Field(default=30.0, gt=0.0, le=30.0)

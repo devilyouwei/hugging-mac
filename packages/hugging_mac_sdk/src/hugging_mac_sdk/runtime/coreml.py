@@ -44,7 +44,11 @@ class CoreMLSession:
     def run(self, inputs: Mapping[str, Any]) -> Mapping[str, Any]:
         if self._model is None:
             raise RuntimeError("Core ML session is closed")
-        selected = {name: value for name, value in inputs.items() if name in self._input_names}
+        selected = (
+            {name: value for name, value in inputs.items() if name in self._input_names}
+            if self._input_names
+            else dict(inputs)
+        )
         return dict(self._model.predict(selected))
 
     async def close(self) -> None:
@@ -83,9 +87,11 @@ class CoreMLProvider(RuntimeBackend):
             ) from error
         coremltools = importlib.import_module("coremltools")
         compute_units = getattr(coremltools.ComputeUnit, unit_name)
+        function_name = options.get("function_name")
         model = await asyncio.to_thread(
             coremltools.models.MLModel,
             str(artifact),
             compute_units=compute_units,
+            function_name=str(function_name) if function_name is not None else None,
         )
         return CoreMLSession(model, requested)

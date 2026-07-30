@@ -24,6 +24,7 @@ from hugging_mac_sdk import (
 )
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.core.manager import InstanceManager, ReusePolicy
+from hugging_mac_sdk.runtime.coreml import CoreMLSession
 
 
 class DummyInstance(BaseModelInstance):
@@ -64,6 +65,24 @@ class DummyBackend(RuntimeBackend):
         options: Mapping[str, object],
     ) -> RuntimeSession:
         raise NotImplementedError
+
+
+class MultifunctionCoreMlModel:
+    def __init__(self) -> None:
+        self.received: dict[str, object] | None = None
+
+    def get_spec(self) -> object:
+        class Description:
+            input: tuple[object, ...] = ()
+
+        class Spec:
+            description = Description()
+
+        return Spec()
+
+    def predict(self, inputs: dict[str, object]) -> dict[str, object]:
+        self.received = inputs
+        return {"hidden": "output"}
 
 
 def _manifest() -> ModelManifest:
@@ -118,6 +137,16 @@ def test_registry_reports_only_bound_runtimes_and_resolves_artifacts(
         "example/multi-runtime",
         "alpha",
     ) == tmp_path / "example/alpha/model.onnx"
+
+
+def test_coreml_session_passes_inputs_for_multifunction_packages() -> None:
+    model = MultifunctionCoreMlModel()
+    session = CoreMLSession(model, "cpu-and-neural-engine")
+
+    output = session.run({"audios": "features", "attn_mask": "mask"})
+
+    assert model.received == {"audios": "features", "attn_mask": "mask"}
+    assert output == {"hidden": "output"}
 
 
 def test_definition_rejects_declared_runtime_without_implementation() -> None:

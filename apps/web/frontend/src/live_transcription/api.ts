@@ -16,6 +16,14 @@ export async function downloadAsrWeights(): Promise<AsrResourceStatus> {
   ).data
 }
 
+export async function convertAsrCoreMl(): Promise<AsrResourceStatus> {
+  return (
+    await request<AsrResourceStatus>(`${PREFIX}/resources/coreml/convert`, {
+      method: "POST",
+    })
+  ).data
+}
+
 export async function transcribeUtterance(
   audio: Blob,
   signal?: AbortSignal,

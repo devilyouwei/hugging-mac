@@ -1,6 +1,6 @@
 """Audio8-ASR live transcription use case."""
 
-from hugging_mac_sdk import AudioInput, ReusePolicy, TranscriptionRequest
+from hugging_mac_sdk import ArtifactFormat, AudioInput, ReusePolicy, TranscriptionRequest
 from hugging_mac_sdk.capabilities import SpeechTranscription
 
 from hugging_mac_web.context import PlatformContext
@@ -31,6 +31,16 @@ class LiveTranscriptionService:
     async def download_source(self, *, overwrite: bool = False) -> ResourceStatusView:
         await self._context.models.resources.download_source(
             self._settings.model_id,
+            variant=self._settings.model_variant,
+            options=self._model_options,
+            overwrite=overwrite,
+        )
+        return await self.resource_status()
+
+    async def convert_coreml(self, *, overwrite: bool = False) -> ResourceStatusView:
+        await self._context.models.resources.convert(
+            self._settings.model_id,
+            ArtifactFormat.COREML,
             variant=self._settings.model_variant,
             options=self._model_options,
             overwrite=overwrite,

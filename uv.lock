@@ -1098,6 +1098,7 @@ apple = [
     { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
 asr = [
+    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "numpy" },
     { name = "safetensors" },
     { name = "scipy" },
@@ -1158,6 +1159,7 @@ docs = [
 requires-dist = [
     { name = "accelerate", marker = "extra == 'llm'", specifier = ">=1.8,<2" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'apple'", specifier = ">=8,<10" },
+    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'asr'", specifier = ">=8,<10" },
     { name = "datasets", marker = "extra == 'training'", specifier = ">=4,<5" },
     { name = "einops", marker = "extra == 'vision'", specifier = ">=0.8,<1" },
     { name = "evaluate", marker = "extra == 'evaluation'", specifier = ">=0.4,<1" },
@@ -1240,6 +1242,7 @@ dependencies = [
 
 [package.optional-dependencies]
 asr = [
+    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "numpy" },
     { name = "safetensors" },
     { name = "scipy" },
@@ -1258,6 +1261,7 @@ yolo = [
 
 [package.metadata]
 requires-dist = [
+    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'asr'", specifier = ">=8,<10" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'yolo'", specifier = ">=8,<10" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "huggingface-hub", specifier = ">=0.33,<2" },
