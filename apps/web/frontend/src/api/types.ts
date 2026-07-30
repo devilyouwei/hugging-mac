@@ -120,6 +120,7 @@ export interface AppManifest {
   app_id: string
   name: string
   description: string
+  category: "application" | "game"
   tags: string[]
   version: string
   frontend_route: string

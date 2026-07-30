@@ -110,7 +110,7 @@ HUGGING_MAC_WEB_RUNTIME_PREFERENCE=coreml,pytorch-mps
 ## 启动与验证
 
 ```bash
-uv sync --all-packages --extra yolo
+uv sync --all-packages
 uv run hugging-mac-web
 ```
 

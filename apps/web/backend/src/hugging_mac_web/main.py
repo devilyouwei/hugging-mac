@@ -17,6 +17,9 @@ from hugging_mac_web.index import create_index_router
 from hugging_mac_web.instance_segmentation import (
     create_blueprint as create_segmentation_blueprint,
 )
+from hugging_mac_web.live_transcription import (
+    create_blueprint as create_live_transcription_blueprint,
+)
 from hugging_mac_web.media import create_media_router
 from hugging_mac_web.middleware import TraceIdMiddleware
 from hugging_mac_web.models import create_models_router
@@ -24,6 +27,7 @@ from hugging_mac_web.object_detection import create_blueprint as create_detectio
 from hugging_mac_web.pose_estimation import create_blueprint as create_pose_blueprint
 from hugging_mac_web.shared.utils.log_util import configure_logging
 from hugging_mac_web.system import create_system_router
+from hugging_mac_web.yolo_pose_follow import create_blueprint as create_pose_follow_blueprint
 
 
 def create_app(
@@ -39,6 +43,8 @@ def create_app(
             create_detection_blueprint(),
             create_pose_blueprint(),
             create_segmentation_blueprint(),
+            create_live_transcription_blueprint(),
+            create_pose_follow_blueprint(),
         )
     )
     registered_blueprints = tuple(

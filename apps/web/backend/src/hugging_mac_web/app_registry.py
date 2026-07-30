@@ -16,6 +16,11 @@ class AppStatus(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class AppCategory(StrEnum):
+    APPLICATION = "application"
+    GAME = "game"
+
+
 class AppModelRequirement(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -31,6 +36,7 @@ class AppManifest(BaseModel):
     app_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
     name: str
     description: str
+    category: AppCategory = AppCategory.APPLICATION
     tags: frozenset[str] = frozenset()
     version: str = "1"
     frontend_route: str
@@ -77,9 +83,21 @@ class AppRegistry:
         self.register(summary)
         return summary
 
-    def list(self) -> tuple[AppSummary, ...]:
+    def list(
+        self,
+        category: AppCategory | None = None,
+    ) -> tuple[AppSummary, ...]:
         with self._lock:
-            return tuple(sorted(self._apps.values(), key=lambda item: item.manifest.app_id))
+            return tuple(
+                sorted(
+                    (
+                        summary
+                        for summary in self._apps.values()
+                        if category is None or summary.manifest.category is category
+                    ),
+                    key=lambda item: item.manifest.app_id,
+                )
+            )
 
     def get(self, app_id: str) -> AppSummary | None:
         with self._lock:

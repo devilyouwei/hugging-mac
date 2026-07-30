@@ -2,26 +2,76 @@
   <img src="apps/web/frontend/public/hugging-mac-icon.png" alt="hugging-mac" width="144">
 </p>
 
-# hugging-mac
+<h1 align="center">Hugging Mac</h1>
 
-**Run neural network models on your Mac.**
+<p align="center">
+  <strong>Not Hugging Face. Hugging Mac. 🤗🍎</strong>
+</p>
 
-hugging-mac is a local model playground built for Apple Silicon. It brings classic
-CNN, RNN, YOLO, and CLIP models together with modern LLMs and VLMs in one extensible
-SDK and web platform.
+<p align="center">
+  Give your Mac a hug. Give it AI.
+</p>
 
-> The project is in active early development. The model SDK, web platform, and first
-> YOLOv8 object-detection app are available now.
+> **Did you know? Your Mac is secretly an AI machine.** Hugging Mac brings deep
+> learning models to Apple Silicon, puts every available core to work, and turns
+> your Mac into a playground for learning, experimenting, and building with AI.
 
-## Highlights
+Hugging Mac is an open local AI studio for anyone who wants to understand and
+experience neural networks on a Mac. Run a detector, trace a human pose, segment
+objects, transcribe your voice, or build a game controlled by your body—all on
+your own Apple Silicon machine.
 
-- A standalone Python SDK with consistent model lifecycle APIs
-- Multiple isolated instances of the same model
-- Pluggable model capabilities such as `detect`, `chat`, and `transcribe`
-- Runtime selection for PyTorch MPS, Core ML, MLX, and future backends
-- Model download, resource management, and format conversion
-- A FastAPI backend and a Vue 3 frontend
-- A foundation for demos, evaluation, training, and benchmarking
+The goal is simple: make deep neural network models approachable and fun to play
+with, while keeping enough of the runtime, resource, and performance details
+visible for developers to learn how AI really runs on Apple Silicon.
+
+**Your data stays on your Mac. Your Mac does the work.**
+
+> Hugging Mac is in active early development. YOLOv8 detection, pose estimation,
+> instance segmentation, the Yolo Pose Follow game, and Audio8-ASR transcription
+> are available today. More models, apps, and neural games are on the way.
+
+## See it in action
+
+### Yolo Pose Follow 🕺
+
+Your body becomes the controller. A local YOLOv8 Pose model follows the camera,
+draws your skeleton, and compares it with a target pose before the clock runs out.
+No cloud inference and no video upload—just you, your Mac, and a neural network.
+
+![Yolo Pose Follow running locally on Hugging Mac](imgs/yollo-pose-follow.png)
+
+This is the first entry in the Hugging Mac showcase. More experiments will be
+added here as the model, app, and game catalog grows.
+
+## What can you explore?
+
+- 🔎 **Object detection** — compare YOLOv8 weight variants and detect objects in
+  images, videos, or a live camera.
+- 🕺 **Pose estimation** — visualize COCO-17 body keypoints and build interactions
+  driven by human movement.
+- 🎨 **Instance segmentation** — separate objects from the scene with colorful
+  masks and contours.
+- 🎙️ **Live transcription** — use VAD and Audio8-ASR to turn ongoing speech into
+  local, sentence-by-sentence text.
+- 🕹️ **Neural games** — play Yolo Pose Follow and use model output as a real-time
+  game input.
+- 🧠 **Model engineering** — download weights, switch variants, manage instances,
+  convert formats, and observe how different runtimes use your Mac.
+
+## Built for learning and building
+
+Hugging Mac is both a visual playground and an extensible development platform:
+
+- A standalone Python model SDK with consistent lifecycle and capability APIs
+- Multiple isolated instances and weight variants for the same model
+- Pluggable capabilities such as `detect`, `estimate_pose`, `segment`, and
+  `transcribe`
+- Runtime selection for PyTorch MPS, Core ML, ONNX Runtime, MLX, and future
+  Apple-friendly backends
+- Explicit model download, resource management, and format conversion
+- A FastAPI application layer and a responsive Vue 3 frontend
+- A foundation for demos, neural games, evaluation, training, and benchmarking
 
 ## Requirements
 
@@ -32,11 +82,11 @@ SDK and web platform.
 
 ## Quick start
 
-Install the Python workspace and YOLO dependencies:
+Install the Python workspace and current model dependencies:
 
 ```bash
 uv python install 3.12
-uv sync --all-packages --extra yolo
+uv sync --all-packages
 ```
 
 Start the API:
@@ -56,8 +106,10 @@ npm run dev
 Open <http://127.0.0.1:5173/>. The API documentation is available at
 <http://127.0.0.1:8000/docs>.
 
-In the Object Detection app, download a YOLOv8 variant and run it with MPS, or
-convert it to Core ML for an Apple-optimized runtime.
+Open the Studio, choose a Neural App or Neural Game, prepare its model weights,
+and start experimenting. For example, download a YOLOv8 variant and run it with
+MPS, convert it to Core ML, speak into Audio8-ASR, or step in front of the camera
+and play Yolo Pose Follow.
 
 ## Documentation
 
@@ -85,6 +137,7 @@ Key documents:
 - [Frontend, backend, and API](doc/08-frontend-backend.md)
 - [Platform backend](doc/17-platform-backend.md)
 - [Vue and object detection](doc/18-web-frontend-and-object-detection.md)
+- [Audio8-ASR SDK](doc/20-audio8-asr-sdk.md)
 - [Engineering conventions](doc/10-engineering.md)
 - [Roadmap](doc/11-roadmap.md)
 
@@ -104,6 +157,7 @@ hugging-mac/
 ├── models/                       # Local model cache, ignored by default
 ├── tests/
 ├── doc/
+├── imgs/                         # README showcase images
 ├── pyproject.toml
 └── uv.lock
 ```
@@ -113,7 +167,7 @@ hugging-mac/
 Install development and documentation dependencies:
 
 ```bash
-uv sync --all-packages --extra yolo --group dev --group docs
+uv sync --all-packages --group dev --group docs
 ```
 
 Run the checks:
@@ -133,5 +187,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before contributing.
 hugging-mac is released under the [MIT License](LICENSE).
 
 Model weights, datasets, and third-party dependencies retain their own licenses.
-Review their terms before use. Ultralytics YOLO software and models, for example,
-have separate licensing requirements.
+Review their terms before use. Ultralytics YOLO software and models have separate
+licensing requirements; Audio8-ASR 0.1B uses `CC-BY-NC-4.0`.

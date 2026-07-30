@@ -19,6 +19,16 @@ const router = createRouter({
       component: () => import("./apps.vue"),
     },
     {
+      path: "/games",
+      name: "games",
+      component: () => import("./games.vue"),
+    },
+    {
+      path: "/games/yolo-pose-follow",
+      name: "yolo-pose-follow",
+      component: () => import("./yolo_pose_follow/index.vue"),
+    },
+    {
       path: "/apps/object-detection",
       name: "object-detection",
       component: () => import("./object_detection/index.vue"),
@@ -32,6 +42,11 @@ const router = createRouter({
       path: "/apps/instance-segmentation",
       name: "instance-segmentation",
       component: () => import("./instance_segmentation/index.vue"),
+    },
+    {
+      path: "/apps/live-transcription",
+      name: "live-transcription",
+      component: () => import("./live_transcription/index.vue"),
     },
     {
       path: "/:pathMatch(.*)*",

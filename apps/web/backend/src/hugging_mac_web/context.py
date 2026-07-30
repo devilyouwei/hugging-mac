@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from hugging_mac_sdk import ModelSdk, RuntimePolicy
 from hugging_mac_sdk.converters import ConverterRegistry
+from hugging_mac_sdk.models.audio8_asr import register_audio8_asr
 from hugging_mac_sdk.models.yolov8 import register_yolov8
 from hugging_mac_sdk.models.yolov8_pose import register_yolov8_pose
 from hugging_mac_sdk.models.yolov8_seg import register_yolov8_seg
@@ -36,6 +37,7 @@ def create_context(settings: WebSettings) -> PlatformContext:
         runtime_policy=RuntimePolicy(settings.runtime_preferences),
     )
     converters = ConverterRegistry()
+    register_audio8_asr(models.registry)
     register_yolov8(models.registry, converters)
     register_yolov8_pose(models.registry, converters)
     register_yolov8_seg(models.registry, converters)

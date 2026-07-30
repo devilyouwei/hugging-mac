@@ -11,14 +11,17 @@ import type {
 export async function fetchCatalog(): Promise<{
   models: ModelSummary[]
   apps: AppSummary[]
+  games: AppSummary[]
 }> {
-  const [models, apps] = await Promise.all([
+  const [models, apps, games] = await Promise.all([
     request<ModelSummary[]>("/api/v1/catalog/models"),
     request<AppSummary[]>("/api/v1/catalog/apps"),
+    request<AppSummary[]>("/api/v1/catalog/games"),
   ])
   return {
     models: models.data,
     apps: apps.data,
+    games: games.data,
   }
 }
 
@@ -28,6 +31,10 @@ export async function fetchModels(): Promise<ModelSummary[]> {
 
 export async function fetchApps(): Promise<AppSummary[]> {
   return (await request<AppSummary[]>("/api/v1/catalog/apps")).data
+}
+
+export async function fetchGames(): Promise<AppSummary[]> {
+  return (await request<AppSummary[]>("/api/v1/catalog/games")).data
 }
 
 export async function fetchSystemInfo(): Promise<SystemInfo> {

@@ -8,6 +8,7 @@ import ModelCard from "@/components/ModelCard.vue"
 
 const models = ref<ModelSummary[]>([])
 const apps = ref<AppSummary[]>([])
+const games = ref<AppSummary[]>([])
 const system = ref<SystemInfo | null>(null)
 const loading = ref(true)
 const error = ref("")
@@ -17,6 +18,7 @@ const readyInstances = computed(() =>
 )
 const featuredModels = computed(() => models.value.slice(0, 2))
 const featuredApps = computed(() => apps.value.slice(0, 3))
+const featuredGames = computed(() => games.value.slice(0, 3))
 
 const chipLabel = computed(() => {
   const value = system.value?.chip_name
@@ -30,6 +32,7 @@ async function loadHome() {
     const [catalog, machine] = await Promise.all([fetchCatalog(), fetchSystemInfo()])
     models.value = catalog.models
     apps.value = catalog.apps
+    games.value = catalog.games
     system.value = machine
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "无法连接本地平台"
@@ -139,8 +142,8 @@ onMounted(loadHome)
           <div>
             <span class="section-index">01</span>
             <div>
-              <p class="kicker">MODEL LAYER</p>
-              <h2>Models</h2>
+              <p class="kicker">NEURAL MODEL LAYER</p>
+              <h2>Neural Models</h2>
             </div>
           </div>
           <RouterLink class="section-heading__link" to="/models">
@@ -167,8 +170,8 @@ onMounted(loadHome)
           <div>
             <span class="section-index">02</span>
             <div>
-              <p class="kicker">APPLICATION LAYER</p>
-              <h2>Apps</h2>
+              <p class="kicker">NEURAL APPLICATION LAYER</p>
+              <h2>Neural Apps</h2>
             </div>
           </div>
           <RouterLink class="section-heading__link" to="/apps">
@@ -176,7 +179,7 @@ onMounted(loadHome)
           </RouterLink>
         </div>
         <p class="home-catalog-column__meta">
-          {{ apps.length }} registered · focused tools, shared SDK
+          {{ apps.length }} registered · local neural tools, shared SDK
         </p>
         <div class="app-list">
           <AppCard
@@ -187,6 +190,39 @@ onMounted(loadHome)
           />
           <div v-if="!loading && !apps.length" class="empty-state">
             No applications are registered.
+          </div>
+        </div>
+      </section>
+
+      <section class="section-block home-catalog-column home-catalog-column--games">
+        <div class="section-heading">
+          <div>
+            <span class="section-index">03</span>
+            <div>
+              <p class="kicker">NEURAL GAME LAYER</p>
+              <h2>Neural Games</h2>
+            </div>
+          </div>
+          <RouterLink class="section-heading__link" to="/games">
+            全部 <span aria-hidden="true">→</span>
+          </RouterLink>
+        </div>
+        <p class="home-catalog-column__meta">
+          {{ games.length }} registered · interactive worlds powered by local models
+        </p>
+        <div v-if="featuredGames.length" class="app-list home-games-list">
+          <AppCard
+            v-for="(game, gameIndex) in featuredGames"
+            :key="game.manifest.app_id"
+            :app="game"
+            :index="gameIndex"
+          />
+        </div>
+        <div v-else class="game-empty-card">
+          <span aria-hidden="true">🕹️</span>
+          <div>
+            <strong>Neural games are next.</strong>
+            <p>Our first local-model game is in development. This space is ready for it.</p>
           </div>
         </div>
       </section>

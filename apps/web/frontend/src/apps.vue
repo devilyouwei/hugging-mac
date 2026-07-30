@@ -24,9 +24,9 @@ onMounted(async () => {
   <div class="page inner-page apps-directory-page">
     <header class="page-title">
       <RouterLink class="back-link" to="/">← Studio</RouterLink>
-      <p class="kicker">APPLICATION REGISTRY / LOCAL EXPERIENCES</p>
-      <h1>Apps</h1>
-      <p>浏览所有基于本地模型能力构建的应用，选择一个项目进入完整体验。</p>
+      <p class="kicker">NEURAL APPLICATION REGISTRY / LOCAL EXPERIENCES</p>
+      <h1>Neural Apps</h1>
+      <p>浏览所有基于本地神经模型能力构建的工具与体验，选择一个项目进入完整工作区。</p>
     </header>
 
     <div v-if="error" class="error-banner" role="alert">{{ error }}</div>
@@ -40,7 +40,7 @@ onMounted(async () => {
         :app="app"
         :index="appIndex"
       />
-      <div v-if="!apps.length" class="empty-state">No applications are registered.</div>
+      <div v-if="!apps.length" class="empty-state">No neural applications are registered.</div>
     </div>
   </div>
 </template>

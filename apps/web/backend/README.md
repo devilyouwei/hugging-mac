@@ -5,7 +5,7 @@ SSE 与媒体上传，并用 TinyDB + 本地内容寻址缓存持久化元数据
 `object_detection`，接口为 `POST /api/v1/apps/object-detection/detect`。
 
 ```bash
-uv sync --all-packages --extra yolo
+uv sync --all-packages
 uv run hugging-mac-web
 ```
 

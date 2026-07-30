@@ -222,9 +222,9 @@ function formatBytes(value: number | null): string {
   <div class="page inner-page models-directory-page">
     <header class="page-title">
       <RouterLink class="back-link" to="/">← Studio</RouterLink>
-      <p class="kicker">MODEL REGISTRY / LIVE INSTANCES</p>
-      <h1>Models</h1>
-      <p>模型定义与当前进程中的实例快照。浏览目录不会触发下载、转换或加载。</p>
+      <p class="kicker">NEURAL MODEL REGISTRY / LIVE INSTANCES</p>
+      <h1>Neural Models</h1>
+      <p>神经模型定义与当前进程中的实例快照。浏览目录不会触发下载、转换或加载。</p>
     </header>
 
     <div v-if="error" class="error-banner" role="alert">{{ error }}</div>

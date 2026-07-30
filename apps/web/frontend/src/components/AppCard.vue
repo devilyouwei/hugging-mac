@@ -11,6 +11,8 @@ const icon = computed(() => {
     "object-detection": "🔎",
     "pose-estimation": "🕺",
     "instance-segmentation": "🎨",
+    "yolo-pose-follow": "🕺",
+    "live-transcription": "🎙️",
   }
   return icons[props.app.manifest.app_id] ?? "🧩"
 })

@@ -243,8 +243,8 @@ App 依赖 capability，不依赖具体实例类：
 detector = handle.require(ObjectDetection)
 
 # 禁止
-isinstance(instance, CoreMlYoloV8Instance)
-instance._model.predict(...)
+isinstance(instance, YoloV8Instance)
+instance._engine.infer(...)
 ```
 
 App manifest 可以指定 preferred model/runtime，但业务 schema 不应包含 Core ML 或 PyTorch 专用字段。

@@ -6,13 +6,15 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 from hugging_mac_sdk import (
+    ArtifactFormat,
     BaseModelInstance,
     ConversionRequest,
     ConversionResult,
     ModelDefinition,
 )
-from hugging_mac_sdk.models.yolov8.config import YOLOV8N_SHA256
+from hugging_mac_sdk.models.yolov8.config import YOLOV8_SHA256
 from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
+from hugging_mac_sdk.models.yolov8.instance import YoloV8Instance
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.schemas.detection import (
     BoundingBox,
@@ -29,8 +31,11 @@ from hugging_mac_sdk.schemas.segmentation import (
     SegmentationResponse,
 )
 from hugging_mac_web.config import WebSettings
+from hugging_mac_web.live_transcription.schemas import TranscriptionResultView
 from hugging_mac_web.main import create_app
 from PIL import Image
+
+YOLOV8_N_SHA256 = YOLOV8_SHA256["n"]
 
 
 class PlatformDummyInstance(BaseModelInstance):
@@ -66,6 +71,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         info = client.get("/api/v1/system/info")
         models = client.get("/api/v1/catalog/models")
         apps = client.get("/api/v1/catalog/apps")
+        games = client.get("/api/v1/catalog/games")
         resources = client.get("/api/v1/apps/object-detection/resources")
         openapi = client.get("/openapi.json")
         preflight = client.options(
@@ -86,21 +92,29 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         "gpu_cores",
         "neural_engine_cores",
     } <= info.json()["data"].keys()
-    app_summaries = {
-        item["manifest"]["app_id"]: item for item in apps.json()["data"]
-    }
+    app_summaries = {item["manifest"]["app_id"]: item for item in apps.json()["data"]}
     assert set(app_summaries) == {
         "instance-segmentation",
+        "live-transcription",
         "object-detection",
         "pose-estimation",
     }
     assert all(item["status"] == "available" for item in app_summaries.values())
+    assert games.status_code == 200
+    game_summaries = {item["manifest"]["app_id"]: item for item in games.json()["data"]}
+    assert set(game_summaries) == {"yolo-pose-follow"}
+    assert game_summaries["yolo-pose-follow"]["manifest"]["category"] == "game"
+    assert game_summaries["yolo-pose-follow"]["status"] == "available"
     assert not any(item["available"] for item in resources.json()["data"]["artifacts"])
     assert "/api/v1/apps/object-detection/detect" in openapi.json()["paths"]
     assert "/api/v1/apps/pose-estimation/estimate" in openapi.json()["paths"]
     assert "/api/v1/apps/instance-segmentation/segment" in openapi.json()["paths"]
-    model = models.json()["data"][0]
+    assert "/api/v1/apps/live-transcription/transcribe" in openapi.json()["paths"]
+    assert "/api/v1/games/yolo-pose-follow/templates" in openapi.json()["paths"]
+    assert "/api/v1/games/yolo-pose-follow/match" in openapi.json()["paths"]
+    model = next(item for item in models.json()["data"] if item["model_id"] == "ultralytics/yolov8")
     assert {item["model_id"] for item in models.json()["data"]} >= {
+        "audio8/audio8-asr-0.1b",
         "ultralytics/yolov8",
         "ultralytics/yolov8-pose",
         "ultralytics/yolov8-seg",
@@ -113,10 +127,74 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert model["instances"] == []
     assert {runtime["name"] for runtime in model["runtimes"]} == {
         "coreml",
+        "onnx",
         "pytorch-mps",
     }
     assert preflight.status_code == 200
     assert preflight.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_yolo_pose_follow_templates_and_matching(tmp_path: Path) -> None:
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        templates = client.get("/api/v1/games/yolo-pose-follow/templates")
+        first = templates.json()["data"][0]
+        matched = client.post(
+            "/api/v1/games/yolo-pose-follow/match",
+            json={
+                "template_id": first["template_id"],
+                "keypoints": [
+                    {
+                        "x": point["x"] * 1000,
+                        "y": point["y"] * 1000,
+                        "confidence": 0.95,
+                    }
+                    for point in first["points"]
+                ],
+                "allow_mirror": True,
+            },
+        )
+
+    assert templates.status_code == 200
+    assert len(templates.json()["data"]) >= 30
+    assert matched.status_code == 200
+    assert matched.json()["data"]["matched"]
+    assert matched.json()["data"]["score"] > 0.99
+
+
+def test_live_transcription_accepts_vad_wave_segments(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_transcribe(*_: object) -> TranscriptionResultView:
+        return TranscriptionResultView(
+            text="你好 Hugging Mac",
+            model_id="audio8/audio8-asr-0.1b",
+            instance_id="test-instance",
+            runtime="pytorch-mps",
+            device="mps",
+            sample_rate=16000,
+            duration_seconds=1.25,
+            generated_tokens=8,
+            inference_ms=42.0,
+        )
+
+    monkeypatch.setattr(
+        "hugging_mac_web.live_transcription.service.LiveTranscriptionService.transcribe",
+        fake_transcribe,
+    )
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/apps/live-transcription/transcribe",
+            files={"file": ("utterance.wav", b"RIFF-test-wave", "audio/wav")},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["text"] == "你好 Hugging Mac"
+    assert response.json()["data"]["duration_seconds"] == 1.25
 
 
 def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path) -> None:
@@ -131,6 +209,7 @@ def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path)
                 runtime_factories={
                     "pytorch-mps": lambda _: PlatformDummyInstance(),
                     "coreml": lambda _: PlatformDummyInstance(),
+                    "onnx": lambda _: PlatformDummyInstance(),
                 },
                 artifacts=current.artifacts,
                 converter_ids=current.converter_ids,
@@ -162,7 +241,10 @@ def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path)
     assert loaded.json()["data"]["variant"] == "s"
     assert loaded.json()["data"]["load_metrics"]["operation"] == "load"
     assert loaded.json()["data"]["load_metrics"]["duration_ms"] >= 0
-    assert catalog.json()["data"][0]["instance_count"] == 1
+    loaded_model = next(
+        item for item in catalog.json()["data"] if item["model_id"] == "ultralytics/yolov8"
+    )
+    assert loaded_model["instance_count"] == 1
     assert blocked_delete.status_code == 409
     assert blocked_delete.json()["error"]["details"]["instance_count"] == 1
     assert independent_default_delete.status_code == 200
@@ -172,6 +254,38 @@ def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path)
     assert unloaded.json()["data"]["state"] == "unloaded"
     assert unloaded.json()["data"]["metrics"]["operation"] == "unload"
     assert unloaded.json()["data"]["metrics"]["duration_ms"] >= 0
+
+
+def test_platform_loads_registered_yolov8_factory(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    """Keep the Web endpoint wired to the SDK's real registered model factory."""
+
+    async def fake_resolve(_: YoloV8Instance) -> None:
+        return None
+
+    async def fake_load(_: YoloV8Instance) -> None:
+        return None
+
+    monkeypatch.setattr(YoloV8Instance, "_resolve", fake_resolve)
+    monkeypatch.setattr(YoloV8Instance, "_load", fake_load)
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        loaded = client.post(
+            "/api/v1/catalog/models/ultralytics/yolov8/instances",
+            json={"runtime": "pytorch-mps", "variant": "n", "warmup": False},
+        )
+        instance_id = loaded.json()["data"]["instance_id"]
+        unloaded = client.delete(f"/api/v1/catalog/instances/{instance_id}")
+
+    assert loaded.status_code == 201
+    assert loaded.json()["data"]["state"] == "ready"
+    assert loaded.json()["data"]["runtime"] == "pytorch-mps"
+    assert loaded.json()["data"]["variant"] == "n"
+    assert unloaded.status_code == 200
+    assert unloaded.json()["data"]["state"] == "unloaded"
 
 
 def test_platform_downloads_overwrites_and_deletes_model_resources(
@@ -189,7 +303,7 @@ def test_platform_downloads_overwrites_and_deletes_model_resources(
         return ResolvedResource(
             path=destination,
             source=source,
-            digest=YOLOV8N_SHA256,
+            digest=YOLOV8_N_SHA256,
             size_bytes=destination.stat().st_size,
         )
 
@@ -197,8 +311,12 @@ def test_platform_downloads_overwrites_and_deletes_model_resources(
         _: YoloV8Converter,
         request: ConversionRequest,
     ) -> ConversionResult:
-        request.output_path.mkdir(parents=True, exist_ok=True)
-        (request.output_path / "model.mlmodel").write_bytes(b"coreml")
+        if request.target_format is ArtifactFormat.COREML:
+            request.output_path.mkdir(parents=True, exist_ok=True)
+            (request.output_path / "model.mlmodel").write_bytes(b"coreml")
+        else:
+            request.output_path.parent.mkdir(parents=True, exist_ok=True)
+            request.output_path.write_bytes(b"onnx")
         return ConversionResult(
             path=request.output_path,
             format=request.target_format,
@@ -210,21 +328,15 @@ def test_platform_downloads_overwrites_and_deletes_model_resources(
     monkeypatch.setattr(ResourceDownloader, "download", fake_download)
     monkeypatch.setattr(YoloV8Converter, "convert", fake_convert)
     monkeypatch.setattr(
-        "hugging_mac_sdk.models.yolov8.assets.file_sha256",
-        lambda _: YOLOV8N_SHA256,
+        "hugging_mac_sdk.models.yolov8.resources.file_sha256",
+        lambda _: YOLOV8_N_SHA256,
     )
     app = create_app(_settings(tmp_path))
 
     with TestClient(app) as client:
-        initial = client.get(
-            "/api/v1/catalog/models/ultralytics/yolov8/resources"
-        )
-        downloaded = client.post(
-            "/api/v1/catalog/models/ultralytics/yolov8/resources/download"
-        )
-        redownloaded = client.post(
-            "/api/v1/catalog/models/ultralytics/yolov8/resources/download"
-        )
+        initial = client.get("/api/v1/catalog/models/ultralytics/yolov8/resources")
+        downloaded = client.post("/api/v1/catalog/models/ultralytics/yolov8/resources/download")
+        redownloaded = client.post("/api/v1/catalog/models/ultralytics/yolov8/resources/download")
         converted = client.post(
             "/api/v1/catalog/models/ultralytics/yolov8/resources/convert",
             json={"target_format": "coreml"},
@@ -233,13 +345,11 @@ def test_platform_downloads_overwrites_and_deletes_model_resources(
             "/api/v1/catalog/models/ultralytics/yolov8/resources/convert",
             json={"target_format": "coreml"},
         )
-        unsupported = client.post(
+        onnx_conversion = client.post(
             "/api/v1/catalog/models/ultralytics/yolov8/resources/convert",
             json={"target_format": "onnx"},
         )
-        deleted = client.delete(
-            "/api/v1/catalog/models/ultralytics/yolov8/resources"
-        )
+        deleted = client.delete("/api/v1/catalog/models/ultralytics/yolov8/resources")
 
     assert initial.status_code == 200
     assert initial.json()["data"]["total_size_bytes"] == 0
@@ -254,7 +364,8 @@ def test_platform_downloads_overwrites_and_deletes_model_resources(
     assert conversion_target["available"]
     assert conversion_target["size_bytes"] == 6
     assert reconverted.status_code == 200
-    assert unsupported.status_code == 409
+    assert onnx_conversion.status_code == 200
+    assert onnx_conversion.json()["data"]["conversion_targets"][1]["available"]
     assert deleted.status_code == 200
     assert deleted.json()["data"]["total_size_bytes"] == 0
     assert not any(item["available"] for item in deleted.json()["data"]["artifacts"])
@@ -333,9 +444,7 @@ def test_object_detection_app_maps_sdk_result(tmp_path: Path) -> None:
             return FakeHandle()
 
         app.state.context.models.acquire = fake_acquire
-        resource_status = client.get(
-            "/api/v1/apps/object-detection/resources?variant=m"
-        )
+        resource_status = client.get("/api/v1/apps/object-detection/resources?variant=m")
         response = client.post(
             "/api/v1/apps/object-detection/detect",
             files={"file": ("sample.png", _png(), "image/png")},
@@ -447,24 +556,18 @@ def test_pose_and_segmentation_apps_map_sdk_results(tmp_path: Path) -> None:
         async def fake_acquire(model_id: str, **kwargs: object) -> FakeCapabilityHandle:
             acquired.append((model_id, str(kwargs["variant"])))
             capability: object = (
-                FakePoseEstimator()
-                if model_id == "ultralytics/yolov8-pose"
-                else FakeSegmenter()
+                FakePoseEstimator() if model_id == "ultralytics/yolov8-pose" else FakeSegmenter()
             )
             return FakeCapabilityHandle(capability)
 
         app.state.context.models.acquire = fake_acquire
-        pose_resources = client.get(
-            "/api/v1/apps/pose-estimation/resources?variant=s"
-        )
+        pose_resources = client.get("/api/v1/apps/pose-estimation/resources?variant=s")
         pose_response = client.post(
             "/api/v1/apps/pose-estimation/estimate",
             files={"file": ("sample.png", _png(), "image/png")},
             data={"runtime": "auto", "variant": "m"},
         )
-        seg_resources = client.get(
-            "/api/v1/apps/instance-segmentation/resources?variant=m"
-        )
+        seg_resources = client.get("/api/v1/apps/instance-segmentation/resources?variant=m")
         seg_response = client.post(
             "/api/v1/apps/instance-segmentation/segment/frame?variant=s",
             content=_png(),
