@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
-from hugging_mac_sdk.converters.ultralytics import UltralyticsExportConverter
-from hugging_mac_sdk.models.yolov8_pose.config import (
-    YOLOV8_POSE_MODEL_ID,
-    YoloV8PoseCoreMlConfig,
-)
+from pathlib import Path
+from typing import Any, cast
+
+from hugging_mac_sdk.converters.yolov8 import YoloV8ExportConverter
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest, ConversionResult
 
+from .config import (
+    YOLOV8_POSE_MODEL_ID,
+    YoloV8PoseCoreMlConfig,
+    YoloV8PoseVariant,
+)
+from .utils.checkpoint import load_yolov8_checkpoint
 
-class YoloV8PoseConverter(UltralyticsExportConverter):
+
+class YoloV8PoseConverter(YoloV8ExportConverter):
     @property
     def converter_id(self) -> str:
         return "ultralytics.yolov8-pose"
@@ -29,7 +35,9 @@ class YoloV8PoseConverter(UltralyticsExportConverter):
 
     async def convert(self, request: ConversionRequest) -> ConversionResult:
         if request.target_format is ArtifactFormat.COREML:
-            defaults = YoloV8PoseCoreMlConfig(variant=request.variant).model_dump()
+            defaults = YoloV8PoseCoreMlConfig(
+                variant=cast(YoloV8PoseVariant, request.variant)
+            ).model_dump()
             defaults.pop("compute_units")
             defaults.pop("variant")
             # Core ML only supports Ultralytics' embedded NMS pipeline for
@@ -39,3 +47,6 @@ class YoloV8PoseConverter(UltralyticsExportConverter):
                 update={"options": defaults | request.options | {"nms": False}}
             )
         return await super().convert(request)
+
+    def _load_checkpoint(self, source: Path, torch: Any) -> Any:
+        return load_yolov8_checkpoint(source, torch)

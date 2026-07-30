@@ -13,7 +13,12 @@ from hugging_mac_sdk.schemas.resources import ResolvedResource
 
 
 class RuntimeSession(Protocol):
-    """A loaded low-level runtime session."""
+    """A loaded low-level runtime session without task semantics."""
+
+    @property
+    def device(self) -> str: ...
+
+    def run(self, inputs: Mapping[str, Any]) -> Mapping[str, Any]: ...
 
     async def close(self) -> None: ...
 
@@ -27,6 +32,11 @@ class RuntimeBackend(ABC):
 
     @abstractmethod
     def is_available(self) -> bool: ...
+
+    def available_devices(self) -> tuple[str, ...]:
+        """Return provider-specific device names in preference order."""
+
+        return ()
 
     @abstractmethod
     async def create_session(

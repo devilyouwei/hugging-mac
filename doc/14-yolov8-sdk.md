@@ -1,6 +1,6 @@
 # YOLOv8 SDK
 
-状态：首个可运行版本。
+状态：已实现。
 
 ## 范围
 
@@ -16,14 +16,18 @@ flowchart LR
     Convert["YOLOv8 Converter"]
     MLPackage["yolov8{variant}.mlpackage"]
     CoreML["Core ML Instance"]
+    ONNXArtifact["yolov8{variant}.onnx"]
+    ONNX["ONNX Runtime Instance"]
     Capability["ObjectDetection"]
 
     HF --> Variant --> PT
     PT --> MPS --> Capability
     PT --> Convert --> MLPackage --> CoreML --> Capability
+    Convert --> ONNXArtifact --> ONNX --> Capability
 ```
 
-PyTorch MPS 是源模型正确性 reference runtime；Core ML 是 Apple Silicon 默认高性能 runtime。
+PyTorch MPS 是源模型正确性 reference runtime；Core ML 是 Apple Silicon 默认高性能 runtime；ONNX
+Runtime 作为可移植路径，自动优先 Core ML Execution Provider 并回退 CPU EP。
 
 三者共享 capability、预处理、NMS 和输出 schema，仅权重规模不同：
 
@@ -50,7 +54,7 @@ PyTorch MPS 是源模型正确性 reference runtime；Core ML 是 Apple Silicon 
 - 原图宽高；
 - detection tuple；
 - 每个 detection 包含 `xyxy`、confidence、class ID、label；
-- Ultralytics 提供的预处理、推理和后处理耗时。
+- SDK 自身测量的预处理、runtime 推理和后处理耗时。
 
 公共 schema 不暴露 torch tensor、NumPy array、PIL image 或 Core ML feature。
 
@@ -62,13 +66,16 @@ PyTorch MPS 是源模型正确性 reference runtime；Core ML 是 Apple Silicon 
 <model-home>/ultralytics/yolov8/8a9e1a5/
 ├── n/
 │   ├── source/yolov8n.pt
-│   └── coreml/yolov8n.mlpackage/
+│   ├── coreml/yolov8n.mlpackage/
+│   └── onnx/yolov8n.onnx
 ├── s/
 │   ├── source/yolov8s.pt
-│   └── coreml/yolov8s.mlpackage/
+│   ├── coreml/yolov8s.mlpackage/
+│   └── onnx/yolov8s.onnx
 └── m/
     ├── source/yolov8m.pt
-    └── coreml/yolov8m.mlpackage/
+    ├── coreml/yolov8m.mlpackage/
+    └── onnx/yolov8m.onnx
 ```
 
 加载 MPS 实例时：
@@ -83,7 +90,7 @@ PyTorch MPS 是源模型正确性 reference runtime；Core ML 是 Apple Silicon 
 1. 查找 `.mlpackage`；
 2. 不存在则抛出 `ResourceNotFoundError`；
 3. 不会隐式下载 `.pt` 或调用 converter；
-4. 已存在时通过 Ultralytics Core ML backend 加载并推理。
+4. 已存在时由 `CoreMLProvider` 直接创建 `MLModel` 并推理。
 
 下载与转换是独立的显式 SDK 操作：
 
@@ -104,6 +111,12 @@ await sdk.resources.convert(
     variant="s",
     options={"model_home": Path("models")},
 )
+await sdk.resources.convert(
+    "ultralytics/yolov8",
+    ArtifactFormat.ONNX,
+    variant="s",
+    options={"model_home": Path("models")},
+)
 ```
 
 App 可以把这些操作绑定到 API 或前端按钮；`acquire/load/detect` 永远不替用户发起网络或转换任务。
@@ -120,12 +133,19 @@ App 可以把这些操作绑定到 API 或前端按钮；`acquire/load/detect` �
 ### Core ML
 
 - 加载 `.mlpackage`；
-- 使用 Core ML 默认 `ComputeUnit.ALL`；
+- `CoreMLProvider` 将 `all`、`cpu-only`、`cpu-and-gpu`、`cpu-and-neural-engine` 映射为真实
+  `coremltools.ComputeUnit`；
 - 不向 Core ML backend 传递 torch device；
-- 第一版只支持 `compute_units="all"`，其他执行单元组合待直接 Core ML adapter 完成后开放。
 
-当前使用 Ultralytics Core ML backend，是为了复用经过验证的 image preprocessing、输出解析和 NMS 协议。
-未来如果改为直接调用 `coremltools.MLModel`，公共 capability 和 schema 不变。
+### ONNX Runtime
+
+- 加载 `.onnx`；
+- `OnnxRuntimeProvider` 查询本机 EP，`auto` 默认按 `CoreMLExecutionProvider`、`CPUExecutionProvider`
+  的顺序选择；
+- provider 只执行 graph；letterbox、NMS 与结果映射仍由 YOLOv8 `utils/` 完成。
+
+三种 runtime 使用同一套 SDK 自有预处理、输出解析和 class-aware NMS，因此切换 runtime 不改变公共
+capability 和 schema。
 
 ## 使用
 
@@ -158,12 +178,13 @@ instance = definition.create(
 )
 ```
 
-工厂会先根据 manifest 校验 runtime，再交给 YOLOv8 factory：
+工厂会先根据 manifest 校验 runtime，再创建统一的 `YoloV8Instance` 并组合对应 engine：
 
-| runtime | 实例类型 |
-|---|---|
-| `pytorch-mps` | `PyTorchMpsYoloV8Instance` |
-| `coreml` | `CoreMlYoloV8Instance` |
+| runtime | Instance | Engine |
+|---|---|---|
+| `pytorch-mps` | `YoloV8Instance` | `TorchYoloV8Engine` |
+| `coreml` | `YoloV8Instance` | `CoreMlYoloV8Engine` |
+| `onnx` | `YoloV8Instance` | `OnnxYoloV8Engine` |
 
 Manager 也可以安全替换现有未被 retain 的实例：
 
@@ -200,7 +221,7 @@ uv run --all-packages --extra yolo scripts/smoke_yolov8.py \
 ## 当前限制
 
 - 当前注册 YOLOv8 detection 的 `n/s/m` 三个 variant，尚未加入 `l/x`；
-- 尚未加入 segment、pose、classification；
-- Core ML 只开放 `ComputeUnit.ALL`；
+- Pose 和 Seg 已作为独立 model package 实现，见 [YOLOv8 Pose / Seg SDK](19-yolov8-pose-seg-sdk.md)；
+- classification 尚未加入；
 - Core ML 转换必须在加载前显式执行；
 - 许可证为 AGPL-3.0，商业分发前必须确认相应义务或取得 Enterprise license。

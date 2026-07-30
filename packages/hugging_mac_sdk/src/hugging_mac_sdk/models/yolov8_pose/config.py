@@ -33,7 +33,7 @@ class YoloV8PoseCoreMlConfig(BaseModel):
 class YoloV8PoseInstanceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
 
-    runtime: Literal["pytorch-mps", "coreml"] = "coreml"
+    runtime: Literal["pytorch-mps", "coreml", "onnx"] = "coreml"
     variant: YoloV8PoseVariant = "n"
     model_home: Path = Field(default_factory=lambda: user_cache_path("hugging-mac") / "models")
     source_path: Path | None = None

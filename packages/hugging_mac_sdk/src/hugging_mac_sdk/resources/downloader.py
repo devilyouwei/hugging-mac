@@ -232,6 +232,10 @@ class ResourceDownloader:
                     token=token,
                 )
             )
+            # ``local_dir`` snapshots contain Hub bookkeeping under ``.cache``.
+            # The atomic destination is a model artifact, not another cache, so
+            # keep only files selected by the source declaration.
+            await asyncio.to_thread(_remove_huggingface_metadata, staging)
             digest = await asyncio.to_thread(directory_sha256, staging)
             self._validate_digest(digest, source.expected_sha256, source.repo_id)
             size = directory_size(staging)
@@ -329,6 +333,15 @@ def _remove_staging(path: Path) -> None:
             shutil.rmtree(path)
         else:
             path.unlink()
+
+
+def _remove_huggingface_metadata(snapshot: Path) -> None:
+    metadata = snapshot / ".cache" / "huggingface"
+    if metadata.is_dir():
+        shutil.rmtree(metadata)
+    cache = snapshot / ".cache"
+    with contextlib.suppress(OSError):
+        cache.rmdir()
 
 
 def _content_length(response: httpx.Response) -> int | None:

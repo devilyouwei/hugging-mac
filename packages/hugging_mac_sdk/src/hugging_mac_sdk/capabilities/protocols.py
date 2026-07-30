@@ -12,6 +12,10 @@ from typing import Protocol, TypeVar
 from hugging_mac_sdk.schemas.detection import DetectionRequest, DetectionResponse
 from hugging_mac_sdk.schemas.pose import PoseEstimationResponse, PoseRequest
 from hugging_mac_sdk.schemas.segmentation import SegmentationRequest, SegmentationResponse
+from hugging_mac_sdk.schemas.transcription import (
+    TranscriptionRequest,
+    TranscriptionResponse,
+)
 
 RequestT = TypeVar("RequestT", contravariant=True)
 ResponseT = TypeVar("ResponseT", covariant=True)
@@ -44,10 +48,10 @@ class Chat(Protocol[RequestT, ResponseT, EventT]):
     def stream_chat(self, request: RequestT) -> AsyncIterator[EventT]: ...
 
 
-class SpeechTranscription(Protocol[RequestT, ResponseT]):
-    """Transcribe speech into timestamped text."""
+class SpeechTranscription(Protocol):
+    """Transcribe speech into text."""
 
-    async def transcribe(self, request: RequestT) -> ResponseT: ...
+    async def transcribe(self, request: TranscriptionRequest) -> TranscriptionResponse: ...
 
 
 class ImageEmbedding(Protocol[RequestT, ResponseT]):

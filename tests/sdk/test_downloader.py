@@ -152,6 +152,9 @@ async def test_downloads_huggingface_snapshot(
         local_dir.mkdir()
         (local_dir / "config.json").write_text("{}")
         (local_dir / "model.safetensors").write_bytes(b"weights")
+        metadata = local_dir / ".cache" / "huggingface"
+        metadata.mkdir(parents=True)
+        (metadata / "download.json").write_text("{}")
         return str(local_dir)
 
     monkeypatch.setattr(downloader_module, "snapshot_download", fake_snapshot_download)
@@ -164,4 +167,5 @@ async def test_downloads_huggingface_snapshot(
 
     assert (destination / "config.json").read_text() == "{}"
     assert (destination / "model.safetensors").read_bytes() == b"weights"
+    assert not (destination / ".cache").exists()
     assert result.digest is not None

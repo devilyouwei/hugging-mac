@@ -4,7 +4,12 @@ import pytest
 from hugging_mac_sdk.core.instance import BaseModelInstance
 from hugging_mac_sdk.core.manager import InstanceManager, ReusePolicy
 from hugging_mac_sdk.core.registry import ModelDefinition, ModelRegistry
-from hugging_mac_sdk.errors import RegistrationConflictError, UnsupportedRuntimeError
+from hugging_mac_sdk.core.runtime_policy import RuntimePolicy
+from hugging_mac_sdk.errors import (
+    RegistrationConflictError,
+    ResourceNotFoundError,
+    UnsupportedRuntimeError,
+)
 from hugging_mac_sdk.schemas.manifest import ModelManifest, RuntimeSpec
 
 
@@ -14,6 +19,11 @@ class DummyInstance(BaseModelInstance):
 
     async def _unload(self) -> None:
         return None
+
+
+class MissingResourceInstance(DummyInstance):
+    async def _resolve(self) -> None:
+        raise ResourceNotFoundError("preferred runtime artifact is missing")
 
 
 def manifest(
@@ -73,16 +83,19 @@ async def test_instance_manager_applies_reuse_policy() -> None:
 
     shared_a = await manager.create(
         "example/model",
+        runtime="pytorch-mps",
         options={"dtype": "float16"},
         reuse=ReusePolicy.SHARED,
     )
     shared_b = await manager.create(
         "example/model",
+        runtime="pytorch-mps",
         options={"dtype": "float16"},
         reuse=ReusePolicy.SHARED,
     )
     dedicated = await manager.create(
         "example/model",
+        runtime="pytorch-mps",
         options={"dtype": "float16"},
         reuse=ReusePolicy.DEDICATED,
     )
@@ -91,3 +104,36 @@ async def test_instance_manager_applies_reuse_policy() -> None:
     assert dedicated is not shared_a
     assert await manager.unload(str(shared_a.instance_id))
     assert not await manager.unload(str(shared_a.instance_id))
+
+
+async def test_instance_manager_auto_falls_back_to_runtime_with_local_artifact() -> None:
+    registry = ModelRegistry()
+    registry.register(
+        ModelDefinition(
+            ModelManifest(
+                model_id="example/fallback-model",
+                display_name="Fallback Model",
+                family="test",
+                capabilities=frozenset({"object-detection"}),
+                runtimes=(
+                    RuntimeSpec(name="preferred"),
+                    RuntimeSpec(name="fallback"),
+                ),
+            ),
+            runtime_factories={
+                "preferred": lambda _: MissingResourceInstance(),
+                "fallback": lambda _: DummyInstance(),
+            },
+        )
+    )
+    manager = InstanceManager(
+        registry,
+        runtime_policy=RuntimePolicy(("preferred", "fallback")),
+    )
+
+    instance = await manager.load("example/fallback-model", runtime="auto")
+    snapshot = await manager.snapshot(str(instance.instance_id))
+
+    assert instance.state.value == "ready"
+    assert snapshot.runtime == "fallback"
+    assert len(await manager.list()) == 1

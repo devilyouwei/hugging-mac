@@ -5,57 +5,46 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
 import pytest
 from hugging_mac_sdk import ModelSdk
 from hugging_mac_sdk.capabilities import InstanceSegmentation, PoseEstimation
 from hugging_mac_sdk.converters import ConverterRegistry
+from hugging_mac_sdk.converters.yolov8 import YoloV8ExportOptions
 from hugging_mac_sdk.models.yolov8_pose import (
     YOLOV8_POSE_MANIFEST,
-    CoreMlYoloV8PoseInstance,
-    PyTorchMpsYoloV8PoseInstance,
     register_yolov8_pose,
 )
 from hugging_mac_sdk.models.yolov8_pose.config import YoloV8PoseInstanceConfig
 from hugging_mac_sdk.models.yolov8_pose.converter import YoloV8PoseConverter
+from hugging_mac_sdk.models.yolov8_pose.instance import YoloV8PoseInstance
+from hugging_mac_sdk.models.yolov8_pose.torch import TorchYoloV8PoseEngine
 from hugging_mac_sdk.models.yolov8_seg import (
     YOLOV8_SEG_MANIFEST,
-    CoreMlYoloV8SegInstance,
-    PyTorchMpsYoloV8SegInstance,
     register_yolov8_seg,
 )
 from hugging_mac_sdk.models.yolov8_seg.config import YoloV8SegInstanceConfig
 from hugging_mac_sdk.models.yolov8_seg.converter import YoloV8SegConverter
+from hugging_mac_sdk.models.yolov8_seg.coreml import CoreMlYoloV8SegEngine
+from hugging_mac_sdk.models.yolov8_seg.instance import YoloV8SegInstance
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest, ConversionResult
 from hugging_mac_sdk.schemas.detection import DetectionRequest, ImageInput
 from hugging_mac_sdk.schemas.resources import ResolvedResource, UrlFileSource
+from hugging_mac_sdk.schemas.segmentation import PolygonPoint
+from PIL import Image
 
 
-class FakeTensor:
-    def __init__(self, value: Any) -> None:
-        self._value = value
+class FakeSession:
+    def __init__(self, outputs: dict[str, Any], device: str) -> None:
+        self.outputs = outputs
+        self.device = device
 
-    def cpu(self) -> FakeTensor:
-        return self
+    def run(self, _: dict[str, Any]) -> dict[str, Any]:
+        return self.outputs
 
-    def tolist(self) -> Any:
-        return self._value
-
-
-class FakeNumpyContour:
-    """Minimal NumPy-like contour that rejects ambiguous truth-value checks."""
-
-    def __init__(self, points: list[list[float]]) -> None:
-        self._points = points
-
-    def __iter__(self) -> Any:
-        return iter(self._points)
-
-    def __len__(self) -> int:
-        return len(self._points)
-
-    def __bool__(self) -> bool:
-        raise ValueError("The truth value of an array is ambiguous")
+    async def close(self) -> None:
+        return None
 
 
 class FakeAssets:
@@ -68,6 +57,9 @@ class FakeAssets:
     async def resolve_coreml(self) -> ResolvedResource:
         return self._resource()
 
+    async def resolve_onnx(self) -> ResolvedResource:
+        return self._resource()
+
     def _resource(self) -> ResolvedResource:
         return ResolvedResource(
             path=self._path,
@@ -76,43 +68,22 @@ class FakeAssets:
         )
 
 
-class FakePoseModel:
-    def predict(self, *_: object, **__: object) -> list[object]:
-        return [
-            SimpleNamespace(
-                orig_shape=(480, 640),
-                names={0: "person"},
-                boxes=SimpleNamespace(
-                    xyxy=FakeTensor([[10, 20, 110, 220]]),
-                    conf=FakeTensor([0.9]),
-                    cls=FakeTensor([0]),
-                ),
-                keypoints=SimpleNamespace(
-                    xy=FakeTensor([[[15, 25], [20, 30]]]),
-                    conf=FakeTensor([[0.8, 0.7]]),
-                ),
-                speed={"preprocess": 1.0, "inference": 2.0, "postprocess": 0.5},
-            )
-        ]
+def pose_outputs() -> dict[str, Any]:
+    prediction = np.zeros((1, 56, 8400), dtype=np.float32)
+    prediction[0, :4, 0] = (60, 200, 100, 200)
+    prediction[0, 4, 0] = 0.9
+    prediction[0, 5:11, 0] = (15, 105, 0.8, 20, 110, 0.7)
+    return {"predictions": prediction}
 
 
-class FakeSegModel:
-    def predict(self, *_: object, **__: object) -> list[object]:
-        return [
-            SimpleNamespace(
-                orig_shape=(480, 640),
-                names={0: "person"},
-                boxes=SimpleNamespace(
-                    xyxy=FakeTensor([[10, 20, 110, 220]]),
-                    conf=FakeTensor([0.9]),
-                    cls=FakeTensor([0]),
-                ),
-                masks=SimpleNamespace(
-                    xy=[FakeNumpyContour([[10, 20], [110, 20], [110, 220]])]
-                ),
-                speed={},
-            )
-        ]
+def seg_outputs() -> dict[str, Any]:
+    prediction = np.zeros((1, 116, 8400), dtype=np.float32)
+    prediction[0, :4, 0] = (60, 200, 100, 200)
+    prediction[0, 4, 0] = 0.9
+    prediction[0, 84, 0] = 10
+    prototypes = np.zeros((1, 32, 160, 160), dtype=np.float32)
+    prototypes[0, 0] = 1
+    return {"predictions": prediction, "prototypes": prototypes}
 
 
 def test_pose_and_seg_manifests_register_all_supported_variants() -> None:
@@ -129,22 +100,20 @@ def test_pose_and_seg_manifests_register_all_supported_variants() -> None:
     assert str(seg_source.url).endswith("yolov8m-seg.pt")  # type: ignore[union-attr]
 
     for variant in ("n", "s", "m"):
-        assert isinstance(
-            sdk.registry.create_instance(
-                "ultralytics/yolov8-pose",
-                variant=variant,
-                runtime="coreml",
-            ),
-            CoreMlYoloV8PoseInstance,
+        pose_instance = sdk.registry.create_instance(
+            "ultralytics/yolov8-pose",
+            variant=variant,
+            runtime="coreml",
         )
-        assert isinstance(
-            sdk.registry.create_instance(
-                "ultralytics/yolov8-seg",
-                variant=variant,
-                runtime="pytorch-mps",
-            ),
-            PyTorchMpsYoloV8SegInstance,
+        seg_instance = sdk.registry.create_instance(
+            "ultralytics/yolov8-seg",
+            variant=variant,
+            runtime="pytorch-mps",
         )
+        assert isinstance(pose_instance, YoloV8PoseInstance)
+        assert isinstance(seg_instance, YoloV8SegInstance)
+        assert pose_instance.info().runtime == "coreml"
+        assert seg_instance.info().runtime == "pytorch-mps"
 
 
 async def test_pose_and_seg_instances_map_task_specific_results(
@@ -152,34 +121,56 @@ async def test_pose_and_seg_instances_map_task_specific_results(
     monkeypatch: Any,
 ) -> None:
     image = tmp_path / "input.jpg"
-    image.write_bytes(b"image")
+    Image.new("RGB", (640, 480)).save(image)
     pose_weights = tmp_path / "pose.pt"
     pose_weights.write_bytes(b"weights")
     seg_package = tmp_path / "seg.mlpackage"
     seg_package.mkdir()
-    models = iter((FakePoseModel(), FakeSegModel()))
-    monkeypatch.setitem(
-        sys.modules,
-        "ultralytics",
-        SimpleNamespace(YOLO=lambda *_args, **_kwargs: next(models)),
+
+    async def fake_torch_session(*_: Any, **__: Any) -> FakeSession:
+        return FakeSession(pose_outputs(), "mps")
+
+    async def fake_coreml_session(*_: Any, **__: Any) -> FakeSession:
+        return FakeSession(seg_outputs(), "all")
+
+    monkeypatch.setattr(
+        "hugging_mac_sdk.models.yolov8_pose.torch.TorchProvider.create_session",
+        fake_torch_session,
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "torch",
-        SimpleNamespace(
-            backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: True)),
-            mps=SimpleNamespace(empty_cache=lambda: None),
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace())
+    monkeypatch.setattr(
+        "hugging_mac_sdk.models.yolov8_pose.torch.torch_input",
+        lambda *_: object(),
+    )
+    monkeypatch.setattr(
+        "hugging_mac_sdk.models.yolov8_seg.coreml.CoreMLProvider.create_session",
+        fake_coreml_session,
+    )
+    monkeypatch.setattr(
+        "hugging_mac_sdk.models.yolov8_seg.utils.postprocess.masks_to_polygons",
+        lambda *_: (
+            (
+                (
+                    PolygonPoint(x=10, y=20),
+                    PolygonPoint(x=110, y=20),
+                    PolygonPoint(x=110, y=220),
+                ),
+            ),
         ),
     )
 
-    pose = PyTorchMpsYoloV8PoseInstance(
-        YoloV8PoseInstanceConfig(runtime="pytorch-mps", variant="s"),
+    pose_config = YoloV8PoseInstanceConfig(runtime="pytorch-mps", variant="s")
+    pose_engine = TorchYoloV8PoseEngine(
+        pose_config,
         FakeAssets(pose_weights),  # type: ignore[arg-type]
     )
-    seg = CoreMlYoloV8SegInstance(
-        YoloV8SegInstanceConfig(runtime="coreml", variant="m"),
+    pose = YoloV8PoseInstance(pose_config, pose_engine)
+    seg_config = YoloV8SegInstanceConfig(runtime="coreml", variant="m")
+    seg_engine = CoreMlYoloV8SegEngine(
+        seg_config,
         FakeAssets(seg_package),  # type: ignore[arg-type]
     )
+    seg = YoloV8SegInstance(seg_config, seg_engine)
     request = DetectionRequest(image=ImageInput(path=image))
 
     await pose.load()
@@ -187,9 +178,13 @@ async def test_pose_and_seg_instances_map_task_specific_results(
     await seg.load()
     seg_response = await seg.require(InstanceSegmentation).segment(request)  # type: ignore[type-abstract]
 
-    assert pose_response.poses[0].keypoints[1].confidence == 0.7
+    assert pose_response.poses[0].keypoints[1].confidence == pytest.approx(0.7)
     assert pose_response.poses[0].label == "person"
-    assert seg_response.segments[0].polygons[0][2].y == 220
+    assert seg_response.segments[0].polygons
+    assert all(
+        10 <= point.x <= 110 and 20 <= point.y <= 220
+        for point in seg_response.segments[0].polygons[0]
+    )
     assert seg_response.segments[0].label == "person"
 
 
@@ -270,20 +265,23 @@ async def test_pose_and_seg_coreml_conversion_uses_raw_task_outputs(
     model_id: str,
     filename: str,
 ) -> None:
-    export_arguments: dict[str, object] = {}
+    export_options: YoloV8ExportOptions | None = None
 
-    class FakeYolo:
-        def __init__(self, source: str) -> None:
-            self.source = Path(source)
+    def fake_export(
+        _: YoloV8PoseConverter | YoloV8SegConverter,
+        source: Path,
+        target_format: ArtifactFormat,
+        options: YoloV8ExportOptions,
+    ) -> Path:
+        nonlocal export_options
+        assert target_format is ArtifactFormat.COREML
+        export_options = options
+        output = source.with_suffix(".mlpackage")
+        output.mkdir()
+        (output / "model.mlmodel").write_bytes(b"coreml")
+        return output
 
-        def export(self, **kwargs: object) -> str:
-            export_arguments.update(kwargs)
-            output = self.source.with_suffix(".mlpackage")
-            output.mkdir()
-            (output / "model.mlmodel").write_bytes(b"coreml")
-            return str(output)
-
-    monkeypatch.setitem(sys.modules, "ultralytics", SimpleNamespace(YOLO=FakeYolo))
+    monkeypatch.setattr(converter_type, "_export", fake_export)
     source_path = tmp_path / filename
     source_path.write_bytes(b"weights")
     source = ResolvedResource(
@@ -309,5 +307,5 @@ async def test_pose_and_seg_coreml_conversion_uses_raw_task_outputs(
     assert result.path.is_dir()
     assert result.options["nms"] is False
     assert "variant" not in result.options
-    assert export_arguments["format"] == "coreml"
-    assert export_arguments["nms"] is False
+    assert export_options is not None
+    assert export_options.nms is False

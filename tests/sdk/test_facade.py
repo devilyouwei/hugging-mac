@@ -3,6 +3,7 @@ from __future__ import annotations
 from hugging_mac_sdk import ModelSdk, ModelState, ReusePolicy, RuntimePolicy
 from hugging_mac_sdk.core.instance import BaseModelInstance
 from hugging_mac_sdk.core.registry import ModelDefinition
+from hugging_mac_sdk.errors import ResourceNotFoundError
 from hugging_mac_sdk.schemas.manifest import ModelManifest, RuntimeSpec
 
 
@@ -16,6 +17,11 @@ class DummyInstance(BaseModelInstance):
 
     async def _unload(self) -> None:
         self.unload_calls += 1
+
+
+class MissingResourceInstance(DummyInstance):
+    async def _resolve(self) -> None:
+        raise ResourceNotFoundError("preferred artifact is missing")
 
 
 def _sdk() -> ModelSdk:
@@ -78,3 +84,33 @@ async def test_dedicated_handle_unloads_instance_on_close() -> None:
     assert isinstance(instance, DummyInstance)
     assert instance.unload_calls == 1
     assert (await sdk.catalog.snapshot()).models[0].instance_count == 0
+
+
+async def test_application_acquire_uses_auto_runtime_artifact_fallback() -> None:
+    sdk = ModelSdk(runtime_policy=RuntimePolicy(("preferred", "fallback")))
+    sdk.registry.register(
+        ModelDefinition(
+            manifest=ModelManifest(
+                model_id="example/auto-fallback",
+                display_name="Auto Fallback",
+                family="test",
+                capabilities=frozenset({"chat"}),
+                runtimes=(
+                    RuntimeSpec(name="preferred"),
+                    RuntimeSpec(name="fallback"),
+                ),
+            ),
+            runtime_factories={
+                "preferred": lambda _: MissingResourceInstance(),
+                "fallback": lambda _: DummyInstance(),
+            },
+        )
+    )
+
+    handle = await sdk.acquire("example/auto-fallback", runtime=None)
+    snapshot = await sdk.instances.snapshot(str(handle.instance.instance_id))
+
+    assert handle.state is ModelState.READY
+    assert snapshot.runtime == "fallback"
+    await handle.close()
+    await sdk.instances.unload_all(force=True)

@@ -12,7 +12,7 @@ src/hugging_mac_sdk/
 ├── capabilities/       # detect、chat、transcribe、embedding 等任务协议
 ├── core/               # 生命周期、模型注册和实例复用
 ├── resources/          # 下载、hash、原子提交与安全解压
-├── runtime/            # PyTorch MPS、MLX、Core ML 等 adapter 契约
+├── runtime/            # PyTorch、Core ML、ONNX 等通用 provider/session
 ├── schemas/            # manifest、资源和健康状态 schema
 └── errors.py           # 稳定错误层级
 ```
@@ -43,11 +43,12 @@ registry.register(
         runtime_factories={
             "pytorch-mps": create_yolo_mps,
             "coreml": create_yolo_coreml,
+            "onnx": create_yolo_onnx,
         },
         artifacts=yolo_artifacts,
     )
 )
-instance = registry.create_instance("ultralytics/yolo", runtime="pytorch-mps")
+instance = registry.create_instance("ultralytics/yolov8", runtime="pytorch-mps")
 await instance.load()
 detector = instance.require(ObjectDetection)
 ```
@@ -244,15 +245,55 @@ result = await ConversionService(converters).convert(
 )
 ```
 
-YOLOv8 的 `n/s/m` 专用转换器默认使用固定 `640×640`、batch 1、FP16、静态 shape 和导出内置 NMS。
-Core ML 运行时配置为 `ComputeUnit.ALL`，但该配置在模型加载阶段应用，不是 Ultralytics 导出参数。
+YOLOv8 的 `n/s/m` 专用转换器默认使用固定 `640×640`、batch 1、FP16 和静态 shape。转换产物保留
+原始预测输出，由模型 `utils/postprocess.py` 对 PyTorch、Core ML 和 ONNX 统一执行 NMS。转换与推理均不依赖
+Ultralytics Python 包；Core ML compute unit 在 `CoreMLProvider` 加载 session 时应用。
 
 源模型来自 `Ultralytics/YOLOv8` 的 `yolov8{n,s,m}.pt`，revision 与各自 SHA-256 已固定。这些文件包含 Python
 pickle 对象，只能作为 manifest 中明确允许的受信任来源加载，不能把任意第三方 `.pt` 当成安全数据文件。
 
+## Audio8-ASR 推理
+
+Audio8-ASR 的 snapshot 只包含 safetensors 权重与 JSON/tokenizer 配置；SDK 不下载或执行模型仓库里的
+Python 文件。安装依赖：
+
+```bash
+uv sync --package hugging-mac-sdk --extra asr
+```
+
+显式下载并调用 `SpeechTranscription`：
+
+```python
+from pathlib import Path
+
+from hugging_mac_sdk import AudioInput, ModelSdk, TranscriptionRequest
+from hugging_mac_sdk.capabilities import SpeechTranscription
+from hugging_mac_sdk.models.audio8_asr import register_audio8_asr
+
+sdk = ModelSdk()
+register_audio8_asr(sdk.registry)
+options = {"model_home": Path("models")}
+
+await sdk.resources.download_source(
+    "audio8/audio8-asr-0.1b",
+    options=options,
+)
+handle = await sdk.load(
+    "audio8/audio8-asr-0.1b",
+    runtime="pytorch-mps",
+    options=options,
+)
+result = await handle.require(SpeechTranscription).transcribe(
+    TranscriptionRequest(audio=AudioInput(path=Path("sample.wav")))
+)
+print(result.text)
+```
+
+源模型许可证为 `CC-BY-NC-4.0`，且当前集成针对最长 30 秒的短音频。
+
 ## YOLOv8 推理
 
-注册后可创建 PyTorch MPS 或 Core ML 实例。Core ML 是默认 runtime，但实例只加载已经存在的资产；
+注册后可创建 PyTorch MPS、Core ML 或 ONNX Runtime 实例。Core ML 是默认 runtime，但实例只加载已经存在的资产；
 缺失时抛出 `ResourceNotFoundError`：
 
 ```python

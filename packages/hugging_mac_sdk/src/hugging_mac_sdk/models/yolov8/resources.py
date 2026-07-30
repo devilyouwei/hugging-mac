@@ -1,27 +1,19 @@
-"""Resolve pinned YOLOv8 source and converted runtime assets."""
+"""YOLOv8-specific resource resolution and lifecycle hooks."""
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 from hugging_mac_sdk.errors import (
     ResourceIntegrityError,
     ResourceNotFoundError,
     UnsupportedRuntimeError,
 )
-from hugging_mac_sdk.models.yolov8.config import (
-    YOLOV8_FILENAMES,
-    YOLOV8_MODEL_ID,
-    YOLOV8_SHA256,
-    YOLOV8_VARIANTS,
-    YoloV8InstanceConfig,
-    YoloV8Variant,
-)
-from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size, file_sha256
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest
@@ -32,8 +24,17 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
 )
 
+from .config import (
+    YOLOV8_FILENAMES,
+    YOLOV8_MODEL_ID,
+    YOLOV8_SHA256,
+    YOLOV8_VARIANTS,
+    YoloV8InstanceConfig,
+)
+from .converter import YoloV8Converter
 
-class YoloV8AssetResolver:
+
+class YoloV8ResourceResolver:
     def __init__(
         self,
         source: HuggingFaceSource,
@@ -94,6 +95,24 @@ class YoloV8AssetResolver:
             size_bytes=directory_size(path),
         )
 
+    async def resolve_onnx(self) -> ResolvedResource:
+        path = self._config.artifact_path or self._default_onnx_path()
+        if not path.is_file():
+            raise ResourceNotFoundError(
+                "YOLOv8 ONNX artifact has not been converted",
+                details={
+                    "model_id": YOLOV8_MODEL_ID,
+                    "variant": self._config.variant,
+                    "artifact_id": "onnx",
+                },
+            )
+        return ResolvedResource(
+            path=path,
+            source=self._source,
+            digest=file_sha256(path),
+            size_bytes=path.stat().st_size,
+        )
+
     async def download_source(self, *, overwrite: bool = False) -> ResolvedResource:
         path = self._config.source_path or self._default_source_path()
         if path.exists() and not overwrite:
@@ -106,9 +125,24 @@ class YoloV8AssetResolver:
         )
 
     async def convert_coreml(self, *, overwrite: bool = False) -> None:
-        path = self._config.artifact_path or self._default_coreml_path()
+        await self.convert(ArtifactFormat.COREML, overwrite=overwrite)
+
+    async def convert(
+        self,
+        target_format: ArtifactFormat,
+        *,
+        overwrite: bool = False,
+    ) -> None:
+        if target_format is ArtifactFormat.COREML:
+            path = self._config.artifact_path or self._default_coreml_path()
+            resolver = self.resolve_coreml
+        elif target_format is ArtifactFormat.ONNX:
+            path = self._config.artifact_path or self._default_onnx_path()
+            resolver = self.resolve_onnx
+        else:
+            raise UnsupportedRuntimeError(f"YOLOv8 does not support {target_format}")
         if path.exists() and not overwrite:
-            await self.resolve_coreml()
+            await resolver()
             return
         source = await self.resolve_source()
         await self._converter.convert(
@@ -118,7 +152,7 @@ class YoloV8AssetResolver:
                 variant=self._config.variant,
                 source=source,
                 source_format=ArtifactFormat.PYTORCH,
-                target_format=ArtifactFormat.COREML,
+                target_format=target_format,
                 output_path=path,
                 overwrite=overwrite,
             )
@@ -133,6 +167,8 @@ class YoloV8AssetResolver:
             targets = (self._config.source_path or self._default_source_path(),)
         elif runtime == "coreml":
             targets = (self._config.artifact_path or self._default_coreml_path(),)
+        elif runtime == "onnx":
+            targets = (self._config.artifact_path or self._default_onnx_path(),)
         else:
             raise UnsupportedRuntimeError(
                 f"YOLOv8 does not support runtime {runtime}",
@@ -147,6 +183,7 @@ class YoloV8AssetResolver:
     def status(self, *, revision: str) -> ModelResourceStatus:
         source_path = self._config.source_path or self._default_source_path()
         coreml_path = self._config.artifact_path or self._default_coreml_path()
+        onnx_path = self._config.artifact_path or self._default_onnx_path()
         return ModelResourceStatus(
             model_id=YOLOV8_MODEL_ID,
             revision=revision,
@@ -165,6 +202,13 @@ class YoloV8AssetResolver:
                     runtime="coreml",
                     provisioning="convert",
                 ),
+                _artifact_status(
+                    "onnx",
+                    ArtifactFormat.ONNX,
+                    onnx_path,
+                    runtime="onnx",
+                    provisioning="convert",
+                ),
             ),
         )
 
@@ -172,11 +216,10 @@ class YoloV8AssetResolver:
         return self._model_root() / "source" / YOLOV8_FILENAMES[self._config.variant]
 
     def _default_coreml_path(self) -> Path:
-        return (
-            self._model_root()
-            / "coreml"
-            / f"yolov8{self._config.variant}.mlpackage"
-        )
+        return self._model_root() / "coreml" / f"yolov8{self._config.variant}.mlpackage"
+
+    def _default_onnx_path(self) -> Path:
+        return self._model_root() / "onnx" / f"yolov8{self._config.variant}.onnx"
 
     def _model_root(self) -> Path:
         return (
@@ -243,7 +286,7 @@ class YoloV8ResourceProvider:
         *,
         overwrite: bool = False,
     ) -> ModelResourceStatus:
-        if target_format is not ArtifactFormat.COREML:
+        if target_format not in {ArtifactFormat.COREML, ArtifactFormat.ONNX}:
             raise UnsupportedRuntimeError(
                 f"YOLOv8 resource provider does not support {target_format} yet",
                 details={
@@ -253,7 +296,7 @@ class YoloV8ResourceProvider:
                 },
             )
         resolver = self._resolver(variant, options)
-        await resolver.convert_coreml(overwrite=overwrite)
+        await resolver.convert(target_format, overwrite=overwrite)
         return resolver.status(revision=self._revision)
 
     async def delete(
@@ -271,11 +314,11 @@ class YoloV8ResourceProvider:
         self,
         variant: str,
         options: Mapping[str, object] | None,
-    ) -> YoloV8AssetResolver:
+    ) -> YoloV8ResourceResolver:
         try:
             if variant not in YOLOV8_VARIANTS:
                 raise KeyError(variant)
-            typed_variant = cast(YoloV8Variant, variant)
+            typed_variant = variant
             source = self._sources[variant]
         except KeyError as error:
             raise ResourceNotFoundError(
@@ -293,10 +336,8 @@ class YoloV8ResourceProvider:
                 "Conflicting YOLOv8 variant values were provided",
                 details={"variant": variant, "options_variant": option_variant},
             )
-        config = YoloV8InstanceConfig.model_validate(
-            normalized | {"variant": typed_variant}
-        )
-        return YoloV8AssetResolver(source, config)
+        config = YoloV8InstanceConfig.model_validate(normalized | {"variant": typed_variant})
+        return YoloV8ResourceResolver(source, config)
 
 
 def _artifact_status(
@@ -307,7 +348,7 @@ def _artifact_status(
     runtime: str | None,
     provisioning: Literal["download", "convert"] = "download",
 ) -> ModelArtifactStatus:
-    available = path.is_file() if artifact_format is ArtifactFormat.PYTORCH else path.is_dir()
+    available = path.is_dir() if artifact_format is ArtifactFormat.COREML else path.is_file()
     size = None
     if available:
         size = path.stat().st_size if path.is_file() else directory_size(path)
@@ -328,11 +369,7 @@ def _prune_empty_directories(root: Path) -> None:
         reverse=True,
     )
     for directory in directories:
-        try:
+        with contextlib.suppress(OSError):
             directory.rmdir()
-        except OSError:
-            pass
-    try:
+    with contextlib.suppress(OSError):
         root.rmdir()
-    except OSError:
-        pass

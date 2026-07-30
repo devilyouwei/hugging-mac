@@ -33,14 +33,23 @@ apple = [
   "mlx>=0.27,<1; sys_platform == 'darwin' and platform_machine == 'arm64'",
   "mlx-lm>=0.26,<1; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
+asr = [
+  "numpy>=2.0,<2.4",
+  "safetensors>=0.5,<1",
+  "scipy>=1.15,<2",
+  "soundfile>=0.13,<1",
+  "torch>=2.7,<3",
+  "transformers>=4.57.3,<6",
+]
 vision = [
   "einops>=0.8,<1",
+  "onnx>=1.18,<2",
+  "onnxruntime>=1.22,<2",
   "opencv-python>=4.11,<5",
   "timm>=1,<2",
   "torch>=2.7,<3",
   "torchvision>=0.22,<1",
   "transformers>=4.53,<6",
-  "ultralytics>=8.3,<9",
 ]
 llm = [
   "accelerate>=1.8,<2",
@@ -99,7 +108,7 @@ members = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-extend-exclude = ["models", "data", "artifacts"]
+extend-exclude = ["/models", "/data", "/artifacts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
@@ -122,7 +131,7 @@ asyncio_mode = "auto"
 python_version = "3.12"
 strict = true
 warn_unused_configs = true
-exclude = ["models/", "data/", "artifacts/"]
+exclude = "^(models|data|artifacts)/"
 
 [tool.coverage.run]
 branch = true

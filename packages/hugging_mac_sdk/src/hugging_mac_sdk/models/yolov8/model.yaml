@@ -13,14 +13,20 @@ manifest:
       dtypes: [float32]
       platforms: [darwin]
       architectures: [arm64]
-      required_modules: [torch, ultralytics]
+      required_modules: [torch]
     - name: coreml
       devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
       dtypes: [float16, float32]
       quantizations: [float16, int8]
       platforms: [darwin]
       architectures: [arm64]
-      required_modules: [coremltools, ultralytics]
+      required_modules: [coremltools]
+    - name: onnx
+      devices: [coreml, cpu]
+      dtypes: [float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [onnxruntime]
   variants:
     - name: n
       display_name: YOLOv8 Nano
@@ -77,6 +83,7 @@ artifacts:
     format: coreml
     path: ultralytics/yolov8/8a9e1a5/n/coreml/yolov8n.mlpackage
     kind: directory
+  - {artifact_id: onnx, variant: n, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/n/onnx/yolov8n.onnx, kind: file}
   - artifact_id: source
     variant: s
     runtime: pytorch-mps
@@ -96,6 +103,7 @@ artifacts:
     format: coreml
     path: ultralytics/yolov8/8a9e1a5/s/coreml/yolov8s.mlpackage
     kind: directory
+  - {artifact_id: onnx, variant: s, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/s/onnx/yolov8s.onnx, kind: file}
   - artifact_id: source
     variant: m
     runtime: pytorch-mps
@@ -115,3 +123,4 @@ artifacts:
     format: coreml
     path: ultralytics/yolov8/8a9e1a5/m/coreml/yolov8m.mlpackage
     kind: directory
+  - {artifact_id: onnx, variant: m, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/m/onnx/yolov8m.onnx, kind: file}

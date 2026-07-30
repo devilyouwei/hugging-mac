@@ -15,8 +15,9 @@
 
 ## 路径抽象
 
-所有路径通过配置解析，默认位于项目目录，未来支持用户级缓存。SDK 返回 artifact/resource reference，
-不把机器绝对路径写入可分享的结果。
+所有路径通过配置解析。当前 SDK 与 Web 默认使用 platformdirs 的用户级 data/cache 目录，平台可通过
+`model_home`、`data_dir` 与 `cache_dir` 配置为项目内目录。`ModelResourceStatus` 与 catalog snapshot 不返回
+本机绝对资源路径；仅 `ModelInstanceInfo` 面向进程内调用者保留 `artifact_path` 诊断信息。
 
 ## 元数据存储
 

@@ -19,11 +19,21 @@ dependencies = [
 Repository = "https://github.com/devilyouwei/hugging-mac"
 
 [project.optional-dependencies]
+asr = [
+  "numpy>=2,<2.4",
+  "safetensors>=0.5,<1",
+  "scipy>=1.15,<2",
+  "soundfile>=0.13,<1",
+  "torch>=2.7,<3",
+  "transformers>=4.57.3,<6",
+]
 yolo = [
   "coremltools>=8,<10; sys_platform == 'darwin' and platform_machine == 'arm64'",
   "numpy>=2,<2.4",
+  "onnx>=1.18,<2",
+  "onnxruntime>=1.22,<2",
+  "opencv-python>=4.11,<5",
   "torch>=2.7,<3",
-  "ultralytics>=8.3,<9",
 ]
 
 [build-system]

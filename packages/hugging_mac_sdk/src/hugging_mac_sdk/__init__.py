@@ -23,12 +23,19 @@ from hugging_mac_sdk.errors import (
 )
 from hugging_mac_sdk.resources import DownloadProgress, ResourceDownloader
 from hugging_mac_sdk.runtime import (
+    CoreMLProvider,
+    CoreMLSession,
     DeviceInfo,
     DeviceKind,
+    OnnxRuntimeProvider,
+    OnnxRuntimeSession,
     RuntimeAdapter,
     RuntimeBackend,
     RuntimeRegistry,
     RuntimeSession,
+    TorchProvider,
+    TorchSession,
+    create_default_runtime_registry,
 )
 from hugging_mac_sdk.schemas.artifact import ArtifactKind, ModelArtifact
 from hugging_mac_sdk.schemas.catalog import (
@@ -72,10 +79,17 @@ from hugging_mac_sdk.schemas.segmentation import (
     SegmentationRequest,
     SegmentationResponse,
 )
+from hugging_mac_sdk.schemas.transcription import (
+    AudioInput,
+    TranscriptionRequest,
+    TranscriptionResponse,
+    TranscriptionTimings,
+)
 
 __all__ = [
     "ArtifactFormat",
     "ArtifactKind",
+    "AudioInput",
     "BaseModelInstance",
     "BoundingBox",
     "ConversionRequest",
@@ -83,6 +97,8 @@ __all__ = [
     "ConversionService",
     "ConversionTargetStatus",
     "ConverterRegistry",
+    "CoreMLProvider",
+    "CoreMLSession",
     "Detection",
     "DetectionRequest",
     "DetectionResponse",
@@ -121,6 +137,8 @@ __all__ = [
     "ModelState",
     "ModelSummary",
     "ModelVariantSpec",
+    "OnnxRuntimeProvider",
+    "OnnxRuntimeSession",
     "PolygonPoint",
     "Pose",
     "PoseEstimationResponse",
@@ -142,11 +160,17 @@ __all__ = [
     "Segmentation",
     "SegmentationRequest",
     "SegmentationResponse",
+    "TorchProvider",
+    "TorchSession",
+    "TranscriptionRequest",
+    "TranscriptionResponse",
+    "TranscriptionTimings",
     "UnloadResult",
     "UnsupportedCapabilityError",
     "UnsupportedRuntimeError",
     "UrlArchiveSource",
     "UrlFileSource",
     "VariantSummary",
+    "create_default_runtime_registry",
     "load_model_config",
 ]

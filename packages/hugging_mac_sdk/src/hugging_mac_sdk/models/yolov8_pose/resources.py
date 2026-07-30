@@ -1,35 +1,57 @@
-"""Shared explicit resource lifecycle for independently registered Ultralytics tasks."""
+"""YOLOv8 Pose-specific resource resolution and lifecycle hooks."""
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import shutil
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Literal, Protocol
 
 from hugging_mac_sdk.converters.base import ModelConverter
-from hugging_mac_sdk.errors import ResourceIntegrityError, ResourceNotFoundError, UnsupportedRuntimeError
+from hugging_mac_sdk.errors import (
+    ResourceIntegrityError,
+    ResourceNotFoundError,
+    UnsupportedRuntimeError,
+)
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size, file_sha256
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest
 from hugging_mac_sdk.schemas.resources import (
+    HuggingFaceSource,
     ModelArtifactStatus,
     ModelResourceStatus,
     ResolvedResource,
     ResourceSource,
 )
 
+from .config import (
+    YOLOV8_POSE_MODEL_ID,
+    YOLOV8_POSE_REVISION,
+    YoloV8PoseInstanceConfig,
+)
+from .converter import YoloV8PoseConverter
 
-class UltralyticsTaskConfig(Protocol):
-    variant: str
-    model_home: Path
-    source_path: Path | None
-    artifact_path: Path | None
-    hf_token: str | None
+
+class _YoloTaskConfig(Protocol):
+    @property
+    def variant(self) -> str: ...
+
+    @property
+    def model_home(self) -> Path: ...
+
+    @property
+    def source_path(self) -> Path | None: ...
+
+    @property
+    def artifact_path(self) -> Path | None: ...
+
+    @property
+    def hf_token(self) -> str | None: ...
 
 
-class UltralyticsTaskAssetResolver:
+class _YoloTaskResourceResolver:
     """Resolve one task/variant without performing implicit network work."""
 
     def __init__(
@@ -38,7 +60,7 @@ class UltralyticsTaskAssetResolver:
         model_id: str,
         model_revision: str,
         source: ResourceSource,
-        config: UltralyticsTaskConfig,
+        config: _YoloTaskConfig,
         downloader: ResourceDownloader | None = None,
         converter: ModelConverter,
     ) -> None:
@@ -53,7 +75,7 @@ class UltralyticsTaskAssetResolver:
         path = self.source_path
         if not path.is_file():
             raise ResourceNotFoundError(
-                "Ultralytics source model is not downloaded",
+                "YOLO source model is not downloaded",
                 details=self._details("source"),
             )
         digest = file_sha256(path)
@@ -74,7 +96,7 @@ class UltralyticsTaskAssetResolver:
         path = self.coreml_path
         if not path.is_dir():
             raise ResourceNotFoundError(
-                "Ultralytics Core ML artifact has not been converted",
+                "YOLO Core ML artifact has not been converted",
                 details=self._details("coreml"),
             )
         return ResolvedResource(
@@ -82,6 +104,20 @@ class UltralyticsTaskAssetResolver:
             source=self._source,
             digest=directory_sha256(path),
             size_bytes=directory_size(path),
+        )
+
+    async def resolve_onnx(self) -> ResolvedResource:
+        path = self.onnx_path
+        if not path.is_file():
+            raise ResourceNotFoundError(
+                "YOLO ONNX artifact has not been converted",
+                details=self._details("onnx"),
+            )
+        return ResolvedResource(
+            path=path,
+            source=self._source,
+            digest=file_sha256(path),
+            size_bytes=path.stat().st_size,
         )
 
     async def download_source(self, *, overwrite: bool = False) -> ResolvedResource:
@@ -95,8 +131,27 @@ class UltralyticsTaskAssetResolver:
         )
 
     async def convert_coreml(self, *, overwrite: bool = False) -> None:
-        if self.coreml_path.exists() and not overwrite:
-            await self.resolve_coreml()
+        await self.convert(ArtifactFormat.COREML, overwrite=overwrite)
+
+    async def convert(
+        self,
+        target_format: ArtifactFormat,
+        *,
+        overwrite: bool = False,
+    ) -> None:
+        if target_format is ArtifactFormat.COREML:
+            path = self.coreml_path
+            resolver = self.resolve_coreml
+        elif target_format is ArtifactFormat.ONNX:
+            path = self.onnx_path
+            resolver = self.resolve_onnx
+        else:
+            raise UnsupportedRuntimeError(
+                f"{self._model_id} does not support {target_format}",
+                details=self._details() | {"target_format": target_format},
+            )
+        if path.exists() and not overwrite:
+            await resolver()
             return
         source = await self.resolve_source()
         await self._converter.convert(
@@ -106,8 +161,8 @@ class UltralyticsTaskAssetResolver:
                 variant=self._config.variant,
                 source=source,
                 source_format=ArtifactFormat.PYTORCH,
-                target_format=ArtifactFormat.COREML,
-                output_path=self.coreml_path,
+                target_format=target_format,
+                output_path=path,
                 overwrite=overwrite,
             )
         )
@@ -119,6 +174,8 @@ class UltralyticsTaskAssetResolver:
             targets = (self.source_path,)
         elif runtime == "coreml":
             targets = (self.coreml_path,)
+        elif runtime == "onnx":
+            targets = (self.onnx_path,)
         else:
             raise UnsupportedRuntimeError(
                 f"{self._model_id} does not support runtime {runtime}",
@@ -140,12 +197,21 @@ class UltralyticsTaskAssetResolver:
                     "coreml",
                     provisioning="convert",
                 ),
+                _artifact_status(
+                    "onnx",
+                    ArtifactFormat.ONNX,
+                    self.onnx_path,
+                    "onnx",
+                    provisioning="convert",
+                ),
             ),
         )
 
     @property
     def model_root(self) -> Path:
-        return self._config.model_home.joinpath(*self._model_id.split("/"), self._model_revision, self._config.variant)
+        return self._config.model_home.joinpath(
+            *self._model_id.split("/"), self._model_revision, self._config.variant
+        )
 
     @property
     def source_path(self) -> Path:
@@ -153,14 +219,28 @@ class UltralyticsTaskAssetResolver:
 
     @property
     def coreml_path(self) -> Path:
-        return self._config.artifact_path or self.model_root / "coreml" / f"{Path(self._filename).stem}.mlpackage"
+        return (
+            self._config.artifact_path
+            or self.model_root / "coreml" / f"{Path(self._filename).stem}.mlpackage"
+        )
+
+    @property
+    def onnx_path(self) -> Path:
+        return (
+            self._config.artifact_path
+            or self.model_root / "onnx" / f"{Path(self._filename).stem}.onnx"
+        )
 
     @property
     def _filename(self) -> str:
-        source_name = getattr(self._source, "filename", None)
-        if source_name is not None:
-            return source_name
-        return Path(str(getattr(self._source, "url"))).name
+        if isinstance(self._source, HuggingFaceSource):
+            if self._source.filename is None:
+                raise ResourceIntegrityError(
+                    "A YOLO Hugging Face source must identify one file",
+                    details=self._details("source"),
+                )
+            return self._source.filename
+        return Path(str(self._source.url)).name
 
     def _details(self, artifact_id: str | None = None) -> dict[str, str]:
         details = {"model_id": self._model_id, "variant": self._config.variant}
@@ -184,7 +264,7 @@ class UltralyticsTaskAssetResolver:
         _prune_empty_directories(root)
 
 
-class UltralyticsTaskResourceProvider:
+class _YoloTaskResourceProvider:
     """Variant-aware resource provider reusable by Pose and Seg model packages."""
 
     def __init__(
@@ -193,7 +273,7 @@ class UltralyticsTaskResourceProvider:
         model_id: str,
         model_revision: str,
         sources: Mapping[str, ResourceSource],
-        config_factory: Callable[[dict[str, object]], UltralyticsTaskConfig],
+        config_factory: Callable[[dict[str, object]], _YoloTaskConfig],
         converter_factory: Callable[[], ModelConverter],
     ) -> None:
         self._model_id = model_id
@@ -202,36 +282,63 @@ class UltralyticsTaskResourceProvider:
         self._config_factory = config_factory
         self._converter_factory = converter_factory
 
-    async def status(self, variant: str, options: Mapping[str, object] | None = None) -> ModelResourceStatus:
+    async def status(
+        self, variant: str, options: Mapping[str, object] | None = None
+    ) -> ModelResourceStatus:
         return self._resolver(variant, options).status()
 
-    async def download_source(self, variant: str, options: Mapping[str, object] | None = None, *, overwrite: bool = False) -> ModelResourceStatus:
+    async def download_source(
+        self, variant: str, options: Mapping[str, object] | None = None, *, overwrite: bool = False
+    ) -> ModelResourceStatus:
         resolver = self._resolver(variant, options)
         await resolver.download_source(overwrite=overwrite)
         return resolver.status()
 
-    async def convert(self, variant: str, target_format: ArtifactFormat, options: Mapping[str, object] | None = None, *, overwrite: bool = False) -> ModelResourceStatus:
-        if target_format is not ArtifactFormat.COREML:
+    async def convert(
+        self,
+        variant: str,
+        target_format: ArtifactFormat,
+        options: Mapping[str, object] | None = None,
+        *,
+        overwrite: bool = False,
+    ) -> ModelResourceStatus:
+        if target_format not in {ArtifactFormat.COREML, ArtifactFormat.ONNX}:
             raise UnsupportedRuntimeError(
                 f"{self._model_id} does not support {target_format} yet",
-                details={"model_id": self._model_id, "variant": variant, "target_format": target_format},
+                details={
+                    "model_id": self._model_id,
+                    "variant": variant,
+                    "target_format": target_format,
+                },
             )
         resolver = self._resolver(variant, options)
-        await resolver.convert_coreml(overwrite=overwrite)
+        await resolver.convert(target_format, overwrite=overwrite)
         return resolver.status()
 
-    async def delete(self, variant: str, options: Mapping[str, object] | None = None, *, runtime: str | None = None) -> ModelResourceStatus:
+    async def delete(
+        self,
+        variant: str,
+        options: Mapping[str, object] | None = None,
+        *,
+        runtime: str | None = None,
+    ) -> ModelResourceStatus:
         resolver = self._resolver(variant, options)
         await resolver.delete(runtime=runtime)
         return resolver.status()
 
-    def _resolver(self, variant: str, options: Mapping[str, object] | None) -> UltralyticsTaskAssetResolver:
+    def _resolver(
+        self, variant: str, options: Mapping[str, object] | None
+    ) -> _YoloTaskResourceResolver:
         try:
             source = self._sources[variant]
         except KeyError as error:
             raise ResourceNotFoundError(
                 f"Model variant is not registered: {variant}",
-                details={"model_id": self._model_id, "variant": variant, "supported_variants": sorted(self._sources)},
+                details={
+                    "model_id": self._model_id,
+                    "variant": variant,
+                    "supported_variants": sorted(self._sources),
+                },
             ) from error
         normalized = dict(options or {})
         if normalized.get("variant") not in {None, variant}:
@@ -240,7 +347,7 @@ class UltralyticsTaskResourceProvider:
                 details={"variant": variant, "options_variant": normalized["variant"]},
             )
         config = self._config_factory(normalized | {"variant": variant})
-        return UltralyticsTaskAssetResolver(
+        return _YoloTaskResourceResolver(
             model_id=self._model_id,
             model_revision=self._model_revision,
             source=source,
@@ -249,21 +356,71 @@ class UltralyticsTaskResourceProvider:
         )
 
 
-def _artifact_status(artifact_id: str, artifact_format: ArtifactFormat, path: Path, runtime: str, *, provisioning: Literal["download", "convert"] = "download") -> ModelArtifactStatus:
-    available = path.is_file() if artifact_format is ArtifactFormat.PYTORCH else path.is_dir()
-    size = path.stat().st_size if available and path.is_file() else directory_size(path) if available else None
-    return ModelArtifactStatus(artifact_id=artifact_id, format=artifact_format.value, runtime=runtime, provisioning=provisioning, available=available, size_bytes=size)
+def _artifact_status(
+    artifact_id: str,
+    artifact_format: ArtifactFormat,
+    path: Path,
+    runtime: str,
+    *,
+    provisioning: Literal["download", "convert"] = "download",
+) -> ModelArtifactStatus:
+    available = path.is_dir() if artifact_format is ArtifactFormat.COREML else path.is_file()
+    size = (
+        path.stat().st_size
+        if available and path.is_file()
+        else directory_size(path)
+        if available
+        else None
+    )
+    return ModelArtifactStatus(
+        artifact_id=artifact_id,
+        format=artifact_format.value,
+        runtime=runtime,
+        provisioning=provisioning,
+        available=available,
+        size_bytes=size,
+    )
 
 
 def _prune_empty_directories(root: Path) -> None:
     if not root.exists():
         return
-    for directory in sorted((item for item in root.rglob("*") if item.is_dir()), key=lambda item: len(item.parts), reverse=True):
-        try:
+    for directory in sorted(
+        (item for item in root.rglob("*") if item.is_dir()),
+        key=lambda item: len(item.parts),
+        reverse=True,
+    ):
+        with contextlib.suppress(OSError):
             directory.rmdir()
-        except OSError:
-            pass
-    try:
+    with contextlib.suppress(OSError):
         root.rmdir()
-    except OSError:
-        pass
+
+
+class YoloV8PoseResourceResolver(_YoloTaskResourceResolver):
+    def __init__(
+        self,
+        source: ResourceSource,
+        config: YoloV8PoseInstanceConfig,
+        *,
+        downloader: ResourceDownloader | None = None,
+        converter: YoloV8PoseConverter | None = None,
+    ) -> None:
+        super().__init__(
+            model_id=YOLOV8_POSE_MODEL_ID,
+            model_revision=YOLOV8_POSE_REVISION,
+            source=source,
+            config=config,
+            downloader=downloader,
+            converter=converter or YoloV8PoseConverter(),
+        )
+
+
+class YoloV8PoseResourceProvider(_YoloTaskResourceProvider):
+    def __init__(self, sources: Mapping[str, ResourceSource]) -> None:
+        super().__init__(
+            model_id=YOLOV8_POSE_MODEL_ID,
+            model_revision=YOLOV8_POSE_REVISION,
+            sources=sources,
+            config_factory=lambda values: YoloV8PoseInstanceConfig.model_validate(values),
+            converter_factory=YoloV8PoseConverter,
+        )

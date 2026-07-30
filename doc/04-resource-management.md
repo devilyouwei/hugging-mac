@@ -1,12 +1,12 @@
 # 模型资源管理
 
-状态：`Proposed`
+状态：`下载与模型级资源操作已实现；租约、配额与回收仍在规划`
 
 资源管理同时覆盖磁盘资源和运行时内存，二者不可混为一个 cache。
 
 ## 磁盘资源
 
-推荐内容寻址布局：
+目标中的内容寻址布局：
 
 ```text
 models/
@@ -16,8 +16,10 @@ models/
   conversions/<source-digest>/<target-runtime>/<options-digest>/...
 ```
 
-下载流程：解析 → 预检磁盘 → 临时文件下载 → hash 校验 → 原子移动 → 建立 snapshot 引用。
-中断下载可恢复；校验失败文件进入隔离区或删除，不可被 loader 看见。
+当前实现采用模型 package 决定的受管目录，例如
+`<model_home>/ultralytics/yolov8-seg/v8.2.0/n/source/...` 与 `coreml/...`。下载流程为目标相邻的
+staging 路径 → 下载/解压 → digest 校验 → 原子替换目标；失败 staging 会被清理，loader 不会看到半成品。
+内容寻址 blob、断点续传、隔离区与 snapshot 引用尚未实现。
 
 ## Resource Resolver
 
@@ -28,7 +30,8 @@ models/
 - 用户显式导入的本地文件；
 - 从原模型转换得到的 Core ML/量化产物。
 
-所有来源最终产生统一的 `ResolvedResource`：只读路径、digest、size、provenance 与 lease。
+所有来源最终产生统一的 `ResolvedResource`：路径、digest、size 与来源声明。当前没有 lease 字段或全局
+资源索引；资源状态由各模型的 `ModelResourceProvider` 汇总。
 
 第一版 SDK 已实现以下下载来源：
 
@@ -45,18 +48,20 @@ models/
 
 ## 租约与清理
 
-加载中的实例持有 lease。清理器只能删除：
+后续加载中的实例将持有 lease。清理器应只删除：
 
 - 没有活跃 lease；
 - 不被 pinned manifest 引用；
 - 超过保留时间或磁盘预算；
 - 非进行中任务所需。
 
-先做 dry-run 清单，再执行回收。用户导入的原始文件默认不由系统删除。
+当前删除操作由 `sdk.resources.delete()` 显式触发，并且只允许删除模型 resource provider 所管理目录内的
+source、Core ML artifact 或 variant 根目录；自动回收、dry-run、pin 与用户导入策略尚未实现。
 
 ## 运行时资源
 
-Apple Silicon 使用统一内存，不能只看“GPU 显存”。资源管理器至少采集：
+Apple Silicon 使用统一内存，不能只看“GPU 显存”。当前 `InstanceManager` 在 load/unload 前后记录进程 RSS
+与耗时；以下是后续资源管理器应采集的完整集合：
 
 - 进程 RSS 与系统可用内存；
 - 模型预估权重、KV cache 和峰值工作区；
@@ -64,7 +69,7 @@ Apple Silicon 使用统一内存，不能只看“GPU 显存”。资源管理�
 - 内存压力、设备热状态（可获得时）；
 - 加载、首 token、吞吐和卸载耗时。
 
-加载前执行 admission control：
+后续加载前应执行 admission control：
 
 ```text
 estimated_peak + active_reserved + safety_margin <= usable_budget
@@ -74,7 +79,7 @@ estimated_peak + active_reserved + safety_margin <= usable_budget
 
 ## 淘汰策略
 
-默认优先级：
+后续自动淘汰的默认优先级：
 
 1. 引用为零且空闲最久的实例；
 2. 可快速重建的小实例；

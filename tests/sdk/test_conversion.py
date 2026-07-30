@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from hugging_mac_sdk.converters.base import ModelConverter
 from hugging_mac_sdk.converters.registry import ConversionService, ConverterRegistry
+from hugging_mac_sdk.converters.yolov8 import YoloV8ExportOptions
 from hugging_mac_sdk.core.registry import ModelRegistry
-from hugging_mac_sdk.models.yolov8 import YOLOV8N_MANIFEST, register_yolov8
-from hugging_mac_sdk.models.yolov8.config import YOLOV8N_SHA256
+from hugging_mac_sdk.models.yolov8 import YOLOV8_MANIFEST, register_yolov8
+from hugging_mac_sdk.models.yolov8.config import YOLOV8_SHA256
+from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
 from hugging_mac_sdk.schemas.conversion import (
     ArtifactFormat,
     ConversionRequest,
@@ -20,6 +20,8 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
     UrlFileSource,
 )
+
+YOLOV8_N_SHA256 = YOLOV8_SHA256["n"]
 
 
 class FakeConverter(ModelConverter):
@@ -79,20 +81,23 @@ async def test_yolov8_registration_and_coreml_conversion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    export_arguments: dict[str, object] = {}
+    export_options: YoloV8ExportOptions | None = None
 
-    class FakeYolo:
-        def __init__(self, source: str) -> None:
-            self.source = Path(source)
+    def fake_export(
+        _: YoloV8Converter,
+        source: Path,
+        target_format: ArtifactFormat,
+        options: YoloV8ExportOptions,
+    ) -> Path:
+        nonlocal export_options
+        assert target_format is ArtifactFormat.COREML
+        export_options = options
+        output = source.with_suffix(".mlpackage")
+        output.mkdir()
+        (output / "model.mlmodel").write_bytes(b"coreml")
+        return output
 
-        def export(self, **kwargs: object) -> str:
-            export_arguments.update(kwargs)
-            output = self.source.with_suffix(".mlpackage")
-            output.mkdir()
-            (output / "model.mlmodel").write_bytes(b"coreml")
-            return str(output)
-
-    monkeypatch.setitem(sys.modules, "ultralytics", SimpleNamespace(YOLO=FakeYolo))
+    monkeypatch.setattr(YoloV8Converter, "_export", fake_export)
     source_path = tmp_path / "yolov8n.pt"
     source_path.write_bytes(b"trusted test weights")
     source = ResolvedResource(
@@ -101,7 +106,7 @@ async def test_yolov8_registration_and_coreml_conversion(
             repo_id="Ultralytics/YOLOv8",
             revision="8a9e1a5",
             filename="yolov8n.pt",
-            expected_sha256=YOLOV8N_SHA256,
+            expected_sha256=YOLOV8_N_SHA256,
         ),
         digest="2" * 64,
         size_bytes=source_path.stat().st_size,
@@ -126,28 +131,29 @@ async def test_yolov8_registration_and_coreml_conversion(
     assert result.model_id == "ultralytics/yolov8"
     assert result.variant == "n"
     assert (result.path / "model.mlmodel").read_bytes() == b"coreml"
-    assert export_arguments["format"] == "coreml"
-    assert export_arguments["imgsz"] == 640
-    assert export_arguments["batch"] == 1
-    assert export_arguments["half"] is True
-    assert export_arguments["quantize"] == 16
-    assert export_arguments["nms"] is True
-    assert export_arguments["dynamic"] is False
+    assert export_options is not None
+    assert export_options.imgsz == 640
+    assert export_options.batch == 1
+    assert export_options.half is True
+    assert export_options.quantize == 16
+    assert export_options.nms is False
+    assert export_options.dynamic is False
 
 
 def test_yolov8_manifest_pins_source_and_has_runtime_factory() -> None:
-    source = YOLOV8N_MANIFEST.get_variant("n").resources[0]
+    source = YOLOV8_MANIFEST.get_variant("n").resources[0]
 
     assert isinstance(source, HuggingFaceSource)
     assert source.repo_id == "Ultralytics/YOLOv8"
     assert source.revision == "8a9e1a5"
     assert source.filename == "yolov8n.pt"
-    assert source.expected_sha256 == YOLOV8N_SHA256
-    assert YOLOV8N_MANIFEST.license == "AGPL-3.0"
-    assert tuple(item.name for item in YOLOV8N_MANIFEST.variants) == ("n", "s", "m")
-    assert YOLOV8N_MANIFEST.default_variant == "n"
+    assert source.expected_sha256 == YOLOV8_N_SHA256
+    assert YOLOV8_MANIFEST.license == "AGPL-3.0"
+    assert tuple(item.name for item in YOLOV8_MANIFEST.variants) == ("n", "s", "m")
+    assert YOLOV8_MANIFEST.default_variant == "n"
 
     models = ModelRegistry()
     converters = ConverterRegistry()
     definition = register_yolov8(models, converters)
-    assert definition.factory is not None
+    assert definition.factory is None
+    assert set(definition.runtime_factories) == {"pytorch-mps", "coreml", "onnx"}

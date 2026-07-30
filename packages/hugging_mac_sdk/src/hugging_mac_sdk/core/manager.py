@@ -150,8 +150,67 @@ class InstanceManager:
         reuse: ReusePolicy = ReusePolicy.DEDICATED,
         warmup: bool = False,
     ) -> BaseModelInstance:
-        """Create and load one instance through the complete manager pipeline."""
+        """Create and load an instance, falling back when an auto artifact is absent."""
 
+        if runtime in {None, "auto"}:
+            manifest = self._registry.get(model_id, revision).manifest
+            candidates = self._runtime_policy.candidates(manifest)
+            if not candidates:
+                # Preserve RuntimePolicy's stable unsupported-runtime error.
+                self._runtime_policy.select(manifest)
+            failures: dict[str, str] = {}
+            last_error: ResourceNotFoundError | None = None
+            for candidate in candidates:
+                try:
+                    return await self._load_selected(
+                        model_id,
+                        revision=revision,
+                        variant=variant,
+                        runtime=candidate,
+                        device=device,
+                        options=options,
+                        reuse=reuse,
+                        warmup=warmup,
+                    )
+                except ResourceNotFoundError as error:
+                    failures[candidate] = error.message
+                    last_error = error
+            assert last_error is not None
+            raise ResourceNotFoundError(
+                f"No local artifact is available for {model_id}",
+                details={
+                    "model_id": model_id,
+                    "variant": variant or manifest.default_variant,
+                    "attempted_runtimes": list(candidates),
+                    "failures": failures,
+                },
+                cause=last_error,
+            ) from last_error
+
+        assert runtime is not None and runtime != "auto"
+        return await self._load_selected(
+            model_id,
+            revision=revision,
+            variant=variant,
+            runtime=runtime,
+            device=device,
+            options=options,
+            reuse=reuse,
+            warmup=warmup,
+        )
+
+    async def _load_selected(
+        self,
+        model_id: str,
+        *,
+        revision: str | None,
+        variant: str | None,
+        runtime: str,
+        device: str | None,
+        options: Mapping[str, object] | None,
+        reuse: ReusePolicy,
+        warmup: bool,
+    ) -> BaseModelInstance:
         instance = await self.create(
             model_id,
             revision=revision,

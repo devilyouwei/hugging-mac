@@ -23,7 +23,9 @@ class RuntimePolicy:
     def __init__(self, preferences: tuple[str, ...] = ()) -> None:
         self._preferences = preferences
 
-    def select(self, manifest: ModelManifest) -> str:
+    def candidates(self, manifest: ModelManifest) -> tuple[str, ...]:
+        """Return compatible runtimes in deterministic preference order."""
+
         declared = {runtime.name: runtime for runtime in manifest.runtimes}
         ordered = (
             self._preferences
@@ -31,15 +33,22 @@ class RuntimePolicy:
             + tuple(runtime.name for runtime in manifest.runtimes)
         )
         visited: set[str] = set()
+        candidates: list[str] = []
         for name in ordered:
             if name in visited or name not in declared:
                 continue
             visited.add(name)
             if self.availability(declared[name]).available:
-                return name
+                candidates.append(name)
+        return tuple(candidates)
+
+    def select(self, manifest: ModelManifest) -> str:
+        candidates = self.candidates(manifest)
+        if candidates:
+            return candidates[0]
         raise UnsupportedRuntimeError(
             f"No runtime is available for {manifest.model_id}",
-            details={"declared": sorted(declared)},
+            details={"declared": sorted(runtime.name for runtime in manifest.runtimes)},
         )
 
     def resolve(self, manifest: ModelManifest, requested: str | None) -> str:

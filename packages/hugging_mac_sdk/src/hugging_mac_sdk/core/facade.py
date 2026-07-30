@@ -92,25 +92,28 @@ class ModelSdk:
         reuse: ReusePolicy = ReusePolicy.SHARED,
         load: bool = True,
     ) -> ModelHandle:
-        instance = await self.instances.create(
-            model_id,
-            revision=revision,
-            variant=variant,
-            runtime=runtime,
-            device=device,
-            options=options,
-            reuse=reuse,
-        )
+        if load:
+            instance = await self.instances.load(
+                model_id,
+                revision=revision,
+                variant=variant,
+                runtime=runtime,
+                device=device,
+                options=options,
+                reuse=reuse,
+            )
+        else:
+            instance = await self.instances.create(
+                model_id,
+                revision=revision,
+                variant=variant,
+                runtime=runtime,
+                device=device,
+                options=options,
+                reuse=reuse,
+            )
         instance_id = str(instance.instance_id)
         await self.instances.retain(instance_id)
-        try:
-            if load:
-                await self.instances.ensure_loaded(instance_id)
-        except BaseException:
-            await self.instances.release(instance_id)
-            if reuse is ReusePolicy.DEDICATED:
-                await self.instances.unload(instance_id)
-            raise
         return ModelHandle(
             instance,
             self.instances,

@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
-from hugging_mac_sdk.converters.ultralytics import UltralyticsExportConverter
-from hugging_mac_sdk.models.yolov8_seg.config import (
-    YOLOV8_SEG_MODEL_ID,
-    YoloV8SegCoreMlConfig,
-)
+from pathlib import Path
+from typing import Any, cast
+
+from hugging_mac_sdk.converters.yolov8 import YoloV8ExportConverter
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest, ConversionResult
 
+from .config import (
+    YOLOV8_SEG_MODEL_ID,
+    YoloV8SegCoreMlConfig,
+    YoloV8SegVariant,
+)
+from .utils.checkpoint import load_yolov8_checkpoint
 
-class YoloV8SegConverter(UltralyticsExportConverter):
+
+class YoloV8SegConverter(YoloV8ExportConverter):
     @property
     def converter_id(self) -> str:
         return "ultralytics.yolov8-seg"
@@ -29,7 +35,9 @@ class YoloV8SegConverter(UltralyticsExportConverter):
 
     async def convert(self, request: ConversionRequest) -> ConversionResult:
         if request.target_format is ArtifactFormat.COREML:
-            defaults = YoloV8SegCoreMlConfig(variant=request.variant).model_dump()
+            defaults = YoloV8SegCoreMlConfig(
+                variant=cast(YoloV8SegVariant, request.variant)
+            ).model_dump()
             defaults.pop("compute_units")
             defaults.pop("variant")
             # Core ML only supports Ultralytics' embedded NMS pipeline for
@@ -39,3 +47,6 @@ class YoloV8SegConverter(UltralyticsExportConverter):
                 update={"options": defaults | request.options | {"nms": False}}
             )
         return await super().convert(request)
+
+    def _load_checkpoint(self, source: Path, torch: Any) -> Any:
+        return load_yolov8_checkpoint(source, torch)

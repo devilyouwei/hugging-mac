@@ -13,14 +13,20 @@ manifest:
       dtypes: [float32]
       platforms: [darwin]
       architectures: [arm64]
-      required_modules: [torch, ultralytics]
+      required_modules: [torch]
     - name: coreml
       devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
       dtypes: [float16, float32]
       quantizations: [float16, int8]
       platforms: [darwin]
       architectures: [arm64]
-      required_modules: [coremltools, ultralytics]
+      required_modules: [coremltools]
+    - name: onnx
+      devices: [coreml, cpu]
+      dtypes: [float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [onnxruntime]
   variants:
     - name: n
       display_name: YOLOv8 Pose Nano
@@ -51,7 +57,10 @@ manifest:
 artifacts:
   - {artifact_id: source, variant: n, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-pose/v8.2.0/n/source/yolov8n-pose.pt, kind: file}
   - {artifact_id: coreml, variant: n, runtime: coreml, format: coreml, path: ultralytics/yolov8-pose/v8.2.0/n/coreml/yolov8n-pose.mlpackage, kind: directory}
+  - {artifact_id: onnx, variant: n, runtime: onnx, format: onnx, path: ultralytics/yolov8-pose/v8.2.0/n/onnx/yolov8n-pose.onnx, kind: file}
   - {artifact_id: source, variant: s, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-pose/v8.2.0/s/source/yolov8s-pose.pt, kind: file}
   - {artifact_id: coreml, variant: s, runtime: coreml, format: coreml, path: ultralytics/yolov8-pose/v8.2.0/s/coreml/yolov8s-pose.mlpackage, kind: directory}
+  - {artifact_id: onnx, variant: s, runtime: onnx, format: onnx, path: ultralytics/yolov8-pose/v8.2.0/s/onnx/yolov8s-pose.onnx, kind: file}
   - {artifact_id: source, variant: m, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-pose/v8.2.0/m/source/yolov8m-pose.pt, kind: file}
   - {artifact_id: coreml, variant: m, runtime: coreml, format: coreml, path: ultralytics/yolov8-pose/v8.2.0/m/coreml/yolov8m-pose.mlpackage, kind: directory}
+  - {artifact_id: onnx, variant: m, runtime: onnx, format: onnx, path: ultralytics/yolov8-pose/v8.2.0/m/onnx/yolov8m-pose.onnx, kind: file}

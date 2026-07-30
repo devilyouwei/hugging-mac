@@ -1,6 +1,6 @@
 # 模型转换
 
-状态：`Proposed`，第一版接口已实现。
+状态：`Core ML 与 ONNX 转换链路已实现；provenance 持久化仍在规划。`
 
 ## 目标
 
@@ -21,7 +21,8 @@ flowchart LR
     Registry -->|没有绑定或不支持| Generic --> Target
 ```
 
-模型 adapter 不负责转换。转换结果也是可校验、有 provenance 的模型资源，后续由 runtime adapter 加载。
+模型 adapter 不负责转换。转换结果返回 digest、大小、converter ID、源 digest 和最终参数；当前不会把
+provenance 写入独立的持久化索引。后续由模型 runtime instance 加载转换产物。
 
 ## 核心契约
 
@@ -53,19 +54,21 @@ flowchart LR
 | SHA-256 | 每个 variant 在 manifest 中分别固定 |
 | 许可证 | `AGPL-3.0` |
 | 专用 converter | `ultralytics.yolov8` |
-| 通用 converter | `ultralytics.export` |
 | 默认目标 | Core ML ML Program / FP16（`quantize=16`） |
 | 输入 | 静态 `640×640`、batch 1 |
-| NMS | 导出时包含 |
-| Core ML compute units | `ALL`，在 runtime 加载时设置 |
+| NMS | 保留原始输出，由各模型 `utils/postprocess.py` 统一执行 |
+| Core ML compute units | `CoreMLProvider` 直接传给 `coremltools.MLModel` |
 
-`.pt` 是源资产和后续 PyTorch MPS 正确性基线，`.mlpackage` 是默认分发转换产物，本机可进一步编译并缓存
-`.mlmodelc`。ONNX 使用同一个通用 Ultralytics converter，但不是 Apple Silicon 默认 runtime。
+`.pt` 是源资产和后续 PyTorch MPS 正确性基线，`.mlpackage` 是默认转换产物，Core ML 会在系统管理的位置
+编译运行时缓存。`converters/yolov8.py` 只提供不理解具体模型 checkpoint 的格式导出机制；每个 model
+pack 的 `converter.py` 绑定自己 `utils/` 内的 `checkpoint.py`，并拥有独立 converter ID。底层使用
+`torch.jit.trace`、`coremltools.convert` 和 `torch.onnx.export`，不安装、不导入也不执行
+Ultralytics Python 包。三个 YOLO resource provider 均把 Core ML 与 ONNX 暴露为受管转换目标。
 
 ## 安全与复现
 
 - 转换输入必须来自已经解析和校验的 `ResolvedResource`；
-- 源 revision、源 digest、converter ID 和最终参数写入结果；
+- 源 revision、源 digest、converter ID 和最终参数写入 `ConversionResult`；
 - 输出在 staging 中生成，完成后才移动到目标路径；
 - `.pt` 可能执行 pickle 反序列化，只允许 manifest 中明确受信任且摘要固定的来源；
 - 模型转换代码作为受信任 SDK 代码注册，manifest 本身不执行任意脚本；

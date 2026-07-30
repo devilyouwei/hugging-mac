@@ -43,3 +43,17 @@ class RuntimeRegistry:
     def list(self) -> tuple[RuntimeBackend, ...]:
         with self._lock:
             return tuple(self._backends[name] for name in sorted(self._backends))
+
+
+def create_default_runtime_registry() -> RuntimeRegistry:
+    """Build the standard provider registry without importing heavy frameworks."""
+
+    from hugging_mac_sdk.runtime.coreml import CoreMLProvider
+    from hugging_mac_sdk.runtime.onnx import OnnxRuntimeProvider
+    from hugging_mac_sdk.runtime.torch import TorchProvider
+
+    registry = RuntimeRegistry()
+    registry.register(CoreMLProvider())
+    registry.register(OnnxRuntimeProvider())
+    registry.register(TorchProvider())
+    return registry
