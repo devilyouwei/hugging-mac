@@ -12,6 +12,14 @@ from typing import Protocol, TypeVar
 from hugging_mac_sdk.schemas.detection import DetectionRequest, DetectionResponse
 from hugging_mac_sdk.schemas.pose import PoseEstimationResponse, PoseRequest
 from hugging_mac_sdk.schemas.segmentation import SegmentationRequest, SegmentationResponse
+from hugging_mac_sdk.schemas.speech_synthesis import (
+    SpeechSynthesisRequest,
+    SpeechSynthesisResponse,
+)
+from hugging_mac_sdk.schemas.speech_understanding import (
+    SpeechUnderstandingRequest,
+    SpeechUnderstandingResponse,
+)
 from hugging_mac_sdk.schemas.transcription import (
     TranscriptionRequest,
     TranscriptionResponse,
@@ -52,6 +60,24 @@ class SpeechTranscription(Protocol):
     """Transcribe speech into text."""
 
     async def transcribe(self, request: TranscriptionRequest) -> TranscriptionResponse: ...
+
+
+class SpeechSynthesis(Protocol):
+    """Synthesize speech from text, optionally cloning a reference voice."""
+
+    async def synthesize(
+        self,
+        request: SpeechSynthesisRequest,
+    ) -> SpeechSynthesisResponse: ...
+
+
+class SpeechUnderstanding(Protocol):
+    """Recognize speech and return its rich paralinguistic annotations."""
+
+    async def understand_speech(
+        self,
+        request: SpeechUnderstandingRequest,
+    ) -> SpeechUnderstandingResponse: ...
 
 
 class ImageEmbedding(Protocol[RequestT, ResponseT]):

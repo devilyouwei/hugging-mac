@@ -79,6 +79,16 @@ from hugging_mac_sdk.schemas.segmentation import (
     SegmentationRequest,
     SegmentationResponse,
 )
+from hugging_mac_sdk.schemas.speech_synthesis import (
+    SpeechSynthesisRequest,
+    SpeechSynthesisResponse,
+    SpeechSynthesisTimings,
+)
+from hugging_mac_sdk.schemas.speech_understanding import (
+    SpeechLanguage,
+    SpeechUnderstandingRequest,
+    SpeechUnderstandingResponse,
+)
 from hugging_mac_sdk.schemas.transcription import (
     AudioInput,
     TranscriptionRequest,
@@ -160,6 +170,12 @@ __all__ = [
     "Segmentation",
     "SegmentationRequest",
     "SegmentationResponse",
+    "SpeechLanguage",
+    "SpeechSynthesisRequest",
+    "SpeechSynthesisResponse",
+    "SpeechSynthesisTimings",
+    "SpeechUnderstandingRequest",
+    "SpeechUnderstandingResponse",
     "TorchProvider",
     "TorchSession",
     "TranscriptionRequest",

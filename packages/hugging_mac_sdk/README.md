@@ -312,6 +312,49 @@ handle = await sdk.load(
 Qwen2 decoder 的 KV cache；它是明确的混合 runtime，不把 decoder 标注为 ANE。源模型许可证为
 `CC-BY-NC-4.0`，且当前集成针对最长 30 秒的短音频。
 
+## SenseVoiceSmall 语音理解
+
+SenseVoiceSmall 使用模型私有的 Kaldi fbank、LFR、CMVN、SANM 与 CTC 实现，不依赖 FunASR，也不执行
+Hugging Face 仓库中的 Python 文件。它同时提供普通 ASR 和富语音理解 capability：
+
+```python
+from pathlib import Path
+
+from hugging_mac_sdk import (
+    AudioInput,
+    ModelSdk,
+    SpeechUnderstandingRequest,
+)
+from hugging_mac_sdk.capabilities import SpeechUnderstanding
+from hugging_mac_sdk.models.sensevoice_small import register_sensevoice_small
+
+sdk = ModelSdk()
+register_sensevoice_small(sdk.registry)
+options = {"model_home": Path("models")}
+
+await sdk.resources.download_source(
+    "funaudiollm/sensevoice-small",
+    variant="small",
+    options=options,
+)
+handle = await sdk.load(
+    "funaudiollm/sensevoice-small",
+    runtime="pytorch-mps",
+    options=options,
+)
+result = await handle.require(SpeechUnderstanding).understand_speech(
+    SpeechUnderstandingRequest(
+        audio=AudioInput(path=Path("sample.wav")),
+        language="auto",
+    )
+)
+print(result.text)
+print(result.languages, result.emotion, result.events)
+```
+
+当前 runtime 为 PyTorch MPS，最长处理 30 秒音频。模型权重使用
+`FunASR Model Open Source License Agreement 1.1`，不随 SDK 的 MIT 许可证重新授权。
+
 ## YOLOv8 推理
 
 注册后可创建 PyTorch MPS、Core ML 或 ONNX Runtime 实例。Core ML 是默认 runtime，但实例只加载已经存在的资产；

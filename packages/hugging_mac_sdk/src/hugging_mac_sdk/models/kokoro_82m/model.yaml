@@ -1,0 +1,55 @@
+manifest:
+  schema_version: "1"
+  model_id: hexgrad/kokoro-82m
+  revision: f3ff3571791e39611d31c381e3a41a3af07b4987
+  display_name: Kokoro 82M
+  description: 轻量、非自回归的多语言 StyleTTS2 语音合成模型，输出 24 kHz 音频。
+  tags: [audio, tts, styletts2, istftnet, multilingual]
+  family: kokoro
+  capabilities: [speech-synthesis]
+  runtimes:
+    - name: pytorch-mps
+      devices: [mps, cpu]
+      dtypes: [float16, float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [torch, kokoro, misaki, numpy]
+  variants:
+    - name: v1.0
+      display_name: Kokoro 82M v1.0
+      description: 82M 参数、54 种声音、8 个语言系列的正式 v1.0 权重。
+      metadata:
+        parameters_millions: 82
+        weight_size_bytes: 327212226
+        sample_rate: 24000
+        voices: 54
+        languages: 8
+        context_phonemes: 510
+      resources:
+        - kind: huggingface
+          repo_id: hexgrad/Kokoro-82M
+          revision: f3ff3571791e39611d31c381e3a41a3af07b4987
+          allow_patterns:
+            - config.json
+            - kokoro-v1_0.pth
+            - voices/*.pt
+  default_variant: v1.0
+  license: Apache-2.0
+  source_url: https://huggingface.co/hexgrad/Kokoro-82M
+  default_runtime: pytorch-mps
+
+artifacts:
+  - artifact_id: source
+    variant: v1.0
+    runtime: pytorch-mps
+    format: pytorch
+    path: hexgrad/kokoro-82m/f3ff3571791e39611d31c381e3a41a3af07b4987/v1.0/pytorch/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: hexgrad/Kokoro-82M
+      revision: f3ff3571791e39611d31c381e3a41a3af07b4987
+      allow_patterns:
+        - config.json
+        - kokoro-v1_0.pth
+        - voices/*.pt

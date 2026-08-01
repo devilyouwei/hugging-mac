@@ -1,0 +1,57 @@
+manifest:
+  schema_version: "1"
+  model_id: audio8/audio8-tts-preview-0.6b
+  revision: 1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17
+  display_name: Audio8 TTS Preview 0.6B
+  description: 支持 11 种推荐语言和零样本声音克隆的 0.6B 多语言语音合成模型；默认使用 CPU FP32 以保证生成稳定性。
+  tags: [audio, tts, voice-cloning, zero-shot, multilingual, arktts]
+  family: audio8-tts
+  capabilities: [speech-synthesis]
+  runtimes:
+    - name: pytorch-mps
+      devices: [mps, cpu]
+      dtypes: [float16, bfloat16, float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [torch, torchaudio, transformers, safetensors, numpy, soundfile]
+  variants:
+    - name: preview
+      display_name: Audio8 TTS Preview 0.6B
+      description: 包含 0.6B DualAR 主模型与 44.1 kHz 神经音频 codec 的 BF16 预览权重。
+      metadata:
+        parameters: 601159424
+        model_weight_size_bytes: 1202342528
+        codec_weight_size_bytes: 1349857559
+        sample_rate: 44100
+        context_positions: 2048
+        recommended_languages: 11
+      resources:
+        - kind: huggingface
+          repo_id: Audio8/Audio8-TTS-Preview-0.6b
+          revision: 1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17
+          allow_patterns:
+            - "*.json"
+            - "*.py"
+            - "*.pth"
+            - "*.safetensors"
+  default_variant: preview
+  license: Apache-2.0
+  source_url: https://huggingface.co/Audio8/Audio8-TTS-Preview-0.6b
+  default_runtime: pytorch-mps
+
+artifacts:
+  - artifact_id: source
+    variant: preview
+    runtime: pytorch-mps
+    format: safetensors
+    path: audio8/audio8-tts-preview-0.6b/1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17/preview/pytorch/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: Audio8/Audio8-TTS-Preview-0.6b
+      revision: 1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17
+      allow_patterns:
+        - "*.json"
+        - "*.py"
+        - "*.pth"
+        - "*.safetensors"
