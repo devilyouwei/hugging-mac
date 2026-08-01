@@ -19,7 +19,6 @@ export interface TtsModel {
   variant: string
   runtime: string
   required_artifact_id: string
-  supports_coreml_conversion: boolean
   voices: string[]
   languages: string[]
   resource: TtsResource

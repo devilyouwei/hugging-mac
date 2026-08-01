@@ -58,7 +58,6 @@ class TtsModelView(BaseModel):
     variant: str
     runtime: str
     required_artifact_id: str
-    supports_coreml_conversion: bool
     voices: tuple[str, ...]
     languages: tuple[str, ...]
     resource: TtsResourceView

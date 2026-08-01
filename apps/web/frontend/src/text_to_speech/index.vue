@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 
 import {
-  convertTtsCoreMl,
   downloadTtsWeights,
   fetchTtsModels,
   loadTtsModel,
@@ -52,11 +51,7 @@ const selectedModel = computed(() =>
 const sourceArtifact = computed(() =>
   selectedModel.value?.resource.artifacts.find((item) => item.artifact_id === "source"),
 )
-const coremlArtifact = computed(() =>
-  selectedModel.value?.resource.artifacts.find((item) => item.artifact_id === "coreml"),
-)
 const sourceReady = computed(() => Boolean(sourceArtifact.value?.available))
-const coremlReady = computed(() => Boolean(coremlArtifact.value?.available))
 const requiredReady = computed(() =>
   Boolean(
     selectedModel.value?.resource.artifacts.find(
@@ -119,27 +114,8 @@ async function downloadModel() {
   error.value = ""
   try {
     selectedModel.value.resource = await downloadTtsWeights(selectedModel.value.model_id)
-    if (selectedModel.value.model_id === "hexgrad/kokoro-82m") {
-      selectedModel.value.runtime = "pytorch-mps"
-      selectedModel.value.required_artifact_id = "source"
-    }
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "模型下载失败"
-  } finally {
-    resourceBusy.value = false
-  }
-}
-
-async function convertModel() {
-  if (!selectedModel.value) return
-  resourceBusy.value = true
-  error.value = ""
-  try {
-    selectedModel.value.resource = await convertTtsCoreMl(selectedModel.value.model_id)
-    selectedModel.value.runtime = "coreml"
-    selectedModel.value.required_artifact_id = "coreml"
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "Core ML 转换失败"
   } finally {
     resourceBusy.value = false
   }
@@ -337,17 +313,6 @@ onBeforeUnmount(() => {
         </div>
 
         <button
-          v-if="selectedModel?.supports_coreml_conversion && sourceReady && !coremlReady && !modelReady"
-          class="coreml-option"
-          type="button"
-          :disabled="resourceBusy"
-          @click="convertModel"
-        >
-          <span>OPTIONAL ACCELERATION</span>
-          <b>{{ resourceBusy ? "CONVERTING…" : "Convert to Core ML →" }}</b>
-        </button>
-
-        <button
           class="generate-button"
           type="button"
           :disabled="!modelReady || !text.trim() || synthesisBusy"
@@ -439,9 +404,6 @@ textarea { background: transparent; border: 0; border-bottom: 1px solid var(--li
 .model-state span, .model-state small { font-family: var(--font-mono); font-size: .64rem; }
 .model-state small { color: #999b92; }
 .model-state button { background: transparent; border: 1px solid var(--signal); color: var(--signal); cursor: pointer; font-family: var(--font-mono); font-size: .63rem; padding: .7rem; }
-.coreml-option { align-items: center; background: transparent; border: 1px solid #44453f; color: var(--paper); cursor: pointer; display: flex; justify-content: space-between; margin: -.2rem 0 1rem; min-height: 3rem; padding: 0 .8rem; width: 100%; }
-.coreml-option span { color: #999b92; font-family: var(--font-mono); font-size: .58rem; }
-.coreml-option b { color: var(--signal); font-family: var(--font-mono); font-size: .65rem; }
 .generate-button { align-items: center; background: var(--signal); border: 0; cursor: pointer; display: flex; font-family: var(--font-mono); font-size: .75rem; font-weight: 800; justify-content: space-between; min-height: 4.5rem; padding: 0 1.2rem; width: 100%; }
 .generate-button:disabled { cursor: not-allowed; opacity: .35; }
 .generate-button i { font-size: 1.25rem; font-style: normal; }

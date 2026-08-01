@@ -15,7 +15,6 @@ class TtsModelProfile:
     variant: str
     runtime: str
     required_artifact_id: str
-    supports_coreml_conversion: bool
     voices: tuple[str, ...] = ()
     languages: tuple[str, ...] = ()
 
@@ -28,7 +27,6 @@ AUDIO8_TTS_PROFILE = TtsModelProfile(
     variant="preview",
     runtime="pytorch-mps",
     required_artifact_id="source",
-    supports_coreml_conversion=False,
     languages=("auto",),
 )
 
@@ -36,11 +34,10 @@ KOKORO_82M_PROFILE = TtsModelProfile(
     model_id="hexgrad/kokoro-82m",
     display_name="Kokoro 82M",
     short_name="Kokoro",
-    description="轻量快速的 24 kHz 本地语音，Core ML 针对 Apple Silicon 优化。",
+    description="轻量快速的 24 kHz 本地语音，使用 PyTorch MPS 加速。",
     variant="v1.0",
-    runtime="coreml",
-    required_artifact_id="coreml",
-    supports_coreml_conversion=True,
+    runtime="pytorch-mps",
+    required_artifact_id="source",
     voices=(
         "af_heart",
         "af_bella",

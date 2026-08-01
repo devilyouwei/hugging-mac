@@ -42,7 +42,7 @@ def create_context(settings: WebSettings) -> PlatformContext:
     converters = ConverterRegistry()
     register_audio8_asr(models.registry, converters)
     register_audio8_tts(models.registry)
-    register_kokoro_82m(models.registry, converters)
+    register_kokoro_82m(models.registry)
     register_sensevoice_small(models.registry)
     register_yolov8(models.registry, converters)
     register_yolov8_pose(models.registry, converters)

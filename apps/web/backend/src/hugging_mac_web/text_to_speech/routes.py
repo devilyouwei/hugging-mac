@@ -49,18 +49,6 @@ def create_router(settings: TextToSpeechSettings) -> APIRouter:
         )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
-    @router.post("/resources/coreml/convert", response_model=ApiResponse[TtsResourceView])
-    async def convert_coreml(
-        context: ContextDependency,
-        model_id: str = Query(default=DEFAULT_MODEL_ID),
-        overwrite: bool = False,
-    ) -> ApiResponse[TtsResourceView]:
-        data = await TextToSpeechService(context, settings).convert_coreml(
-            model_id,
-            overwrite=overwrite,
-        )
-        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
-
     @router.post("/models/load", response_model=ApiResponse[LoadedTtsModelView])
     async def load_model(
         request: LoadTtsModelRequest,

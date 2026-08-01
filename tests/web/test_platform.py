@@ -41,8 +41,6 @@ from hugging_mac_web.live_transcription.schemas import TranscriptionResultView
 from hugging_mac_web.main import create_app
 from hugging_mac_web.text_to_speech.audio import float32le_to_wav
 from hugging_mac_web.text_to_speech.config import KOKORO_82M_PROFILE
-from hugging_mac_web.text_to_speech.schemas import TtsArtifactView, TtsResourceView
-from hugging_mac_web.text_to_speech.service import TextToSpeechService
 from PIL import Image
 
 YOLOV8_N_SHA256 = YOLOV8_SHA256["n"]
@@ -250,8 +248,8 @@ def test_text_to_speech_returns_playable_wave(
             float32le_to_wav(np.zeros(2400, dtype=np.float32).tobytes(), 24000),
             {
                 "x-model-id": "hexgrad/kokoro-82m",
-                "x-runtime": "coreml",
-                "x-device": "cpu-and-neural-engine",
+                "x-runtime": "pytorch-mps",
+                "x-device": "mps",
                 "x-duration-seconds": "0.1",
                 "x-inference-ms": "12.0",
             },
@@ -278,54 +276,13 @@ def test_text_to_speech_returns_playable_wave(
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "audio/wav"
-    assert response.headers["x-runtime"] == "coreml"
+    assert response.headers["x-runtime"] == "pytorch-mps"
     assert response.content.startswith(b"RIFF")
 
 
-def test_kokoro_tts_uses_torch_until_coreml_is_available() -> None:
-    source_only = TtsResourceView(
-        model_id=KOKORO_82M_PROFILE.model_id,
-        revision="test",
-        variant="v1.0",
-        artifacts=(
-            TtsArtifactView(
-                artifact_id="source",
-                format="pytorch",
-                runtime="pytorch-mps",
-                available=True,
-                size_bytes=1,
-            ),
-            TtsArtifactView(
-                artifact_id="coreml",
-                format="coreml",
-                runtime="coreml",
-                available=False,
-                size_bytes=None,
-            ),
-        ),
-    )
-    converted = source_only.model_copy(
-        update={
-            "artifacts": (
-                source_only.artifacts[0],
-                source_only.artifacts[1].model_copy(update={"available": True}),
-            )
-        }
-    )
-
-    torch_profile = TextToSpeechService._effective_profile(
-        KOKORO_82M_PROFILE,
-        source_only,
-    )
-    coreml_profile = TextToSpeechService._effective_profile(
-        KOKORO_82M_PROFILE,
-        converted,
-    )
-
-    assert torch_profile.runtime == "pytorch-mps"
-    assert torch_profile.required_artifact_id == "source"
-    assert coreml_profile.runtime == "coreml"
-    assert coreml_profile.required_artifact_id == "coreml"
+def test_kokoro_tts_uses_pytorch_mps() -> None:
+    assert KOKORO_82M_PROFILE.runtime == "pytorch-mps"
+    assert KOKORO_82M_PROFILE.required_artifact_id == "source"
 
 
 def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path) -> None:

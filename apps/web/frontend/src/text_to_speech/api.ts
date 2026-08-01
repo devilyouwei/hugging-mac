@@ -27,15 +27,6 @@ export async function downloadTtsWeights(modelId: string): Promise<TtsResource> 
   ).data
 }
 
-export async function convertTtsCoreMl(modelId: string): Promise<TtsResource> {
-  return (
-    await request<TtsResource>(
-      `${PREFIX}/resources/coreml/convert${modelQuery(modelId)}`,
-      { method: "POST" },
-    )
-  ).data
-}
-
 export async function loadTtsModel(modelId: string): Promise<LoadedTtsModel> {
   return (
     await request<LoadedTtsModel>(`${PREFIX}/models/load`, {

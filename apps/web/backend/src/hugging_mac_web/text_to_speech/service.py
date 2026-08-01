@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
 
-from hugging_mac_sdk import ArtifactFormat, ReusePolicy
+from hugging_mac_sdk import ReusePolicy
 from hugging_mac_sdk.capabilities import SpeechSynthesis
 from hugging_mac_sdk.core.instance import ModelState
 from hugging_mac_sdk.errors import ResourceNotFoundError
@@ -45,7 +44,6 @@ class TextToSpeechService:
     async def model_view(self, model_id: str) -> TtsModelView:
         profile = self._profile(model_id)
         resource = await self.resource_status(model_id)
-        profile = self._effective_profile(profile, resource)
         return TtsModelView.from_profile(
             profile,
             resource,
@@ -76,30 +74,8 @@ class TextToSpeechService:
         )
         return await self.resource_status(model_id)
 
-    async def convert_coreml(
-        self,
-        model_id: str,
-        *,
-        overwrite: bool = False,
-    ) -> TtsResourceView:
-        profile = self._profile(model_id)
-        if not profile.supports_coreml_conversion:
-            raise ResourceNotFoundError(
-                f"Core ML conversion is not available for {model_id}"
-            )
-        await self._context.models.resources.convert(
-            profile.model_id,
-            ArtifactFormat.COREML,
-            variant=profile.variant,
-            options=self._model_options,
-            overwrite=overwrite,
-        )
-        return await self.resource_status(model_id)
-
     async def load_model(self, model_id: str) -> LoadedTtsModelView:
         profile = self._profile(model_id)
-        resource = await self.resource_status(model_id)
-        profile = self._effective_profile(profile, resource)
         handle = await self._context.models.load(
             profile.model_id,
             variant=profile.variant,
@@ -149,23 +125,6 @@ class TextToSpeechService:
             ):
                 return snapshot.instance_id
         return None
-
-    @staticmethod
-    def _effective_profile(
-        profile: TtsModelProfile,
-        resource: TtsResourceView,
-    ) -> TtsModelProfile:
-        if profile.model_id != "hexgrad/kokoro-82m":
-            return profile
-        coreml_ready = any(
-            item.artifact_id == "coreml" and item.available
-            for item in resource.artifacts
-        )
-        return replace(
-            profile,
-            runtime="coreml" if coreml_ready else "pytorch-mps",
-            required_artifact_id="coreml" if coreml_ready else "source",
-        )
 
     @staticmethod
     def _profile(model_id: str) -> TtsModelProfile:
