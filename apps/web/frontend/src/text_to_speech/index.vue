@@ -24,6 +24,7 @@ const LANGUAGE_NAMES: Record<string, string> = {
   j: "日本語",
   z: "中文",
 }
+const AUDIO8_ONNX_MODEL_ID = "audio8/audio8-tts-preview-0.6b-onnx-int4"
 const SAMPLE_TEXTS = [
   "Every voice carries a different texture. Today, the whole studio runs locally on this Mac.",
   "春风吹过湖面，声音也可以拥有温度与层次。",
@@ -37,6 +38,10 @@ const text = ref(SAMPLE_TEXTS[0])
 const voice = ref("af_heart")
 const language = ref("a")
 const speed = ref(1)
+const voiceProfile = ref("speaker_a")
+const referenceAudio = ref<File | null>(null)
+const referenceText = ref("")
+const useSavedProfile = ref(false)
 const resourceBusy = ref(false)
 const loadBusy = ref(false)
 const synthesisBusy = ref(false)
@@ -64,7 +69,17 @@ const loadedModel = computed(() =>
 )
 const modelReady = computed(() => loadedModel.value?.state === "ready")
 const isKokoro = computed(() => selectedModel.value?.model_id === "hexgrad/kokoro-82m")
+const isAudio8Onnx = computed(() => selectedModel.value?.model_id === AUDIO8_ONNX_MODEL_ID)
 const characterCount = computed(() => text.value.length)
+const referenceReady = computed(() =>
+  !isAudio8Onnx.value
+  || (Boolean(voiceProfile.value.trim())
+    && (useSavedProfile.value
+      || (referenceAudio.value !== null && Boolean(referenceText.value.trim())))),
+)
+const canGenerate = computed(() =>
+  modelReady.value && Boolean(text.value.trim()) && referenceReady.value && !synthesisBusy.value,
+)
 
 function formatBytes(value: number | null | undefined): string {
   if (value == null) return "not downloaded"
@@ -108,6 +123,11 @@ function selectModel(modelId: string) {
   error.value = ""
 }
 
+function selectReferenceAudio(event: Event) {
+  const input = event.target as HTMLInputElement
+  referenceAudio.value = input.files?.[0] ?? null
+}
+
 async function downloadModel() {
   if (!selectedModel.value) return
   resourceBusy.value = true
@@ -148,9 +168,17 @@ async function generateSpeech() {
         model_id: model.model_id,
         instance_id: instance.instance_id,
         text: text.value.trim(),
-        voice: isKokoro.value ? voice.value : null,
+        voice: isAudio8Onnx.value
+          ? voiceProfile.value.trim()
+          : isKokoro.value ? voice.value : null,
         language: isKokoro.value ? language.value : null,
         speed: speed.value,
+        referenceAudio: isAudio8Onnx.value && !useSavedProfile.value
+          ? referenceAudio.value
+          : null,
+        referenceText: isAudio8Onnx.value && !useSavedProfile.value
+          ? referenceText.value.trim()
+          : null,
       },
       activeRequest.signal,
     )
@@ -160,7 +188,7 @@ async function generateSpeech() {
       modelId: model.model_id,
       modelName: model.short_name,
       text: text.value.trim(),
-      voice: isKokoro.value ? voice.value : null,
+      voice: isAudio8Onnx.value ? voiceProfile.value.trim() : isKokoro.value ? voice.value : null,
       runtime: response.headers.get("x-runtime") ?? model.runtime,
       device: response.headers.get("x-device") ?? model.runtime,
       durationSeconds: Number(response.headers.get("x-duration-seconds") ?? 0),
@@ -200,9 +228,9 @@ onBeforeUnmount(() => {
     <header class="tts-hero">
       <div>
         <RouterLink class="back-link" to="/apps">← Neural Apps</RouterLink>
-        <p class="kicker">LOCAL TEXT-TO-SPEECH · TWO ENGINES, ONE STUDIO</p>
+        <p class="kicker">LOCAL TEXT-TO-SPEECH · THREE ENGINES, ONE STUDIO</p>
         <h1>Type it.<br /><em>Hear it.</em></h1>
-        <p>在同一个本地工作台里试听 Audio8 的表现力与 Kokoro 的速度。文字和生成音频都留在这台 Mac。</p>
+        <p>在同一个本地工作台里对比 Audio8 PyTorch、Audio8 ONNX INT4 与 Kokoro。文字和生成音频都留在这台 Mac。</p>
       </div>
       <div class="sound-object" aria-hidden="true">
         <span v-for="bar in 18" :key="bar" :style="{ '--bar': bar }"></span>
@@ -264,7 +292,46 @@ onBeforeUnmount(() => {
           <i :class="{ ready: modelReady }"></i>
         </div>
 
-        <div v-if="isKokoro" class="voice-controls">
+        <div v-if="isAudio8Onnx" class="reference-controls">
+          <label>
+            <span>VOICE PROFILE</span>
+            <input v-model="voiceProfile" maxlength="64" placeholder="speaker_a" />
+          </label>
+          <div class="profile-mode" role="group" aria-label="音色 profile 来源">
+            <button
+              type="button"
+              :class="{ active: !useSavedProfile }"
+              @click="useSavedProfile = false"
+            >NEW REFERENCE</button>
+            <button
+              type="button"
+              :class="{ active: useSavedProfile }"
+              @click="useSavedProfile = true"
+            >SAVED PROFILE</button>
+          </div>
+          <template v-if="!useSavedProfile">
+            <label class="reference-file">
+              <span>REFERENCE AUDIO · 0.5–30 SEC</span>
+              <input
+                type="file"
+                accept=".wav,.flac,.mp3,.ogg,audio/wav,audio/flac,audio/mpeg,audio/ogg"
+                @change="selectReferenceAudio"
+              />
+              <b>{{ referenceAudio?.name ?? "CHOOSE AUDIO" }}</b>
+            </label>
+            <label>
+              <span>ACCURATE TRANSCRIPT</span>
+              <textarea
+                v-model="referenceText"
+                class="reference-transcript"
+                placeholder="输入参考录音中实际说出的原文…"
+              ></textarea>
+            </label>
+            <p>首次合成会编码并保存该 profile；之后切换到 Saved Profile 可直接复用。</p>
+          </template>
+          <p v-else>将使用本机已保存的 <strong>{{ voiceProfile || "未命名" }}</strong> profile。</p>
+        </div>
+        <div v-else-if="isKokoro" class="voice-controls">
           <label>
             <span>VOICE</span>
             <select v-model="voice">
@@ -315,7 +382,7 @@ onBeforeUnmount(() => {
         <button
           class="generate-button"
           type="button"
-          :disabled="!modelReady || !text.trim() || synthesisBusy"
+          :disabled="!canGenerate"
           @click="generateSpeech"
         >
           <span>{{ synthesisBusy ? "SYNTHESIZING" : "GENERATE SPEECH" }}</span>
@@ -368,7 +435,7 @@ onBeforeUnmount(() => {
 .sound-object strong { bottom: 1.8rem; font-family: var(--font-mono); font-size: 1.2rem; left: 1.8rem; position: absolute; }
 .sound-object small { bottom: 1.8rem; color: #999b92; font-family: var(--font-mono); position: absolute; right: 1.8rem; }
 @keyframes sound-pulse { to { transform: scaleY(.35); } }
-.tts-model-switcher { display: grid; grid-template-columns: 1fr 1fr; margin: 2rem 0; }
+.tts-model-switcher { display: grid; grid-template-columns: repeat(3, 1fr); margin: 2rem 0; }
 .tts-model-switcher button { align-items: center; background: transparent; border: 1px solid var(--line); cursor: pointer; display: grid; gap: 1.2rem; grid-template-columns: auto 1fr auto; min-height: 10rem; padding: 1.4rem; text-align: left; }
 .tts-model-switcher button + button { border-left: 0; }
 .tts-model-switcher button.selected { background: var(--ink); color: var(--paper); }
@@ -395,6 +462,20 @@ textarea { background: transparent; border: 0; border-bottom: 1px solid var(--li
 .voice-controls select { background: #292a26; border: 1px solid #4a4b46; color: var(--paper); min-height: 3.2rem; padding: 0 .8rem; text-transform: capitalize; }
 .audio8-note { border: 1px solid #44453f; margin-bottom: 1rem; padding: 1rem; }
 .audio8-note p { color: #a9aaa2; font-size: .83rem; line-height: 1.5; margin-bottom: 0; }
+.reference-controls { display: grid; gap: .75rem; }
+.reference-controls label { display: grid; gap: .5rem; }
+.reference-controls label > span { color: #999b92; font-family: var(--font-mono); font-size: .64rem; letter-spacing: .08em; }
+.reference-controls input[type="text"], .reference-controls label > input:not([type="file"]) { background: #292a26; border: 1px solid #4a4b46; color: var(--paper); min-height: 2.8rem; padding: 0 .8rem; }
+.profile-mode { display: grid; grid-template-columns: 1fr 1fr; }
+.profile-mode button { background: transparent; border: 1px solid #4a4b46; color: #999b92; cursor: pointer; font-family: var(--font-mono); font-size: .6rem; min-height: 2.5rem; }
+.profile-mode button + button { border-left: 0; }
+.profile-mode button.active { background: var(--signal); color: var(--ink); }
+.reference-file { border: 1px dashed #5b5c55; cursor: pointer; padding: .75rem; }
+.reference-file input { height: 1px; opacity: 0; position: absolute; width: 1px; }
+.reference-file b { color: var(--signal); font-family: var(--font-mono); font-size: .65rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reference-transcript { background: #292a26; border: 1px solid #4a4b46; color: var(--paper); font-size: .8rem; height: 4.5rem; line-height: 1.4; padding: .65rem; resize: vertical; }
+.reference-controls > p { color: #999b92; font-size: .72rem; line-height: 1.45; margin: 0; }
+.reference-controls > p strong { color: var(--signal); }
 .speed-control { margin: 1.8rem 0; }
 .speed-control span { display: flex; justify-content: space-between; }
 .speed-control output { color: var(--signal); }

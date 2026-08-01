@@ -1,10 +1,13 @@
 """Text-to-speech REST routes."""
 
-from fastapi import APIRouter, Query, Response
+from typing import Annotated
+
+from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 
 from hugging_mac_web.dependencies import ContextDependency
 from hugging_mac_web.schemas import ApiResponse, ResponseMeta
 from hugging_mac_web.shared.utils.time_util import utc_now
+from hugging_mac_web.shared.utils.upload_util import read_upload_limited
 from hugging_mac_web.text_to_speech.config import TextToSpeechSettings
 from hugging_mac_web.text_to_speech.schemas import (
     LoadedTtsModelView,
@@ -63,6 +66,32 @@ def create_router(settings: TextToSpeechSettings) -> APIRouter:
         context: ContextDependency,
     ) -> Response:
         audio, headers = await TextToSpeechService(context, settings).synthesize(request)
+        return Response(content=audio, media_type="audio/wav", headers=headers)
+
+    @router.post("/synthesize/reference")
+    async def synthesize_with_reference(
+        context: ContextDependency,
+        file: Annotated[UploadFile, File(description="Reference voice audio")],
+        model_id: Annotated[str, Form()],
+        instance_id: Annotated[str, Form()],
+        text: Annotated[str, Form(min_length=1, max_length=2000)],
+        voice: Annotated[str, Form(min_length=1, max_length=64)],
+        reference_text: Annotated[str, Form(min_length=1, max_length=2000)],
+        speed: Annotated[float, Form(ge=0.5, le=2.0)] = 1.0,
+    ) -> Response:
+        audio_data = await read_upload_limited(file, settings.max_reference_audio_bytes)
+        request = SynthesizeSpeechRequest(
+            model_id=model_id,
+            instance_id=instance_id,
+            text=text,
+            voice=voice,
+            speed=speed,
+        )
+        audio, headers = await TextToSpeechService(context, settings).synthesize(
+            request,
+            reference_audio=audio_data,
+            reference_text=reference_text,
+        )
         return Response(content=audio, media_type="audio/wav", headers=headers)
 
     return router

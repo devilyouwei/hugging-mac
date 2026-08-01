@@ -21,6 +21,8 @@ export interface TtsModel {
   required_artifact_id: string
   voices: string[]
   languages: string[]
+  requires_reference_voice: boolean
+  max_new_tokens: number
   resource: TtsResource
   ready_instance_id: string | null
 }
@@ -41,6 +43,8 @@ export interface SynthesisOptions {
   voice: string | null
   language: string | null
   speed: number
+  referenceAudio?: File | null
+  referenceText?: string | null
 }
 
 export interface GeneratedSpeech {

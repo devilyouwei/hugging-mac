@@ -8,9 +8,9 @@ manifest:
   family: audio8-tts
   capabilities: [speech-synthesis]
   runtimes:
-    - name: pytorch-mps
-      devices: [mps, cpu]
-      dtypes: [float16, bfloat16, float32]
+    - name: pytorch
+      devices: [cpu]
+      dtypes: [float32]
       platforms: [darwin]
       architectures: [arm64]
       required_modules: [torch, torchaudio, transformers, safetensors, numpy, soundfile]
@@ -37,12 +37,12 @@ manifest:
   default_variant: preview
   license: Apache-2.0
   source_url: https://huggingface.co/Audio8/Audio8-TTS-Preview-0.6b
-  default_runtime: pytorch-mps
+  default_runtime: pytorch
 
 artifacts:
   - artifact_id: source
     variant: preview
-    runtime: pytorch-mps
+    runtime: pytorch
     format: safetensors
     path: audio8/audio8-tts-preview-0.6b/1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17/preview/pytorch/model
     kind: directory

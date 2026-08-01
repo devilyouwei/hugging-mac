@@ -58,6 +58,9 @@ flowchart LR
 
 插件式模型目录、文档站、兼容矩阵、迁移策略、发布 SDK，以及按真实需求扩展音频/扩散模型。
 
+延后候选：[Supertonic 3 MLX 实现计划](plans/supertonic-3-mlx/README.md)。当前先完成 Phase 3 的 VLM
+纵向闭环，再启动该 TTS 模型的实现与基准验证。
+
 ## 建议的首批验收模型
 
 最终型号应在实现时结合许可证、体积和当前 runtime 兼容性确认，不在设计期锁死。优先选择体积小、

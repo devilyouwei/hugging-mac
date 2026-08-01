@@ -41,17 +41,41 @@ export async function synthesizeSpeech(
   options: SynthesisOptions,
   signal?: AbortSignal,
 ): Promise<{ blob: Blob; headers: Headers }> {
-  const response = await fetch(`${API_BASE}${PREFIX}/synthesize`, {
+  let endpoint = `${PREFIX}/synthesize`
+  let body: BodyInit
+  let headers: HeadersInit | undefined
+  if (options.referenceAudio) {
+    const form = new FormData()
+    form.append("file", options.referenceAudio)
+    form.append("model_id", options.model_id)
+    form.append("instance_id", options.instance_id)
+    form.append("text", options.text)
+    form.append("voice", options.voice ?? "")
+    form.append("reference_text", options.referenceText ?? "")
+    form.append("speed", String(options.speed))
+    endpoint = `${PREFIX}/synthesize/reference`
+    body = form
+  } else {
+    const { referenceAudio: _, referenceText: __, ...jsonOptions } = options
+    headers = { "Content-Type": "application/json" }
+    body = JSON.stringify(jsonOptions)
+  }
+  const response = await fetch(`${API_BASE}${endpoint}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(options),
+    headers,
+    body,
     signal,
   })
   if (!response.ok) {
     let message = `Request failed with status ${response.status}`
     try {
-      const body = (await response.json()) as { error?: { message?: string } }
+      const body = (await response.json()) as {
+        error?: { message?: string; details?: { reason?: string } }
+      }
       message = body.error?.message ?? message
+      if (body.error?.details?.reason) {
+        message = `${message}: ${body.error.details.reason}`
+      }
     } catch {
       // Keep the HTTP fallback message.
     }

@@ -9,6 +9,7 @@ from hugging_mac_sdk.capabilities import SpeechSynthesis
 from hugging_mac_sdk.core.instance import ModelState
 from hugging_mac_sdk.errors import ResourceNotFoundError
 from hugging_mac_sdk.schemas.speech_synthesis import SpeechSynthesisRequest
+from hugging_mac_sdk.schemas.transcription import AudioInput
 
 from hugging_mac_web.context import PlatformContext
 from hugging_mac_web.text_to_speech.audio import float32le_to_wav
@@ -36,9 +37,7 @@ class TextToSpeechService:
 
     async def list_models(self) -> tuple[TtsModelView, ...]:
         return tuple(
-            await asyncio.gather(
-                *(self.model_view(model_id) for model_id in TTS_MODEL_PROFILES)
-            )
+            await asyncio.gather(*(self.model_view(model_id) for model_id in TTS_MODEL_PROFILES))
         )
 
     async def model_view(self, model_id: str) -> TtsModelView:
@@ -55,7 +54,7 @@ class TextToSpeechService:
         status = await self._context.models.resources.status(
             profile.model_id,
             variant=profile.variant,
-            options=self._model_options,
+            options=self._model_options(profile),
         )
         return TtsResourceView.from_sdk(status)
 
@@ -69,7 +68,7 @@ class TextToSpeechService:
         await self._context.models.resources.download_source(
             profile.model_id,
             variant=profile.variant,
-            options=self._model_options,
+            options=self._model_options(profile),
             overwrite=overwrite,
         )
         return await self.resource_status(model_id)
@@ -80,7 +79,7 @@ class TextToSpeechService:
             profile.model_id,
             variant=profile.variant,
             runtime=profile.runtime,
-            options=self._model_options,
+            options=self._model_options(profile),
             reuse=ReusePolicy.SHARED,
         )
         try:
@@ -88,8 +87,21 @@ class TextToSpeechService:
         finally:
             await handle.close()
 
-    async def synthesize(self, request: SynthesizeSpeechRequest) -> tuple[bytes, dict[str, str]]:
+    async def synthesize(
+        self,
+        request: SynthesizeSpeechRequest,
+        *,
+        reference_audio: bytes | None = None,
+        reference_text: str | None = None,
+    ) -> tuple[bytes, dict[str, str]]:
         profile = self._profile(request.model_id)
+        if profile.requires_reference_voice and not request.voice:
+            raise ResourceNotFoundError(
+                "Audio8 ONNX requires a voice profile name",
+                details={"model_id": profile.model_id},
+            )
+        if (reference_audio is None) != (reference_text is None):
+            raise ValueError("reference_audio and reference_text must be provided together")
         instance = await self._context.models.instances.require(request.instance_id)
         info = instance.info()
         if info.model_id != profile.model_id or info.state is not ModelState.READY:
@@ -104,6 +116,11 @@ class TextToSpeechService:
                 voice=request.voice,
                 language=request.language,
                 speed=request.speed,
+                reference_audio=(
+                    AudioInput(data=reference_audio) if reference_audio is not None else None
+                ),
+                reference_text=reference_text,
+                max_new_tokens=profile.max_new_tokens,
             )
         )
         return float32le_to_wav(response.audio, response.sample_rate), {
@@ -136,6 +153,10 @@ class TextToSpeechService:
             )
         return profile
 
-    @property
-    def _model_options(self) -> dict[str, object]:
-        return {"model_home": self._context.settings.model_home}
+    def _model_options(self, profile: TtsModelProfile) -> dict[str, object]:
+        options: dict[str, object] = {"model_home": self._context.settings.model_home}
+        if profile.requires_reference_voice:
+            options["voice_home"] = (
+                self._context.settings.data_dir / "voices" / "audio8-tts-onnx-int4"
+            )
+        return options

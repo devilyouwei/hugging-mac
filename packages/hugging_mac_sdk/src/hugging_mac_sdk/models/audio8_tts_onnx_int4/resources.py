@@ -1,4 +1,4 @@
-"""Audio8-TTS resource resolution, download, status, and deletion."""
+"""Audio8-TTS ONNX INT4 resource resolution and lifecycle."""
 
 from __future__ import annotations
 
@@ -24,21 +24,21 @@ from hugging_mac_sdk.schemas.resources import (
 )
 
 from .config import (
-    AUDIO8_TTS_CODEC_SHA256,
-    AUDIO8_TTS_MODEL_ID,
-    AUDIO8_TTS_REQUIRED_FILES,
-    AUDIO8_TTS_REVISION,
-    AUDIO8_TTS_VARIANT,
-    AUDIO8_TTS_WEIGHT_SHA256,
-    Audio8TtsInstanceConfig,
+    AUDIO8_TTS_ONNX_INT4_FINGERPRINT,
+    AUDIO8_TTS_ONNX_INT4_MODEL_ID,
+    AUDIO8_TTS_ONNX_INT4_REGISTRATION_FILES,
+    AUDIO8_TTS_ONNX_INT4_REQUIRED_FILES,
+    AUDIO8_TTS_ONNX_INT4_REVISION,
+    AUDIO8_TTS_ONNX_INT4_VARIANT,
+    Audio8TtsOnnxInt4InstanceConfig,
 )
 
 
-class Audio8TtsResourceResolver:
+class Audio8TtsOnnxInt4ResourceResolver:
     def __init__(
         self,
         source: HuggingFaceSource,
-        config: Audio8TtsInstanceConfig,
+        config: Audio8TtsOnnxInt4InstanceConfig,
         *,
         downloader: ResourceDownloader | None = None,
     ) -> None:
@@ -69,20 +69,20 @@ class Audio8TtsResourceResolver:
         return await self.resolve_source()
 
     async def delete(self, *, runtime: str | None = None) -> None:
-        if runtime not in {None, "pytorch"}:
+        if runtime not in {None, "onnx"}:
             raise UnsupportedRuntimeError(
-                f"Audio8-TTS does not support runtime {runtime}",
-                details={"model_id": AUDIO8_TTS_MODEL_ID, "runtime": runtime},
+                f"Audio8-TTS ONNX INT4 does not support runtime {runtime}",
+                details={"model_id": AUDIO8_TTS_ONNX_INT4_MODEL_ID, "runtime": runtime},
             )
         root = self._model_root().expanduser().resolve(strict=False)
-        target = root if runtime is None else (
-            self._config.source_path or self._default_source_path()
+        target = (
+            root if runtime is None else (self._config.source_path or self._default_source_path())
         )
         resolved = target.expanduser().resolve(strict=False)
         if resolved != root and not resolved.is_relative_to(root):
             raise ResourceIntegrityError(
-                "Refusing to delete Audio8-TTS resources outside the model directory",
-                details={"model_id": AUDIO8_TTS_MODEL_ID},
+                "Refusing to delete Audio8-TTS ONNX resources outside the model directory",
+                details={"model_id": AUDIO8_TTS_ONNX_INT4_MODEL_ID},
             )
         await asyncio.to_thread(self._delete_path, resolved)
 
@@ -90,14 +90,14 @@ class Audio8TtsResourceResolver:
         path = self._config.source_path or self._default_source_path()
         available = self._snapshot_files_exist(path)
         return ModelResourceStatus(
-            model_id=AUDIO8_TTS_MODEL_ID,
-            revision=AUDIO8_TTS_REVISION,
+            model_id=AUDIO8_TTS_ONNX_INT4_MODEL_ID,
+            revision=AUDIO8_TTS_ONNX_INT4_REVISION,
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
                     artifact_id="source",
-                    format=ArtifactFormat.SAFETENSORS.value,
-                    runtime="pytorch",
+                    format=ArtifactFormat.ONNX.value,
+                    runtime="onnx",
                     available=available,
                     size_bytes=directory_size(path) if available else None,
                 ),
@@ -105,13 +105,13 @@ class Audio8TtsResourceResolver:
         )
 
     def _default_source_path(self) -> Path:
-        return self._model_root() / "pytorch" / "model"
+        return self._model_root() / "onnx" / "model"
 
     def _model_root(self) -> Path:
         return (
             self._config.model_home
             / "audio8"
-            / "audio8-tts-preview-0.6b"
+            / "audio8-tts-preview-0.6b-onnx-int4"
             / self._source.revision
             / self._config.variant
         )
@@ -119,42 +119,65 @@ class Audio8TtsResourceResolver:
     @staticmethod
     def _snapshot_files_exist(path: Path) -> bool:
         return path.is_dir() and all(
-            (path / name).is_file() for name in AUDIO8_TTS_REQUIRED_FILES
+            (path / name).is_file() for name in AUDIO8_TTS_ONNX_INT4_REQUIRED_FILES
         )
 
     def _validate_snapshot(self, path: Path) -> str:
         if not path.is_dir():
             raise ResourceNotFoundError(
-                "Audio8-TTS source model is not downloaded",
-                details={"model_id": AUDIO8_TTS_MODEL_ID, "artifact_id": "source"},
+                "Audio8-TTS ONNX INT4 model is not downloaded",
+                details={"model_id": AUDIO8_TTS_ONNX_INT4_MODEL_ID, "artifact_id": "source"},
             )
         missing = [
-            name for name in AUDIO8_TTS_REQUIRED_FILES if not (path / name).is_file()
+            name for name in AUDIO8_TTS_ONNX_INT4_REQUIRED_FILES if not (path / name).is_file()
         ]
         if missing:
             raise ResourceNotFoundError(
-                "Audio8-TTS snapshot is incomplete",
-                details={"model_id": AUDIO8_TTS_MODEL_ID, "missing": missing},
+                "Audio8-TTS ONNX INT4 snapshot is incomplete",
+                details={"model_id": AUDIO8_TTS_ONNX_INT4_MODEL_ID, "missing": missing},
             )
-        digest = file_sha256(path / "model.safetensors")
-        if digest != AUDIO8_TTS_WEIGHT_SHA256:
+        manifest_path = path / "runtime_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        expected = {
+            "model_family": "audio8_tts",
+            "default_precision": "int4",
+            "codec_sample_rate": 44100,
+            "num_codebooks": 10,
+            "model_fingerprint": AUDIO8_TTS_ONNX_INT4_FINGERPRINT,
+        }
+        mismatches = {
+            key: {"expected": value, "actual": manifest.get(key)}
+            for key, value in expected.items()
+            if manifest.get(key) != value
+        }
+        if mismatches:
             raise ResourceIntegrityError(
-                "Audio8-TTS weight SHA-256 mismatch",
-                details={"expected": AUDIO8_TTS_WEIGHT_SHA256, "actual": digest},
+                "Audio8-TTS ONNX runtime manifest is incompatible",
+                details={"mismatches": mismatches},
             )
-        codec_digest = file_sha256(path / "codec.pth")
-        if codec_digest != AUDIO8_TTS_CODEC_SHA256:
+        registration_present = [
+            (path / name).is_file() for name in AUDIO8_TTS_ONNX_INT4_REGISTRATION_FILES
+        ]
+        if any(registration_present) and not all(registration_present):
             raise ResourceIntegrityError(
-                "Audio8-TTS codec SHA-256 mismatch",
-                details={"expected": AUDIO8_TTS_CODEC_SHA256, "actual": codec_digest},
+                "Audio8-TTS ONNX voice-registration files are incomplete",
+                details={
+                    "missing": [
+                        name
+                        for name in AUDIO8_TTS_ONNX_INT4_REGISTRATION_FILES
+                        if not (path / name).is_file()
+                    ]
+                },
             )
-        config = json.loads((path / "config.json").read_text(encoding="utf-8"))
-        if config.get("model_type") != "arktts":
-            raise ResourceIntegrityError(
-                "Audio8-TTS config has an unexpected model_type",
-                details={"model_type": config.get("model_type")},
+        if all(registration_present):
+            registration = json.loads(
+                (path / "registration/registration_manifest.json").read_text(encoding="utf-8")
             )
-        return digest
+            if registration.get("model_fingerprint") != AUDIO8_TTS_ONNX_INT4_FINGERPRINT:
+                raise ResourceIntegrityError(
+                    "Audio8-TTS ONNX registration model fingerprint mismatch"
+                )
+        return file_sha256(manifest_path)
 
     @staticmethod
     def _delete_path(path: Path) -> None:
@@ -164,7 +187,7 @@ class Audio8TtsResourceResolver:
             shutil.rmtree(path)
 
 
-class Audio8TtsResourceProvider:
+class Audio8TtsOnnxInt4ResourceProvider:
     def __init__(self, source: HuggingFaceSource) -> None:
         self._source = source
 
@@ -194,8 +217,8 @@ class Audio8TtsResourceProvider:
     ) -> ModelResourceStatus:
         del options, overwrite
         raise UnsupportedRuntimeError(
-            f"Audio8-TTS conversion to {target_format} is not implemented",
-            details={"model_id": AUDIO8_TTS_MODEL_ID, "variant": variant},
+            f"Audio8-TTS ONNX INT4 conversion to {target_format} is not implemented",
+            details={"model_id": AUDIO8_TTS_ONNX_INT4_MODEL_ID, "variant": variant},
         )
 
     async def delete(
@@ -211,20 +234,18 @@ class Audio8TtsResourceProvider:
 
     def _resolver(
         self, variant: str, options: Mapping[str, object] | None
-    ) -> Audio8TtsResourceResolver:
-        if variant != AUDIO8_TTS_VARIANT:
+    ) -> Audio8TtsOnnxInt4ResourceResolver:
+        if variant != AUDIO8_TTS_ONNX_INT4_VARIANT:
             raise ResourceNotFoundError(
-                f"Audio8-TTS variant is not registered: {variant}",
-                details={"supported_variants": [AUDIO8_TTS_VARIANT]},
+                f"Audio8-TTS ONNX INT4 variant is not registered: {variant}",
+                details={"supported_variants": [AUDIO8_TTS_ONNX_INT4_VARIANT]},
             )
         normalized = dict(options or {})
         option_variant = normalized.get("variant")
         if option_variant not in {None, variant}:
             raise ResourceIntegrityError(
-                "Conflicting Audio8-TTS variant values were provided",
+                "Conflicting Audio8-TTS ONNX INT4 variant values were provided",
                 details={"variant": variant, "options_variant": option_variant},
             )
-        config = Audio8TtsInstanceConfig.model_validate(
-            normalized | {"variant": variant}
-        )
-        return Audio8TtsResourceResolver(self._source, config)
+        config = Audio8TtsOnnxInt4InstanceConfig.model_validate(normalized | {"variant": variant})
+        return Audio8TtsOnnxInt4ResourceResolver(self._source, config)

@@ -1,4 +1,4 @@
-"""Audio8-TTS engine using PyTorch with Apple MPS selection."""
+"""Audio8-TTS engine using the stable PyTorch CPU path."""
 
 from __future__ import annotations
 
@@ -18,8 +18,42 @@ from .resources import Audio8TtsResourceResolver
 from .utils.types import TtsEngineOutput
 
 
+def _precompute_rope(torch: Any, length: int, head_dim: int, base: float) -> Any:
+    """Build the pinned ArkTTS rotary buffer outside Transformers' init guard."""
+
+    frequencies = 1.0 / (
+        base ** (torch.arange(0, head_dim, 2).float()[: head_dim // 2] / head_dim)
+    )
+    phases = torch.outer(torch.arange(length), frequencies)
+    values = torch.polar(torch.ones_like(phases), phases)
+    return torch.stack((values.real, values.imag), dim=-1).to(torch.bfloat16)
+
+
+def _restore_rope_buffers(torch: Any, model: Any) -> None:
+    """Restore non-persistent buffers skipped by Transformers 5 fast init."""
+
+    config = model.config
+    device = next(model.parameters()).device
+    model.freqs_cis = _precompute_rope(
+        torch,
+        int(config.max_seq_len),
+        int(config.head_dim),
+        float(config.rope_base),
+    ).to(device)
+    model.fast_freqs_cis = _precompute_rope(
+        torch,
+        int(config.num_codebooks),
+        int(config.fast_head_dim),
+        float(config.rope_base),
+    ).to(device)
+    if not bool(torch.isfinite(model.freqs_cis).all()) or not bool(
+        torch.isfinite(model.fast_freqs_cis).all()
+    ):
+        raise RuntimeError("Audio8-TTS rotary buffers contain non-finite values")
+
+
 class TorchAudio8TtsEngine:
-    runtime_name = "pytorch-mps"
+    runtime_name = "pytorch"
 
     def __init__(
         self,
@@ -28,11 +62,10 @@ class TorchAudio8TtsEngine:
     ) -> None:
         self._config = config
         self._resources = resources
-        # Audio8's DualAR sampler is numerically unstable on the current MPS
-        # backend: it can fail to emit EOS and generate invalid codec frames.
-        # CPU FP32 is the reliable automatic path; callers may still opt into
-        # MPS explicitly while that upstream/runtime limitation is investigated.
-        self._device: str = config.device or "cpu"
+        # Audio8's DualAR sampler is numerically unstable on MPS: it can fail
+        # to emit EOS and generate invalid codec frames. CPU FP32 is the only
+        # supported path for this model pack.
+        self._device: str = config.device
         self._torch: Any | None = None
         self._model: Any | None = None
         self._processor: Any | None = None
@@ -52,8 +85,8 @@ class TorchAudio8TtsEngine:
                 "PyTorch is not installed; install hugging-mac-sdk[tts]"
             )
         self._device = provider.resolve_device(
-            self._config.device or "cpu",
-            allow_cpu_fallback=self._config.allow_cpu_fallback,
+            self._config.device,
+            allow_cpu_fallback=False,
         )
         await asyncio.to_thread(self._load_sync, artifact)
 
@@ -69,10 +102,6 @@ class TorchAudio8TtsEngine:
         if not had_model:
             return
         await asyncio.to_thread(gc.collect)
-        if self._device == "mps" and self._torch is not None:
-            empty_cache = getattr(getattr(self._torch, "mps", None), "empty_cache", None)
-            if empty_cache is not None:
-                empty_cache()
         self._torch = None
         self._dtype = None
 
@@ -91,6 +120,12 @@ class TorchAudio8TtsEngine:
             local_files_only=True,
             dtype=dtype,
         ).eval().to(self._device)
+        # Transformers 5 guards tensor initialization while constructing custom
+        # models. ArkTTS creates its non-persistent RoPE buffers in __init__, so
+        # that guard leaves them as uninitialized memory (often NaN). Rebuild
+        # them after loading; otherwise generation never emits EOS and the codec
+        # receives invalid frames, producing a fixed-length noise waveform.
+        _restore_rope_buffers(torch, model)
         self._torch = torch
         self._dtype = dtype
         self._processor = processor
@@ -162,9 +197,5 @@ class TorchAudio8TtsEngine:
     def _resolve_dtype(self, torch: Any) -> Any:
         requested = self._config.dtype
         if requested == "auto":
-            # Audio8's released checkpoint is BF16.  Casting its autoregressive
-            # logits to FP16 on MPS can prevent EOS generation and produce
-            # invalid codec frames, so preserve BF16 unless the caller opts in
-            # to another precision explicitly.
-            requested = "bfloat16" if self._device == "mps" else "float32"
+            requested = "float32"
         return getattr(torch, requested)

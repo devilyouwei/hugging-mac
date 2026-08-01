@@ -35,7 +35,7 @@ AUDIO8_TTS_REQUIRED_FILES: Final[tuple[str, ...]] = (
     "tokenizer_config.json",
 )
 
-Audio8TtsDType = Literal["auto", "float16", "bfloat16", "float32"]
+Audio8TtsDType = Literal["auto", "float32"]
 
 
 class Audio8TtsInstanceConfig(BaseModel):
@@ -43,11 +43,10 @@ class Audio8TtsInstanceConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
 
-    runtime: Literal["pytorch-mps"] = "pytorch-mps"
+    runtime: Literal["pytorch"] = "pytorch"
     variant: Literal["preview"] = "preview"
     model_home: Path = Field(default_factory=lambda: user_cache_path("hugging-mac") / "models")
     source_path: Path | None = None
     hf_token: str | None = Field(default=None, repr=False, exclude=True)
-    device: Literal["mps", "cpu"] | None = None
+    device: Literal["cpu"] = "cpu"
     dtype: Audio8TtsDType = "auto"
-    allow_cpu_fallback: bool = True

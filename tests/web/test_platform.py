@@ -14,6 +14,7 @@ from hugging_mac_sdk import (
     ConversionResult,
     ModelDefinition,
 )
+from hugging_mac_sdk.errors import InferenceError
 from hugging_mac_sdk.models.yolov8.config import YOLOV8_SHA256
 from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
 from hugging_mac_sdk.models.yolov8.instance import YoloV8Instance
@@ -42,7 +43,12 @@ from hugging_mac_web.live_transcription.manifest import LIVE_TRANSCRIPTION_MANIF
 from hugging_mac_web.live_transcription.schemas import TranscriptionResultView
 from hugging_mac_web.main import create_app
 from hugging_mac_web.text_to_speech.audio import float32le_to_wav
-from hugging_mac_web.text_to_speech.config import KOKORO_82M_PROFILE
+from hugging_mac_web.text_to_speech.config import (
+    AUDIO8_TTS_ONNX_INT4_PROFILE,
+    AUDIO8_TTS_PROFILE,
+    KOKORO_82M_PROFILE,
+)
+from hugging_mac_web.text_to_speech.manifest import TEXT_TO_SPEECH_MANIFEST
 from PIL import Image
 
 YOLOV8_N_SHA256 = YOLOV8_SHA256["n"]
@@ -121,6 +127,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert all(item["ready_instance_id"] is None for item in asr_models.json()["data"])
     assert {item["model_id"] for item in tts_models.json()["data"]} == {
         "audio8/audio8-tts-preview-0.6b",
+        "audio8/audio8-tts-preview-0.6b-onnx-int4",
         "hexgrad/kokoro-82m",
     }
     assert games.status_code == 200
@@ -135,6 +142,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert "/api/v1/apps/live-transcription/transcribe" in openapi.json()["paths"]
     assert "/api/v1/apps/live-transcription/models/load" in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/synthesize" in openapi.json()["paths"]
+    assert "/api/v1/apps/text-to-speech/synthesize/reference" in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/models/load" in openapi.json()["paths"]
     assert "/api/v1/apps/chat/messages" in openapi.json()["paths"]
     assert "/api/v1/apps/chat/messages/stream" in openapi.json()["paths"]
@@ -145,6 +153,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert {item["model_id"] for item in models.json()["data"]} >= {
         "audio8/audio8-asr-0.1b",
         "audio8/audio8-tts-preview-0.6b",
+        "audio8/audio8-tts-preview-0.6b-onnx-int4",
         "hexgrad/kokoro-82m",
         "funaudiollm/sensevoice-small",
         "mlx-community/qwen3.5-9b-mlx-4bit",
@@ -361,9 +370,109 @@ def test_text_to_speech_returns_playable_wave(
     assert response.content.startswith(b"RIFF")
 
 
+def test_text_to_speech_returns_actionable_inference_reason(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fail_synthesis(*_: object, **__: object) -> tuple[bytes, dict[str, str]]:
+        raise InferenceError(
+            "Audio8-TTS ONNX INT4 synthesis failed",
+            details={"reason": "reference audio duration must be between 0.5 and 30 seconds"},
+        )
+
+    monkeypatch.setattr(
+        "hugging_mac_web.text_to_speech.service.TextToSpeechService.synthesize",
+        fail_synthesis,
+    )
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/apps/text-to-speech/synthesize",
+            json={
+                "model_id": AUDIO8_TTS_ONNX_INT4_PROFILE.model_id,
+                "instance_id": "onnx-instance",
+                "text": "你好。",
+                "voice": "speaker_a",
+                "speed": 1.0,
+            },
+        )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["details"]["reason"] == (
+        "reference audio duration must be between 0.5 and 30 seconds"
+    )
+
+
 def test_kokoro_tts_uses_pytorch_mps() -> None:
     assert KOKORO_82M_PROFILE.runtime == "pytorch-mps"
     assert KOKORO_82M_PROFILE.required_artifact_id == "source"
+
+
+def test_audio8_onnx_tts_uses_direct_download_without_conversion() -> None:
+    requirements = {
+        requirement.model_id: requirement for requirement in TEXT_TO_SPEECH_MANIFEST.required_models
+    }
+
+    assert AUDIO8_TTS_PROFILE.runtime == "pytorch"
+    assert requirements[AUDIO8_TTS_PROFILE.model_id].preferred_runtime == "pytorch"
+    assert AUDIO8_TTS_ONNX_INT4_PROFILE.runtime == "onnx"
+    assert AUDIO8_TTS_ONNX_INT4_PROFILE.required_artifact_id == "source"
+    assert AUDIO8_TTS_ONNX_INT4_PROFILE.requires_reference_voice
+    assert requirements[AUDIO8_TTS_ONNX_INT4_PROFILE.model_id].preferred_runtime == "onnx"
+
+
+def test_text_to_speech_accepts_reference_voice_upload(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_synthesize(
+        _: object,
+        request: object,
+        *,
+        reference_audio: bytes | None = None,
+        reference_text: str | None = None,
+    ) -> tuple[bytes, dict[str, str]]:
+        captured["request"] = request
+        captured["reference_audio"] = reference_audio
+        captured["reference_text"] = reference_text
+        return (
+            float32le_to_wav(np.zeros(4410, dtype=np.float32).tobytes(), 44100),
+            {
+                "x-model-id": AUDIO8_TTS_ONNX_INT4_PROFILE.model_id,
+                "x-runtime": "onnx",
+                "x-device": "cpu",
+                "x-duration-seconds": "0.1",
+                "x-inference-ms": "20.0",
+            },
+        )
+
+    monkeypatch.setattr(
+        "hugging_mac_web.text_to_speech.service.TextToSpeechService.synthesize",
+        fake_synthesize,
+    )
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/apps/text-to-speech/synthesize/reference",
+            files={"file": ("reference.wav", b"RIFF-reference", "audio/wav")},
+            data={
+                "model_id": AUDIO8_TTS_ONNX_INT4_PROFILE.model_id,
+                "instance_id": "onnx-instance",
+                "text": "你好。",
+                "voice": "speaker_a",
+                "reference_text": "参考录音原文。",
+                "speed": "1.0",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["x-runtime"] == "onnx"
+    assert captured["reference_audio"] == b"RIFF-reference"
+    assert captured["reference_text"] == "参考录音原文。"
 
 
 def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path) -> None:

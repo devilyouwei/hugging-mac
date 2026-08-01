@@ -24,9 +24,9 @@ def _source() -> HuggingFaceSource:
     return resources[0]
 
 
-def _create_pytorch_mps(options: dict[str, object]) -> Audio8TtsInstance:
+def _create_pytorch(options: dict[str, object]) -> Audio8TtsInstance:
     config = Audio8TtsInstanceConfig.model_validate(
-        options | {"runtime": "pytorch-mps"}
+        options | {"runtime": "pytorch"}
     )
     resources = Audio8TtsResourceResolver(_source(), config)
     return Audio8TtsInstance(config, TorchAudio8TtsEngine(config, resources))
@@ -34,7 +34,7 @@ def _create_pytorch_mps(options: dict[str, object]) -> Audio8TtsInstance:
 
 AUDIO8_TTS_DEFINITION = ModelDefinition(
     manifest=AUDIO8_TTS_MANIFEST,
-    runtime_factories={"pytorch-mps": _create_pytorch_mps},
+    runtime_factories={"pytorch": _create_pytorch},
     artifacts=AUDIO8_TTS_CONFIG.artifacts,
     resource_provider=Audio8TtsResourceProvider(_source()),
 )

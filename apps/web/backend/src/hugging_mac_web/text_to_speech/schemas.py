@@ -60,6 +60,8 @@ class TtsModelView(BaseModel):
     required_artifact_id: str
     voices: tuple[str, ...]
     languages: tuple[str, ...]
+    requires_reference_voice: bool
+    max_new_tokens: int
     resource: TtsResourceView
     ready_instance_id: str | None = None
 
