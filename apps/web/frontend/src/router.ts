@@ -29,6 +29,11 @@ const router = createRouter({
       component: () => import("./yolo_pose_follow/index.vue"),
     },
     {
+      path: "/apps/chat",
+      name: "chat",
+      component: () => import("./chat/index.vue"),
+    },
+    {
       path: "/apps/object-detection",
       name: "object-detection",
       component: () => import("./object_detection/index.vue"),

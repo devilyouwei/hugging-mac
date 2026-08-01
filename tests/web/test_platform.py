@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,7 @@ from hugging_mac_sdk.schemas.segmentation import (
     Segmentation,
     SegmentationResponse,
 )
+from hugging_mac_web.chat.schemas import ChatReplyView, ChatStreamEventView
 from hugging_mac_web.config import WebSettings
 from hugging_mac_web.live_transcription.config import (
     AUDIO8_PROFILE,
@@ -104,6 +106,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     } <= info.json()["data"].keys()
     app_summaries = {item["manifest"]["app_id"]: item for item in apps.json()["data"]}
     assert set(app_summaries) == {
+        "chat",
         "instance-segmentation",
         "live-transcription",
         "object-detection",
@@ -133,6 +136,9 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert "/api/v1/apps/live-transcription/models/load" in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/synthesize" in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/models/load" in openapi.json()["paths"]
+    assert "/api/v1/apps/chat/messages" in openapi.json()["paths"]
+    assert "/api/v1/apps/chat/messages/stream" in openapi.json()["paths"]
+    assert "/api/v1/apps/chat/model/load" in openapi.json()["paths"]
     assert "/api/v1/games/yolo-pose-follow/templates" in openapi.json()["paths"]
     assert "/api/v1/games/yolo-pose-follow/match" in openapi.json()["paths"]
     model = next(item for item in models.json()["data"] if item["model_id"] == "ultralytics/yolov8")
@@ -141,6 +147,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         "audio8/audio8-tts-preview-0.6b",
         "hexgrad/kokoro-82m",
         "funaudiollm/sensevoice-small",
+        "mlx-community/qwen3.5-9b-mlx-4bit",
         "ultralytics/yolov8",
         "ultralytics/yolov8-pose",
         "ultralytics/yolov8-seg",
@@ -158,6 +165,80 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     }
     assert preflight.status_code == 200
     assert preflight.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_chat_accepts_text_and_image(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_chat(*_: object, **kwargs: object) -> ChatReplyView:
+        image_paths = kwargs.get("image_paths")
+        assert image_paths is None  # Positional in the service route.
+        return ChatReplyView(
+            content="图中是一块深色背景。",
+            model_id="mlx-community/qwen3.5-9b-mlx-4bit",
+            instance_id="chat-instance",
+            runtime="mlx",
+            device="gpu",
+            prompt_tokens=12,
+            generated_tokens=8,
+            inference_ms=18.5,
+        )
+
+    monkeypatch.setattr("hugging_mac_web.chat.service.ChatService.chat", fake_chat)
+    app = create_app(_settings(tmp_path))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/apps/chat/messages",
+            data={
+                "instance_id": "chat-instance",
+                "prompt": "描述这张图片",
+                "history_json": '[{"role":"assistant","content":"请上传图片"}]',
+                "max_tokens": "128",
+            },
+            files={"images": ("sample.png", _png(), "image/png")},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["content"] == "图中是一块深色背景。"
+    assert not list((tmp_path / "cache" / "chat-uploads").iterdir())
+
+
+def test_chat_streams_deltas_and_cleans_up_images(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_stream(*_: object, **__: object) -> AsyncIterator[ChatStreamEventView]:
+        for delta, tokens, finish_reason in (("你", 1, None), ("好", 2, None), ("", 2, "stop")):
+            yield ChatStreamEventView(
+                delta=delta,
+                finish_reason=finish_reason,
+                model_id="mlx-community/qwen3.5-9b-mlx-4bit",
+                instance_id="chat-instance",
+                runtime="mlx",
+                device="gpu",
+                generated_tokens=tokens,
+                inference_ms=12.0 if finish_reason else None,
+            )
+
+    monkeypatch.setattr(
+        "hugging_mac_web.chat.service.ChatService.stream_chat",
+        fake_stream,
+    )
+    app = create_app(_settings(tmp_path))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/apps/chat/messages/stream",
+            data={"instance_id": "chat-instance", "prompt": "你好"},
+            files={"images": ("sample.png", _png(), "image/png")},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.text.count("event: delta") == 2
+    assert "event: done" in response.text
+    assert '"delta":"你"' in response.text
+    assert not list((tmp_path / "cache" / "chat-uploads").iterdir())
 
 
 def test_yolo_pose_follow_templates_and_matching(tmp_path: Path) -> None:

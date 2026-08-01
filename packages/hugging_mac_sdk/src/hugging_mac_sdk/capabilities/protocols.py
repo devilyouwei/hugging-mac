@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Protocol, TypeVar
 
+from hugging_mac_sdk.schemas.chat import ChatRequest, ChatResponse, ChatStreamEvent
 from hugging_mac_sdk.schemas.detection import DetectionRequest, DetectionResponse
 from hugging_mac_sdk.schemas.pose import PoseEstimationResponse, PoseRequest
 from hugging_mac_sdk.schemas.segmentation import SegmentationRequest, SegmentationResponse
@@ -27,7 +28,6 @@ from hugging_mac_sdk.schemas.transcription import (
 
 RequestT = TypeVar("RequestT", contravariant=True)
 ResponseT = TypeVar("ResponseT", covariant=True)
-EventT = TypeVar("EventT", covariant=True)
 
 
 class ObjectDetection(Protocol):
@@ -48,12 +48,12 @@ class InstanceSegmentation(Protocol):
     async def segment(self, request: SegmentationRequest) -> SegmentationResponse: ...
 
 
-class Chat(Protocol[RequestT, ResponseT, EventT]):
+class Chat(Protocol):
     """Generate conversational responses, optionally as a stream."""
 
-    async def chat(self, request: RequestT) -> ResponseT: ...
+    async def chat(self, request: ChatRequest) -> ChatResponse: ...
 
-    def stream_chat(self, request: RequestT) -> AsyncIterator[EventT]: ...
+    def stream_chat(self, request: ChatRequest) -> AsyncIterator[ChatStreamEvent]: ...
 
 
 class SpeechTranscription(Protocol):

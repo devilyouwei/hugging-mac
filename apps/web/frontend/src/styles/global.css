@@ -50,6 +50,18 @@ a {
   min-height: 100vh;
 }
 
+.app-shell--fixed {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell--fixed > main {
+  height: calc(100dvh - 4.75rem);
+  min-height: 0;
+  overflow: hidden;
+}
+
 .site-header {
   align-items: center;
   display: flex;

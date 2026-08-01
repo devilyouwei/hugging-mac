@@ -48,6 +48,14 @@ from hugging_mac_sdk.schemas.catalog import (
     UnloadResult,
     VariantSummary,
 )
+from hugging_mac_sdk.schemas.chat import (
+    ChatImage,
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    ChatStreamEvent,
+    ChatTimings,
+)
 from hugging_mac_sdk.schemas.conversion import (
     ArtifactFormat,
     ConversionRequest,
@@ -102,6 +110,12 @@ __all__ = [
     "AudioInput",
     "BaseModelInstance",
     "BoundingBox",
+    "ChatImage",
+    "ChatMessage",
+    "ChatRequest",
+    "ChatResponse",
+    "ChatStreamEvent",
+    "ChatTimings",
     "ConversionRequest",
     "ConversionResult",
     "ConversionService",

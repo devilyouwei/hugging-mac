@@ -1,9 +1,14 @@
 <script setup lang="ts">
+import { computed } from "vue"
 import { RouterLink, RouterView } from "vue-router"
+import { useRoute } from "vue-router"
+
+const route = useRoute()
+const isChatPage = computed(() => route.name === "chat")
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'app-shell--fixed': isChatPage }">
     <header class="site-header">
       <RouterLink class="brand" to="/" aria-label="hugging-mac 首页">
         <img
@@ -20,7 +25,7 @@ import { RouterLink, RouterView } from "vue-router"
       <RouterView />
     </main>
 
-    <footer class="site-footer">
+    <footer v-if="!isChatPage" class="site-footer">
       <span>hugging-mac / Apple Silicon model studio</span>
       <span>Data stays on this machine</span>
     </footer>

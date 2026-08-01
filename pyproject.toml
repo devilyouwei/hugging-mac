@@ -53,7 +53,7 @@ tts = [
   "soundfile>=0.13,<1",
   "torch>=2.7,<3",
   "torchaudio>=2.7,<3",
-  "transformers>=4.57.3,<5",
+  "transformers>=4.57.3,<6",
 ]
 vision = [
   "einops>=0.8,<1",
@@ -146,6 +146,10 @@ python_version = "3.12"
 strict = true
 warn_unused_configs = true
 exclude = "^(models|data|artifacts)/"
+
+[[tool.mypy.overrides]]
+module = ["mlx_vlm", "mlx_vlm.*"]
+ignore_missing_imports = true
 
 [tool.coverage.run]
 branch = true

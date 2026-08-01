@@ -82,6 +82,7 @@ def _safe_details(details: dict[str, Any]) -> dict[str, Any]:
         "instance_count",
         "model_id",
         "revision",
+        "reason",
         "runtime",
         "source_format",
         "target_format",

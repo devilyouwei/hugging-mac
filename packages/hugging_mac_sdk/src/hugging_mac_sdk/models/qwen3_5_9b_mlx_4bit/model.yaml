@@ -1,0 +1,48 @@
+manifest:
+  schema_version: "1"
+  model_id: mlx-community/qwen3.5-9b-mlx-4bit
+  revision: 938d8919941c6e7efd3c7150eff7fe9d12afa631
+  display_name: Qwen3.5 9B MLX 4-bit
+  description: 面向 Apple Silicon 的 4-bit 量化多模态对话模型。
+  tags: [llm, vlm, chat, qwen3.5, mlx, 4bit]
+  family: qwen3.5
+  capabilities: [chat, vision-language-generation]
+  runtimes:
+    - name: mlx
+      devices: [gpu]
+      dtypes: [uint4, bfloat16]
+      quantizations: [4bit]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [mlx, mlx_vlm]
+  variants:
+    - name: 4bit
+      display_name: Qwen3.5 9B MLX 4-bit
+      description: mlx-vlm 转换的 group-size 64 四位量化权重。
+      metadata:
+        parameter_count_billions: 9
+        quantization_bits: 4
+        quantization_group_size: 64
+        disk_size_bytes: 5950000000
+        multimodal: true
+      resources: &model_source
+        - kind: huggingface
+          repo_id: mlx-community/Qwen3.5-9B-MLX-4bit
+          revision: 938d8919941c6e7efd3c7150eff7fe9d12afa631
+          allow_patterns: ["*.json", "*.jinja", "*.safetensors"]
+  default_variant: 4bit
+  license: Apache-2.0
+  source_url: https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit
+  default_runtime: mlx
+artifacts:
+  - artifact_id: model
+    variant: 4bit
+    runtime: mlx
+    format: mlx
+    path: mlx-community/qwen3.5-9b-mlx-4bit/938d8919941c6e7efd3c7150eff7fe9d12afa631/4bit/mlx/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: mlx-community/Qwen3.5-9B-MLX-4bit
+      revision: 938d8919941c6e7efd3c7150eff7fe9d12afa631
+      allow_patterns: ["*.json", "*.jinja", "*.safetensors"]

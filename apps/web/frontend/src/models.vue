@@ -180,11 +180,11 @@ function runtimeSize(model: ModelSummary, runtime: string): number | null {
   )
 }
 
-function sourceAvailable(model: ModelSummary): boolean {
+function downloadableResourcesAvailable(model: ModelSummary): boolean {
   return Boolean(
-    modelResources(model)?.artifacts.find(
-      (artifact) => artifact.artifact_id === "source",
-    )?.available,
+    modelResources(model)?.artifacts.some(
+      (artifact) => artifact.provisioning === "download" && artifact.available,
+    ),
   )
 }
 
@@ -267,7 +267,7 @@ function formatBytes(value: number | null): string {
                 {{
                   isPending("download", `${model.model_id}:${selectedVariant(model)}`)
                     ? "Downloading…"
-                    : sourceAvailable(model)
+                    : downloadableResourcesAvailable(model)
                       ? "Re-download"
                       : "Download"
                 }}
@@ -278,7 +278,7 @@ function formatBytes(value: number | null): string {
                 class="button button--compact"
                 :disabled="
                   selectedVariantSummary(model).instance_count > 0 ||
-                  !sourceAvailable(model) ||
+                  !downloadableResourcesAvailable(model) ||
                   isPending(
                     'convert',
                     `${model.model_id}:${selectedVariant(model)}:${target.target_format}`,

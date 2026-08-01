@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from hugging_mac_web.app_blueprint import AppBlueprint
+from hugging_mac_web.chat import create_blueprint as create_chat_blueprint
 from hugging_mac_web.config import WebSettings
 from hugging_mac_web.context import create_context
 from hugging_mac_web.error_handlers import install_error_handlers
@@ -48,6 +49,7 @@ def create_app(
             create_segmentation_blueprint(),
             create_live_transcription_blueprint(),
             create_text_to_speech_blueprint(),
+            create_chat_blueprint(),
             create_pose_follow_blueprint(),
         )
     )
