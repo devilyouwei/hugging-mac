@@ -11,7 +11,8 @@ MODEL_ROOT = (
     / "models"
 )
 MODEL_PACKAGES = ("yolov8", "yolov8_pose", "yolov8_seg")
-ASR_MODEL_PACKAGES = ("audio8_asr",)
+ASR_MODEL_PACKAGES = ("audio8_asr", "sensevoice_small")
+TTS_MODEL_PACKAGES = ("audio8_tts", "kokoro_82m")
 REQUIRED_INTEGRATION_FILES = {
     "__init__.py",
     "config.py",
@@ -52,7 +53,7 @@ def test_model_instances_compose_runtime_engines() -> None:
 
 
 def test_model_packs_do_not_import_other_model_packs() -> None:
-    all_packages = MODEL_PACKAGES + ASR_MODEL_PACKAGES
+    all_packages = MODEL_PACKAGES + ASR_MODEL_PACKAGES + TTS_MODEL_PACKAGES
     for package_name in all_packages:
         package = MODEL_ROOT / package_name
         other_packages = set(all_packages) - {package_name}
@@ -69,6 +70,39 @@ def test_audio8_asr_follows_the_integration_layout() -> None:
     assert root_files >= REQUIRED_INTEGRATION_FILES | {
         "converter.py",
         "coreml.py",
+        "resources.py",
+        "torch.py",
+    }
+    assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
+    assert (package / "utils" / "__init__.py").is_file()
+
+
+def test_sensevoice_small_follows_the_integration_layout() -> None:
+    package = MODEL_ROOT / "sensevoice_small"
+    root_files = {path.name for path in package.iterdir() if path.is_file()}
+
+    assert root_files >= REQUIRED_INTEGRATION_FILES | {
+        "resources.py",
+        "torch.py",
+    }
+    assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
+    assert (package / "utils" / "__init__.py").is_file()
+
+
+def test_audio8_tts_follows_the_integration_layout() -> None:
+    package = MODEL_ROOT / "audio8_tts"
+    root_files = {path.name for path in package.iterdir() if path.is_file()}
+
+    assert root_files >= REQUIRED_INTEGRATION_FILES | {"resources.py", "torch.py"}
+    assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
+    assert (package / "utils" / "__init__.py").is_file()
+
+
+def test_kokoro_82m_follows_the_integration_layout() -> None:
+    package = MODEL_ROOT / "kokoro_82m"
+    root_files = {path.name for path in package.iterdir() if path.is_file()}
+
+    assert root_files >= REQUIRED_INTEGRATION_FILES | {
         "resources.py",
         "torch.py",
     }

@@ -28,8 +28,9 @@ visible for developers to learn how AI really runs on Apple Silicon.
 **Your data stays on your Mac. Your Mac does the work.**
 
 > Hugging Mac is in active early development. YOLOv8 detection, pose estimation,
-> instance segmentation, the Yolo Pose Follow game, and Audio8-ASR transcription
-> are available today. More models, apps, and neural games are on the way.
+> instance segmentation, the Yolo Pose Follow game, Audio8-ASR transcription,
+> and SenseVoiceSmall speech understanding are available today. More models,
+> apps, and neural games are on the way.
 
 ## See it in action
 
@@ -54,6 +55,8 @@ added here as the model, app, and game catalog grows.
   masks and contours.
 - 🎙️ **Live transcription** — use VAD and Audio8-ASR to turn ongoing speech into
   local, sentence-by-sentence text.
+- 🎧 **Speech understanding** — use SenseVoiceSmall to recognize text, language,
+  emotion, and acoustic events in one local pass.
 - 🕹️ **Neural games** — play Yolo Pose Follow and use model output as a real-time
   game input.
 - 🧠 **Model engineering** — download weights, switch variants, manage instances,
@@ -138,6 +141,8 @@ Key documents:
 - [Platform backend](doc/17-platform-backend.md)
 - [Vue and object detection](doc/18-web-frontend-and-object-detection.md)
 - [Audio8-ASR SDK](doc/20-audio8-asr-sdk.md)
+- [SenseVoiceSmall SDK](doc/21-sensevoice-small-sdk.md)
+- [Text-to-Speech SDK and app](doc/22-text-to-speech-sdk.md)
 - [Engineering conventions](doc/10-engineering.md)
 - [Roadmap](doc/11-roadmap.md)
 
@@ -189,3 +194,4 @@ hugging-mac is released under the [MIT License](LICENSE).
 Model weights, datasets, and third-party dependencies retain their own licenses.
 Review their terms before use. Ultralytics YOLO software and models have separate
 licensing requirements; Audio8-ASR 0.1B uses `CC-BY-NC-4.0`.
+SenseVoiceSmall uses the `FunASR Model Open Source License Agreement 1.1`.

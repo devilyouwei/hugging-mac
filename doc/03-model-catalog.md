@@ -1,6 +1,6 @@
 # 模型目录与能力
 
-状态：`已部分实现（目录与扩展策略仍在规划）`
+状态：`内置模型包、显式注册与资源管理已实现；外部目录自动发现与合并仍在规划`
 
 ## 分类不是实现
 
@@ -17,6 +17,8 @@
 | CLIP | `ImageEmbedding`、`TextEmbedding`、`ImageTextSimilarity` | PyTorch MPS | 验证多输入、多能力 |
 | Whisper | `SpeechTranscription`、`SpeechTranslation` | PyTorch MPS / Core ML | 验证音频、时间戳与长任务 |
 | Audio8-ASR | `SpeechTranscription` | PyTorch MPS | 验证短音频、自回归 ASR 与多文件资源 |
+| Audio8-TTS | `SpeechSynthesis` | PyTorch MPS | 验证多语言、自回归语音生成与参考音频克隆 |
+| Kokoro-82M | `SpeechSynthesis` | PyTorch MPS | 验证轻量本地语音合成与包内 voice 资源 |
 | 小型 LLM | `TextCompletion`、`Chat`、`StreamingGeneration` | MLX | 验证流式生成与量化 |
 | 小型 VLM | `VisionLanguageChat`、`ImageUnderstanding` | MLX / PyTorch MPS | 验证多模态和较大资源压力 |
 
@@ -100,3 +102,6 @@ runtime 的 `auto` 选择不在 registry 内，而在 `RuntimePolicy` / `Instanc
 - `ultralytics/yolov8` 及 Pose/Seg 模型包，详见 [YOLOv8 SDK](14-yolov8-sdk.md)；
 - `audio8/audio8-asr-0.1b`，以 `base` variant 和 `SpeechTranscription` 接入，详见
   [Audio8-ASR SDK](20-audio8-asr-sdk.md)。
+- `audio8/audio8-tts-preview-0.6b`，以 `preview` variant 和 `SpeechSynthesis` 接入；
+- `hexgrad/kokoro-82m`，以 `v1.0` variant 和 `SpeechSynthesis` 接入；
+  两者详见 [TTS SDK 与应用](22-text-to-speech-sdk.md)。
