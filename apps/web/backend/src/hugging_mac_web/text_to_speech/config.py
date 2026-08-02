@@ -18,6 +18,7 @@ class TtsModelProfile:
     voices: tuple[str, ...] = ()
     languages: tuple[str, ...] = ()
     requires_reference_voice: bool = False
+    requires_reference_audio: bool = False
     max_new_tokens: int = 1024
 
 
@@ -112,12 +113,38 @@ KOKORO_82M_PROFILE = TtsModelProfile(
     languages=("a", "b", "e", "f", "h", "i", "p", "j", "z"),
 )
 
+QWEN3_TTS_0_6B_BASE_4BIT_PROFILE = TtsModelProfile(
+    model_id="mlx-community/qwen3-tts-12hz-0.6b-base-4bit",
+    display_name="Qwen3-TTS 12Hz 0.6B Base 4-bit",
+    short_name="Qwen3 TTS",
+    description="MLX 4-bit 多语言 Base 模型，使用参考音频和准确文本克隆声音。",
+    variant="4bit",
+    runtime="mlx",
+    required_artifact_id="model",
+    languages=(
+        "auto",
+        "chinese",
+        "english",
+        "japanese",
+        "korean",
+        "german",
+        "french",
+        "russian",
+        "portuguese",
+        "spanish",
+        "italian",
+    ),
+    requires_reference_audio=True,
+    max_new_tokens=2048,
+)
+
 TTS_MODEL_PROFILES = {
     profile.model_id: profile
     for profile in (
         AUDIO8_TTS_PROFILE,
         AUDIO8_TTS_MLX_BF16_PROFILE,
         KOKORO_82M_PROFILE,
+        QWEN3_TTS_0_6B_BASE_4BIT_PROFILE,
     )
 }
 

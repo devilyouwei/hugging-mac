@@ -19,6 +19,7 @@
 | Audio8-ASR | `SpeechTranscription` | PyTorch MPS | 验证短音频、自回归 ASR 与多文件资源 |
 | Audio8-TTS | `SpeechSynthesis` | PyTorch CPU FP32 | 验证多语言、自回归语音生成与参考音频克隆 |
 | Kokoro-82M | `SpeechSynthesis` | MLX BF16 | 验证轻量本地语音合成与 safetensors voice 资源 |
+| Qwen3-TTS 0.6B Base | `SpeechSynthesis` | MLX 4-bit | 验证量化多语言 TTS 与参考音频声音克隆 |
 | 小型 LLM | `TextCompletion`、`Chat`、`StreamingGeneration` | MLX | 验证流式生成与量化 |
 | 小型 VLM | `VisionLanguageChat`、`ImageUnderstanding` | MLX / PyTorch MPS | 验证多模态和较大资源压力 |
 
@@ -106,4 +107,5 @@ runtime 的 `auto` 选择不在 registry 内，而在 `RuntimePolicy` / `Instanc
 - `mlx-community/audio8-tts-preview-0.6b-bf16`，以独立 `bf16` variant、MLX GPU runtime 和
   `SpeechSynthesis` 接入；
 - `mlx-community/kokoro-82m-bf16`，以 `bf16` variant、MLX runtime 和 `SpeechSynthesis` 接入；
-  三者详见 [TTS SDK 与应用](22-text-to-speech-sdk.md)。
+- `mlx-community/qwen3-tts-12hz-0.6b-base-4bit`，以 `4bit` variant、MLX runtime 和
+  `SpeechSynthesis` 接入；上述 TTS 模型详见 [TTS SDK 与应用](22-text-to-speech-sdk.md)。

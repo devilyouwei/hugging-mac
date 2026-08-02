@@ -2,37 +2,38 @@
   <img src="apps/web/frontend/public/hugging-mac-icon.png" alt="hugging-mac" width="144">
 </p>
 
-<h1 align="center">Hugging Mac</h1>
+<h1 align="center">🤗 Hugging Mac 🍎</h1>
 
 <p align="center">
-  <strong>Not Hugging Face. Hugging Mac. 🤗🍎</strong>
+  <strong>Suck every bit of performance out of your Mac. Run all kinds of AI models locally.</strong>
 </p>
 
-<p align="center">
-  Give your Mac a hug. Give it AI.
-</p>
+> **You are wasting your Mac's performance.** Hugging Mac runs AI models locally
+> on Apple Silicon and pushes your machine hard—GPU, Neural Engine, and every
+> available core.
 
-> **Did you know? Your Mac is secretly an AI machine.** Hugging Mac brings deep
-> learning models to Apple Silicon, puts every available core to work, and turns
-> your Mac into a playground for learning, experimenting, and building with AI.
+Run vision, speech, language, and multimodal models on your Mac. Build useful
+and strange local AI apps: a Digital Human, live transcription, camera vision,
+pose-controlled games, and whatever comes next.
 
-Hugging Mac is an open local AI studio for anyone who wants to understand and
-experience neural networks on a Mac. Run a detector, trace a human pose, segment
-objects, transcribe your voice, or build a game controlled by your body—all on
-your own Apple Silicon machine.
-
-The goal is simple: make deep neural network models approachable and fun to play
-with, while keeping enough of the runtime, resource, and performance details
-visible for developers to learn how AI really runs on Apple Silicon.
-
-**Your data stays on your Mac. Your Mac does the work.**
+**Your data stays local. Your Mac does the work.**
 
 > Hugging Mac is in active early development. YOLOv8 detection, pose estimation,
 > instance segmentation, the Yolo Pose Follow game, Audio8-ASR transcription,
-> and SenseVoiceSmall speech understanding are available today. More models,
-> apps, and neural games are on the way.
+> SenseVoiceSmall speech understanding, and the Digital Human experience are
+> available today. More models, apps, and neural games are on the way.
 
 ## See it in action
+
+### Digital Human 🎙️
+
+A fully local, camera-aware voice conversation on Apple Silicon. Digital Human
+combines Audio8-ASR, Qwen 3.5 vision-language generation, and Kokoro MLX speech
+to listen, respond to the current camera frame, and speak back with low latency.
+
+[![Watch the Digital Human demo](https://img.youtube.com/vi/YPr6fYPnCMQ/hqdefault.jpg)](https://youtu.be/YPr6fYPnCMQ)
+
+Watch the [Digital Human video chat demo](https://youtu.be/YPr6fYPnCMQ) on YouTube.
 
 ### Yolo Pose Follow 🕺
 

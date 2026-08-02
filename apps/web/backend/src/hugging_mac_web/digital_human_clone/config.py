@@ -13,7 +13,7 @@ class DigitalHumanSettings(BaseSettings):
 
     max_audio_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
     max_image_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
-    max_history_messages: int = Field(default=12, ge=1, le=40)
+    max_history_messages: int = Field(default=15, ge=1, le=40)
     max_reply_tokens: int = Field(default=96, ge=16, le=512)
     system_prompt: str = (
         "Act as the user's digital human conversation partner. Respond naturally using the "

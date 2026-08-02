@@ -100,6 +100,11 @@ class TextToSpeechService:
                 "Audio8 MLX requires a voice profile name",
                 details={"model_id": profile.model_id},
             )
+        if profile.requires_reference_audio and (reference_audio is None or reference_text is None):
+            raise ResourceNotFoundError(
+                "Qwen3-TTS Base requires reference audio and its transcript",
+                details={"model_id": profile.model_id},
+            )
         if (reference_audio is None) != (reference_text is None):
             raise ValueError("reference_audio and reference_text must be provided together")
         instance = await self._context.models.instances.require(request.instance_id)
@@ -155,7 +160,7 @@ class TextToSpeechService:
 
     def _model_options(self, profile: TtsModelProfile) -> dict[str, object]:
         options: dict[str, object] = {"model_home": self._context.settings.model_home}
-        if profile.requires_reference_voice:
+        if profile.model_id == "mlx-community/audio8-tts-preview-0.6b-bf16":
             options["voice_home"] = (
                 self._context.settings.data_dir / "voices" / "audio8-tts-mlx-bf16"
             )

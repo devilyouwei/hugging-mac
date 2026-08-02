@@ -50,9 +50,10 @@ export async function synthesizeSpeech(
     form.append("model_id", options.model_id)
     form.append("instance_id", options.instance_id)
     form.append("text", options.text)
-    form.append("voice", options.voice ?? "")
+    if (options.voice) form.append("voice", options.voice)
     form.append("reference_text", options.referenceText ?? "")
     form.append("speed", String(options.speed))
+    if (options.language) form.append("language", options.language)
     endpoint = `${PREFIX}/synthesize/reference`
     body = form
   } else {

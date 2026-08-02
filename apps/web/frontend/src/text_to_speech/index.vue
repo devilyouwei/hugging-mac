@@ -23,8 +23,20 @@ const LANGUAGE_NAMES: Record<string, string> = {
   p: "Portuguese",
   j: "Japanese",
   z: "Chinese",
+  auto: "Automatic",
+  chinese: "Chinese",
+  english: "English",
+  japanese: "Japanese",
+  korean: "Korean",
+  german: "German",
+  french: "French",
+  russian: "Russian",
+  portuguese: "Portuguese",
+  spanish: "Spanish",
+  italian: "Italian",
 }
 const AUDIO8_CLONE_MODEL_ID = "mlx-community/audio8-tts-preview-0.6b-bf16"
+const QWEN3_TTS_MODEL_ID = "mlx-community/qwen3-tts-12hz-0.6b-base-4bit"
 const SAMPLE_TEXTS = [
   "Every voice carries a different texture. Today, the whole studio runs locally on this Mac.",
   "A warm breeze crosses the lake, and every voice gains texture and depth.",
@@ -75,10 +87,13 @@ const isKokoro = computed(
   () => selectedModel.value?.model_id === "mlx-community/kokoro-82m-bf16",
 )
 const isAudio8Clone = computed(() => selectedModel.value?.model_id === AUDIO8_CLONE_MODEL_ID)
+const isQwen3Clone = computed(() => selectedModel.value?.model_id === QWEN3_TTS_MODEL_ID)
 const characterCount = computed(() => text.value.length)
 const referenceReady = computed(() =>
-  !isAudio8Clone.value
-  || (Boolean(voiceProfile.value.trim())
+  isQwen3Clone.value
+    ? referenceAudio.value !== null && Boolean(referenceText.value.trim())
+    : !isAudio8Clone.value
+    || (Boolean(voiceProfile.value.trim())
     && (useSavedProfile.value
       || (referenceAudio.value !== null && Boolean(referenceText.value.trim())))),
 )
@@ -180,12 +195,12 @@ async function generateSpeech() {
         voice: isAudio8Clone.value
           ? voiceProfile.value.trim()
           : isKokoro.value ? voice.value : null,
-        language: isKokoro.value ? language.value : null,
+        language: isKokoro.value || isQwen3Clone.value ? language.value : null,
         speed: speed.value,
-        referenceAudio: isAudio8Clone.value && !useSavedProfile.value
+        referenceAudio: (isAudio8Clone.value && !useSavedProfile.value) || isQwen3Clone.value
           ? referenceAudio.value
           : null,
-        referenceText: isAudio8Clone.value && !useSavedProfile.value
+        referenceText: (isAudio8Clone.value && !useSavedProfile.value) || isQwen3Clone.value
           ? referenceText.value.trim()
           : null,
       },
@@ -197,7 +212,9 @@ async function generateSpeech() {
       modelId: model.model_id,
       modelName: model.short_name,
       text: text.value.trim(),
-      voice: isAudio8Clone.value ? voiceProfile.value.trim() : isKokoro.value ? voice.value : null,
+      voice: isAudio8Clone.value
+        ? voiceProfile.value.trim()
+        : isKokoro.value ? voice.value : isQwen3Clone.value ? "reference" : null,
       runtime: response.headers.get("x-runtime") ?? model.runtime,
       device: response.headers.get("x-device") ?? model.runtime,
       durationSeconds: Number(response.headers.get("x-duration-seconds") ?? 0),
@@ -238,9 +255,9 @@ onBeforeUnmount(() => {
     <header class="tts-hero">
       <div>
         <RouterLink class="back-link" to="/apps">← Neural Apps</RouterLink>
-        <p class="kicker">LOCAL TEXT-TO-SPEECH · THREE ENGINES, ONE STUDIO</p>
+        <p class="kicker">LOCAL TEXT-TO-SPEECH · FOUR ENGINES, ONE STUDIO</p>
         <h1>Type it.<br /><em>Hear it.</em></h1>
-        <p>Compare Audio8 PyTorch, Audio8 MLX BF16, and Kokoro in one local studio. Your text and generated audio stay on this Mac.</p>
+        <p>Compare Audio8, Kokoro, and Qwen3-TTS in one local studio. Your text, reference voice, and generated audio stay on this Mac.</p>
       </div>
       <div class="sound-object" aria-hidden="true">
         <span v-for="bar in 18" :key="bar" :style="{ '--bar': bar }"></span>
@@ -366,6 +383,41 @@ onBeforeUnmount(() => {
             </select>
           </label>
         </div>
+        <div v-else-if="isQwen3Clone" class="reference-controls">
+          <label class="reference-file">
+            <span>REFERENCE AUDIO · CLEAR SPEECH</span>
+            <input
+              type="file"
+              accept=".wav,.flac,.mp3,.ogg,audio/wav,audio/flac,audio/mpeg,audio/ogg"
+              @change="selectReferenceAudio"
+            />
+            <b>{{ referenceAudio?.name ?? "CHOOSE AUDIO" }}</b>
+          </label>
+          <audio
+            v-if="referenceAudioUrl"
+            class="reference-player"
+            :src="referenceAudioUrl"
+            controls
+            preload="metadata"
+          ></audio>
+          <label>
+            <span>ACCURATE TRANSCRIPT</span>
+            <textarea
+              v-model="referenceText"
+              class="reference-transcript"
+              placeholder="Enter exactly what is spoken in the reference audio…"
+            ></textarea>
+          </label>
+          <label class="reference-language">
+            <span>LANGUAGE</span>
+            <select v-model="language">
+              <option v-for="item in selectedModel?.languages" :key="item" :value="item">
+                {{ LANGUAGE_NAMES[item] ?? item }}
+              </option>
+            </select>
+          </label>
+          <p>Qwen3-TTS uses this reference for the current generation; it is not saved as a profile.</p>
+        </div>
         <div v-else class="audio8-note">
           <strong>Natural multilingual mode</strong>
           <p>Audio8 detects the input language automatically and generates natural speech.</p>
@@ -422,7 +474,7 @@ onBeforeUnmount(() => {
       </div>
       <article v-for="result in results" :key="result.id" class="audio-result">
         <div class="result-model">
-          <span>{{ result.modelId.includes("kokoro") ? "K" : "A8" }}</span>
+          <span>{{ result.modelId.includes("kokoro") ? "K" : result.modelId.includes("qwen3-tts") ? "Q3" : "A8" }}</span>
           <div>
             <strong>{{ result.modelName }}</strong>
             <small>{{ result.runtime }} · {{ result.voice ?? "automatic voice" }}</small>
@@ -452,7 +504,7 @@ onBeforeUnmount(() => {
 .sound-object strong { bottom: 1.8rem; font-family: var(--font-mono); font-size: 1.2rem; left: 1.8rem; position: absolute; }
 .sound-object small { bottom: 1.8rem; color: #999b92; font-family: var(--font-mono); position: absolute; right: 1.8rem; }
 @keyframes sound-pulse { to { transform: scaleY(.35); } }
-.tts-model-switcher { display: grid; grid-template-columns: repeat(3, 1fr); margin: 2rem 0; }
+.tts-model-switcher { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); margin: 2rem 0; }
 .tts-model-switcher button { align-items: center; background: transparent; border: 1px solid var(--line); cursor: pointer; display: grid; gap: 1.2rem; grid-template-columns: auto 1fr auto; min-height: 10rem; padding: 1.4rem; text-align: left; }
 .tts-model-switcher button + button { border-left: 0; }
 .tts-model-switcher button.selected { background: var(--ink); color: var(--paper); }
@@ -494,6 +546,8 @@ textarea { background: transparent; border: 0; border-bottom: 1px solid var(--li
 .reference-transcript { background: #292a26; border: 1px solid #4a4b46; color: var(--paper); font-size: .8rem; height: 4.5rem; line-height: 1.4; padding: .65rem; resize: vertical; }
 .reference-controls > p { color: #999b92; font-size: .72rem; line-height: 1.45; margin: 0; }
 .reference-controls > p strong { color: var(--signal); }
+.reference-language { display: grid; gap: .5rem; }
+.reference-language select { background: #292a26; border: 1px solid #4a4b46; color: var(--paper); min-height: 2.8rem; padding: 0 .8rem; }
 .speed-control { margin: 1.8rem 0; }
 .speed-control span { display: flex; justify-content: space-between; }
 .speed-control output { color: var(--signal); }

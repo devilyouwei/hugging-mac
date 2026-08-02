@@ -22,6 +22,7 @@ export interface TtsModel {
   voices: string[]
   languages: string[]
   requires_reference_voice: boolean
+  requires_reference_audio: boolean
   max_new_tokens: number
   resource: TtsResource
   ready_instance_id: string | null

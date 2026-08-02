@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 
 import {
   fetchSetup,
@@ -67,22 +67,6 @@ const KOKORO_VOICES = [
   "zm_yunxia",
   "zm_yunyang",
 ]
-const VOICE_GROUPS: Record<string, string> = {
-  a: "American English",
-  b: "British English",
-  e: "Spanish",
-  f: "French",
-  h: "Hindi",
-  i: "Italian",
-  j: "Japanese",
-  p: "Portuguese",
-  z: "Chinese",
-}
-const groupedVoices = Object.entries(VOICE_GROUPS).map(([code, name]) => ({
-  code,
-  name,
-  voices: KOKORO_VOICES.filter((voice) => voice.startsWith(code)),
-}))
 const KOKORO_LANGUAGES = [
   { code: "a", name: "American English" },
   { code: "b", name: "British English" },
@@ -97,6 +81,7 @@ const KOKORO_LANGUAGES = [
 const SILENCE_SECONDS = 0.7
 const MIN_SPEECH_SECONDS = 0.35
 const MAX_SPEECH_SECONDS = 20
+const MAX_HISTORY_MESSAGES = 15
 
 const models = ref<ModelState[]>([])
 const loaded = ref<LoadedModels | null>(null)
@@ -126,9 +111,11 @@ let speechStartedAt = 0
 let silenceStartedAt = 0
 let responseRequest: AbortController | null = null
 const asrRequests = new Map<number, AbortController>()
-let playback: HTMLAudioElement | null = null
-let playbackUrl = ""
-let resolvePlayback: (() => void) | null = null
+const playbackSources = new Map<
+  AudioBufferSourceNode,
+  { gain: GainNode; startsAt: number; endsAt: number }
+>()
+let playbackScheduledUntil = 0
 let turn = 0
 let utteranceSequence = 0
 let latestUtterance = 0
@@ -137,7 +124,22 @@ const allResourcesReady = computed(() =>
   models.value.length === 3 && models.value.every((model) => model.resources_ready),
 )
 const modelsReady = computed(() => Boolean(loaded.value))
+const availableVoices = computed(() =>
+  KOKORO_VOICES.filter((voice) => voice.startsWith(language.value)),
+)
 const canStart = computed(() => modelsReady.value && Boolean(voiceId.value) && !active.value)
+
+watch(language, () => {
+  if (!availableVoices.value.includes(voiceId.value)) {
+    voiceId.value = availableVoices.value[0] ?? ""
+  }
+})
+
+function voiceLabel(voice: string): string {
+  const gender = voice[1] === "f" ? "Female" : voice[1] === "m" ? "Male" : "Voice"
+  const name = voice.slice(3).replaceAll("_", " ")
+  return `${name} · ${gender}`
+}
 
 async function refreshSetup() {
   try {
@@ -206,7 +208,7 @@ function sampleVoiceActivity() {
   const samples = new Float32Array(analyserNode.fftSize)
   analyserNode.getFloatTimeDomainData(samples)
   const rms = updateLevel(samples)
-  const threshold = playback ? 0.035 : 0.018
+  const threshold = isPlaybackActive() ? 0.035 : 0.018
   const voiced = rms >= threshold
   if (!speaking.value) {
     if (voiced) beginUtterance()
@@ -240,7 +242,7 @@ function beginUtterance() {
   speechStartedAt = performance.now()
   silenceStartedAt = 0
   speaking.value = true
-  if (!playback && !responseRequest) phase.value = "You are speaking"
+  if (!isPlaybackActive() && !responseRequest) phase.value = "You are speaking"
 }
 
 function finishUtterance() {
@@ -258,7 +260,7 @@ async function submitRecordedUtterance() {
   speechStartedAt = 0
   silenceStartedAt = 0
   if (!active.value || duration < MIN_SPEECH_SECONDS || !encodedAudio.size) {
-    if (active.value && !playback && !responseRequest) phase.value = "Listening"
+    if (active.value && !isPlaybackActive() && !responseRequest) phase.value = "Listening"
     return
   }
   if (!audioContext) return
@@ -291,9 +293,34 @@ async function recognizeUtterance(audio: Blob, utteranceId: number) {
     assistantSubtitle.value = ""
     phase.value = "Your digital human is observing and thinking"
     const frame = await captureFrame()
-    const priorHistory = history.value.slice(-10)
+    const priorHistory = history.value.slice(-MAX_HISTORY_MESSAGES)
     responseController = new AbortController()
     responseRequest = responseController
+    let answer = ""
+    let speechBuffer = ""
+    let speechError: unknown = null
+    let scheduleQueue: Promise<void> = Promise.resolve()
+    const playbackCompletions: Promise<void>[] = []
+    const queueSpeech = (segment: string) => {
+      const text = segment.trim()
+      if (!text) return
+      if (speechError || currentTurn !== turn || responseController?.signal.aborted) return
+      phase.value = "Generating speech"
+      const preparedAudio = synthesize(
+        text,
+        voiceId.value,
+        language.value,
+        loaded.value!.tts_instance_id,
+        responseController!.signal,
+      ).then(prepareSpeech)
+      scheduleQueue = scheduleQueue.then(async () => {
+        const speech = await preparedAudio
+        if (currentTurn !== turn || responseController?.signal.aborted) return
+        playbackCompletions.push(scheduleSpeech(speech))
+      }).catch((caught) => {
+        speechError = caught
+      })
+    }
     await streamReply(
       {
         image: frame,
@@ -302,24 +329,28 @@ async function recognizeUtterance(audio: Blob, utteranceId: number) {
         history: priorHistory,
       },
       (event) => {
-        if (currentTurn === turn) assistantSubtitle.value += event.delta
+        if (currentTurn !== turn || !event.delta) return
+        answer += event.delta
+        assistantSubtitle.value = answer
+        speechBuffer += event.delta
+        const parsed = splitSpeechBuffer(speechBuffer)
+        speechBuffer = parsed.remainder
+        parsed.segments.forEach(queueSpeech)
       },
       responseController.signal,
     )
-    if (currentTurn !== turn || !assistantSubtitle.value.trim()) return
-    const answer = assistantSubtitle.value.trim()
-    history.value.push({ role: "user", content: transcript.text }, { role: "assistant", content: answer })
-    history.value = history.value.slice(-12)
-    phase.value = "Generating speech"
-    const speech = await synthesize(
-      answer,
-      voiceId.value,
-      language.value,
-      loaded.value.tts_instance_id,
-      responseController.signal,
+    if (currentTurn !== turn || !answer.trim()) return
+    queueSpeech(speechBuffer)
+    speechBuffer = ""
+    const completedAnswer = answer.trim()
+    history.value.push(
+      { role: "user", content: transcript.text },
+      { role: "assistant", content: completedAnswer },
     )
-    if (currentTurn !== turn) return
-    await playSpeech(speech, currentTurn)
+    history.value = history.value.slice(-MAX_HISTORY_MESSAGES)
+    await scheduleQueue
+    await Promise.all(playbackCompletions)
+    if (speechError) throw speechError
   } catch (caught) {
     if (!isAbort(caught) && active.value && utteranceId === latestUtterance) {
       showError(caught, "This conversation turn failed")
@@ -327,7 +358,12 @@ async function recognizeUtterance(audio: Blob, utteranceId: number) {
   } finally {
     asrRequests.delete(utteranceId)
     if (responseRequest === responseController) responseRequest = null
-    if (active.value && utteranceId === latestUtterance && !playback && !responseRequest) {
+    if (
+      active.value
+      && utteranceId === latestUtterance
+      && !isPlaybackActive()
+      && !responseRequest
+    ) {
       phase.value = "Listening"
     }
     void nextTick(() => subtitleEnd.value?.scrollIntoView({ behavior: "smooth" }))
@@ -351,20 +387,87 @@ async function captureFrame(): Promise<Blob> {
   )
 }
 
-async function playSpeech(blob: Blob, currentTurn: number) {
-  stopPlayback()
-  playbackUrl = URL.createObjectURL(blob)
-  playback = new Audio(playbackUrl)
+interface PreparedSpeech {
+  buffer: AudioBuffer
+  duration: number
+  offset: number
+}
+
+async function prepareSpeech(blob: Blob): Promise<PreparedSpeech> {
+  if (!audioContext) throw new Error("The audio context is unavailable")
+  const buffer = await audioContext.decodeAudioData(await blob.arrayBuffer())
+  const { offset, duration } = audibleRange(buffer)
+  return { buffer, offset, duration }
+}
+
+function scheduleSpeech(speech: PreparedSpeech): Promise<void> {
+  if (!audioContext) return Promise.reject(new Error("The audio context is unavailable"))
+  const context = audioContext
+  const crossfade = 0.008
+  const now = context.currentTime
+  const continuous = playbackScheduledUntil > now + 0.01
+  const startsAt = continuous
+    ? Math.max(now + 0.005, playbackScheduledUntil - crossfade)
+    : now + 0.015
+  const endsAt = startsAt + speech.duration
+  const source = context.createBufferSource()
+  const gain = context.createGain()
+  source.buffer = speech.buffer
+  source.connect(gain)
+  gain.connect(context.destination)
+  gain.gain.setValueAtTime(0, startsAt)
+  gain.gain.linearRampToValueAtTime(1, startsAt + Math.min(crossfade, speech.duration / 3))
+  gain.gain.setValueAtTime(1, Math.max(startsAt, endsAt - crossfade))
+  gain.gain.linearRampToValueAtTime(0, endsAt)
+  playbackScheduledUntil = endsAt
+  playbackSources.set(source, { gain, startsAt, endsAt })
   phase.value = "Your digital human is speaking. You can interrupt at any time"
-  await new Promise<void>((resolve, reject) => {
-    if (!playback) return resolve()
-    resolvePlayback = resolve
-    playback.onended = () => resolve()
-    playback.onerror = () => reject(new Error("Speech playback failed"))
-    void playback.play().catch(reject)
+  return new Promise<void>((resolve) => {
+    source.onended = () => {
+      source.disconnect()
+      gain.disconnect()
+      playbackSources.delete(source)
+      resolve()
+    }
+    source.start(startsAt, speech.offset, speech.duration)
   })
-  if (currentTurn === turn) phase.value = "Listening"
-  stopPlayback()
+}
+
+function audibleRange(buffer: AudioBuffer): { offset: number; duration: number } {
+  const threshold = 0.0015
+  let first = buffer.length
+  let last = 0
+  for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+    const samples = buffer.getChannelData(channel)
+    let start = 0
+    while (start < samples.length && Math.abs(samples[start] ?? 0) < threshold) start += 1
+    let end = samples.length - 1
+    while (end > start && Math.abs(samples[end] ?? 0) < threshold) end -= 1
+    first = Math.min(first, start)
+    last = Math.max(last, end)
+  }
+  if (first >= buffer.length) return { offset: 0, duration: buffer.duration }
+  const paddingBefore = Math.round(buffer.sampleRate * 0.01)
+  const paddingAfter = Math.round(buffer.sampleRate * 0.035)
+  const startFrame = Math.max(0, first - paddingBefore)
+  const endFrame = Math.min(buffer.length, last + paddingAfter + 1)
+  return {
+    offset: startFrame / buffer.sampleRate,
+    duration: Math.max(1, endFrame - startFrame) / buffer.sampleRate,
+  }
+}
+
+function splitSpeechBuffer(value: string): { segments: string[]; remainder: string } {
+  const segments: string[] = []
+  const boundary = /(?:[.!?;。！？；…]+["'”’）)\]}》】]*|\n+)/gu
+  let start = 0
+  for (const match of value.matchAll(boundary)) {
+    const end = (match.index ?? 0) + match[0].length
+    const segment = value.slice(start, end).trim()
+    if (segment) segments.push(segment)
+    start = end
+  }
+  return { segments, remainder: value.slice(start) }
 }
 
 function interruptResponse() {
@@ -376,16 +479,24 @@ function interruptResponse() {
 }
 
 function stopPlayback() {
-  if (playback) {
-    playback.pause()
-    playback.onended = null
-    playback.onerror = null
-    playback = null
+  for (const [source, item] of playbackSources) {
+    try {
+      source.stop()
+    } catch {
+      source.disconnect()
+      item.gain.disconnect()
+      playbackSources.delete(source)
+    }
   }
-  resolvePlayback?.()
-  resolvePlayback = null
-  if (playbackUrl) URL.revokeObjectURL(playbackUrl)
-  playbackUrl = ""
+  playbackScheduledUntil = 0
+}
+
+function isPlaybackActive(): boolean {
+  if (!audioContext) return false
+  const now = audioContext.currentTime
+  return Array.from(playbackSources.values()).some(
+    (item) => item.startsAt <= now + 0.02 && item.endsAt > now,
+  )
 }
 
 function stopConversation() {
@@ -403,7 +514,7 @@ function stopConversation() {
 async function createAudioCapture() {
   if (!mediaStream) throw new Error("Media stream is unavailable")
   if (!mediaStream.getAudioTracks().length) throw new Error("Microphone access was not granted")
-  audioContext = new AudioContext()
+  audioContext = new AudioContext({ latencyHint: "interactive" })
   await audioContext.resume()
   sourceNode = audioContext.createMediaStreamSource(new MediaStream(mediaStream.getAudioTracks()))
   analyserNode = audioContext.createAnalyser()
@@ -503,20 +614,18 @@ onBeforeUnmount(() => {
           <div class="step-heading"><span>02</span><h2>Kokoro speech</h2></div>
           <div class="voice-options">
             <label class="reference-copy">
-              <span>PRESET VOICE</span>
-              <select v-model="voiceId" :disabled="active">
-                <optgroup v-for="group in groupedVoices" :key="group.code" :label="group.name">
-                  <option v-for="item in group.voices" :key="item" :value="item">
-                    {{ item.replaceAll("_", " ") }}
-                  </option>
-                </optgroup>
-              </select>
-            </label>
-            <label class="reference-copy">
               <span>LANGUAGE</span>
               <select v-model="language" :disabled="active">
                 <option v-for="item in KOKORO_LANGUAGES" :key="item.code" :value="item.code">
                   {{ item.name }}
+                </option>
+              </select>
+            </label>
+            <label class="reference-copy">
+              <span>ROLE / VOICE</span>
+              <select v-model="voiceId" :disabled="active">
+                <option v-for="item in availableVoices" :key="item" :value="item">
+                  {{ voiceLabel(item) }}
                 </option>
               </select>
             </label>

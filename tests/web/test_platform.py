@@ -50,6 +50,7 @@ from hugging_mac_web.text_to_speech.config import (
     AUDIO8_TTS_MLX_BF16_PROFILE,
     AUDIO8_TTS_PROFILE,
     KOKORO_82M_PROFILE,
+    QWEN3_TTS_0_6B_BASE_4BIT_PROFILE,
 )
 from hugging_mac_web.text_to_speech.manifest import TEXT_TO_SPEECH_MANIFEST
 from PIL import Image
@@ -131,9 +132,10 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert all(item["ready_instance_id"] is None for item in asr_models.json()["data"])
     assert {item["model_id"] for item in tts_models.json()["data"]} == {
         "audio8/audio8-tts-preview-0.6b",
-        "mlx-community/audio8-tts-preview-0.6b-bf16",
-        "mlx-community/kokoro-82m-bf16",
-    }
+            "mlx-community/audio8-tts-preview-0.6b-bf16",
+            "mlx-community/kokoro-82m-bf16",
+            "mlx-community/qwen3-tts-12hz-0.6b-base-4bit",
+        }
     chat_model_views = {item["model_id"]: item for item in chat_models.json()["data"]}
     assert set(chat_model_views) == {
         "mlx-community/qwen3.5-9b-mlx-4bit",
@@ -147,8 +149,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert game_summaries["digital-human"]["manifest"]["category"] == "game"
     assert game_summaries["digital-human"]["status"] == "available"
     digital_human_models = {
-        item["model_id"]
-        for item in game_summaries["digital-human"]["manifest"]["required_models"]
+        item["model_id"] for item in game_summaries["digital-human"]["manifest"]["required_models"]
     }
     assert "mlx-community/kokoro-82m-bf16" in digital_human_models
     assert "mlx-community/audio8-tts-preview-0.6b-bf16" not in digital_human_models
@@ -483,6 +484,10 @@ def test_audio8_mlx_tts_uses_direct_download_without_conversion() -> None:
     assert AUDIO8_TTS_MLX_BF16_PROFILE.required_artifact_id == "model"
     assert AUDIO8_TTS_MLX_BF16_PROFILE.requires_reference_voice
     assert requirements[AUDIO8_TTS_MLX_BF16_PROFILE.model_id].preferred_runtime == "mlx"
+    assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.runtime == "mlx"
+    assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.variant == "4bit"
+    assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.requires_reference_audio
+    assert requirements[QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.model_id].preferred_runtime == "mlx"
 
 
 def test_text_to_speech_accepts_reference_voice_upload(
@@ -536,6 +541,60 @@ def test_text_to_speech_accepts_reference_voice_upload(
     assert response.headers["x-runtime"] == "mlx"
     assert captured["reference_audio"] == b"RIFF-reference"
     assert captured["reference_text"] == "参考录音原文。"
+
+
+def test_qwen3_tts_accepts_direct_reference_and_language(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_synthesize(
+        _: object,
+        request: object,
+        *,
+        reference_audio: bytes | None = None,
+        reference_text: str | None = None,
+    ) -> tuple[bytes, dict[str, str]]:
+        captured["request"] = request
+        captured["reference_audio"] = reference_audio
+        captured["reference_text"] = reference_text
+        return (
+            float32le_to_wav(np.zeros(2400, dtype=np.float32).tobytes(), 24000),
+            {
+                "x-model-id": QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.model_id,
+                "x-runtime": "mlx",
+                "x-device": "gpu",
+                "x-duration-seconds": "0.1",
+                "x-inference-ms": "20.0",
+            },
+        )
+
+    monkeypatch.setattr(
+        "hugging_mac_web.text_to_speech.service.TextToSpeechService.synthesize",
+        fake_synthesize,
+    )
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/apps/text-to-speech/synthesize/reference",
+            files={"file": ("reference.wav", b"RIFF-qwen-reference", "audio/wav")},
+            data={
+                "model_id": QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.model_id,
+                "instance_id": "qwen-instance",
+                "text": "Hello in the cloned voice.",
+                "reference_text": "This is the reference voice.",
+                "language": "english",
+                "speed": "1.0",
+            },
+        )
+
+    assert response.status_code == 200
+    assert captured["reference_audio"] == b"RIFF-qwen-reference"
+    request = captured["request"]
+    assert request.voice is None
+    assert request.language == "english"
 
 
 def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path) -> None:

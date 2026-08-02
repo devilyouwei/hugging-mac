@@ -76,6 +76,7 @@ def create_models_router() -> APIRouter:
         model_id: str,
         context: ContextDependency,
         variant: str | None = Query(default=None),
+        overwrite: bool = Query(default=False),
     ) -> ApiResponse[ModelResourceStatus]:
         selected_variant = _resolve_variant(context, model_id, variant)
         await _ensure_resources_mutable(
@@ -87,7 +88,7 @@ def create_models_router() -> APIRouter:
             model_id,
             variant=selected_variant,
             options={"model_home": context.settings.model_home},
-            overwrite=True,
+            overwrite=overwrite,
         )
         return ApiResponse(
             data=resources,

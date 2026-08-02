@@ -75,8 +75,9 @@ def create_router(settings: TextToSpeechSettings) -> APIRouter:
         model_id: Annotated[str, Form()],
         instance_id: Annotated[str, Form()],
         text: Annotated[str, Form(min_length=1, max_length=2000)],
-        voice: Annotated[str, Form(min_length=1, max_length=64)],
         reference_text: Annotated[str, Form(min_length=1, max_length=2000)],
+        voice: Annotated[str | None, Form(max_length=64)] = None,
+        language: Annotated[str | None, Form(max_length=64)] = None,
         speed: Annotated[float, Form(ge=0.5, le=2.0)] = 1.0,
     ) -> Response:
         audio_data = await read_upload_limited(file, settings.max_reference_audio_bytes)
@@ -85,6 +86,7 @@ def create_router(settings: TextToSpeechSettings) -> APIRouter:
             instance_id=instance_id,
             text=text,
             voice=voice,
+            language=language,
             speed=speed,
         )
         audio, headers = await TextToSpeechService(context, settings).synthesize(

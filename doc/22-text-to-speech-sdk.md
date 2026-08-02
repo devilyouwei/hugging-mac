@@ -77,8 +77,15 @@ models/kokoro_82m/
 ### Kokoro 82M
 
 - model ID：`mlx-community/kokoro-82m-bf16`；variant：`bf16`；MLX BF16；输出：24 kHz；
-- 仅提供 PyTorch MPS runtime；Core ML 转换曾因动态 predictor shape 导致不稳定的系统编译和进程退出，
-  因此已移除，不再向用户暴露转换入口；
+- 仅提供 MLX GPU runtime，使用仓库内置 safetensors voices，不提供 Core ML 或 PyTorch fallback；
+
+### Qwen3-TTS 12Hz 0.6B Base MLX 4-bit
+
+- model ID：`mlx-community/qwen3-tts-12hz-0.6b-base-4bit`；variant：`4bit`；输出：24 kHz；
+- 使用 MLX 4-bit talker 和 12.5 Hz speech tokenizer；
+- Base 模型支持普通文本合成，也支持同时传入 `reference_audio + reference_text` 进行声音克隆；
+- 仅提供 Apple Silicon MLX GPU runtime，不执行本地格式转换；
+- 固定 MLX Community revision `0d6bb6f`，资源清单包含根模型、BPE tokenizer 与独立 speech tokenizer。
 
 ### Audio8 TTS Preview 0.6B MLX BF16
 
