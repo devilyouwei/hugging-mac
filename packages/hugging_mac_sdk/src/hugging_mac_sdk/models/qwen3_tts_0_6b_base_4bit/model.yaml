@@ -1,0 +1,59 @@
+manifest:
+  schema_version: "1"
+  model_id: mlx-community/qwen3-tts-12hz-0.6b-base-4bit
+  revision: 0d6bb6f
+  display_name: Qwen3-TTS 12Hz 0.6B Base 4-bit
+  description: Qwen3-TTS Base 的 MLX 4-bit 版本，支持多语言语音合成和参考音频声音克隆。
+  tags: [audio, tts, voice-cloning, multilingual, qwen3-tts, mlx, 4bit]
+  family: qwen3-tts
+  capabilities: [speech-synthesis]
+  runtimes:
+    - name: mlx
+      devices: [gpu]
+      dtypes: [uint4, bfloat16]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [mlx, mlx_audio, numpy]
+  variants:
+    - name: 4bit
+      display_name: Qwen3-TTS 0.6B Base MLX 4-bit
+      description: 0.6B Base 模型的 4-bit MLX 权重，包含 12.5 Hz speech tokenizer。
+      metadata:
+        parameters_millions: 600
+        sample_rate: 24000
+        codec_rate_hz: 12.5
+        voice_cloning: true
+      resources:
+        - kind: huggingface
+          repo_id: mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
+          revision: 0d6bb6f
+          allow_patterns:
+            - "*.json"
+            - "*.safetensors"
+            - "*.txt"
+            - "*.model"
+            - "speech_tokenizer/*.json"
+            - "speech_tokenizer/*.safetensors"
+  default_variant: 4bit
+  license: Apache-2.0
+  source_url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
+  default_runtime: mlx
+
+artifacts:
+  - artifact_id: model
+    variant: 4bit
+    runtime: mlx
+    format: mlx
+    path: mlx-community/qwen3-tts-12hz-0.6b-base-4bit/0d6bb6f/4bit/mlx/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
+      revision: 0d6bb6f
+      allow_patterns:
+        - "*.json"
+        - "*.safetensors"
+        - "*.txt"
+        - "*.model"
+        - "speech_tokenizer/*.json"
+        - "speech_tokenizer/*.safetensors"
