@@ -11,13 +11,20 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from PIL import Image, UnidentifiedImageError
 from pydantic import TypeAdapter, ValidationError
 
 from hugging_mac_web.chat.config import ChatSettings
-from hugging_mac_web.chat.schemas import ChatHistoryMessage, ChatReplyView, LoadedChatModelView
+from hugging_mac_web.chat.schemas import (
+    ChatHistoryMessage,
+    ChatModelView,
+    ChatReplyView,
+    ChatResourceView,
+    LoadChatModelRequest,
+    LoadedChatModelView,
+)
 from hugging_mac_web.chat.service import ChatService
 from hugging_mac_web.dependencies import ContextDependency
 from hugging_mac_web.schemas import ApiResponse, ResponseMeta
@@ -32,14 +39,52 @@ _IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"
 def create_router(settings: ChatSettings) -> APIRouter:
     router = APIRouter(prefix="/api/v1/apps/chat", tags=["chat"])
 
+    @router.get("/models", response_model=ApiResponse[tuple[ChatModelView, ...]])
+    async def models(context: ContextDependency) -> ApiResponse[tuple[ChatModelView, ...]]:
+        data = await ChatService(context, settings).list_models()
+        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
+
+    @router.post("/resources/source/download", response_model=ApiResponse[ChatResourceView])
+    async def download_source(
+        context: ContextDependency,
+        model_id: str = Query(),
+        overwrite: bool = False,
+    ) -> ApiResponse[ChatResourceView]:
+        data = await ChatService(context, settings).download_source(model_id, overwrite=overwrite)
+        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
+
+    @router.delete("/resources", response_model=ApiResponse[ChatResourceView])
+    async def delete_resources(
+        context: ContextDependency,
+        model_id: str = Query(),
+    ) -> ApiResponse[ChatResourceView]:
+        data = await ChatService(context, settings).delete_resources(model_id)
+        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
+
     @router.get("/model", response_model=ApiResponse[LoadedChatModelView | None])
-    async def model(context: ContextDependency) -> ApiResponse[LoadedChatModelView | None]:
-        data = await ChatService(context, settings).ready_model()
+    async def model(
+        context: ContextDependency,
+        model_id: str | None = Query(default=None),
+    ) -> ApiResponse[LoadedChatModelView | None]:
+        data = await ChatService(context, settings).ready_model(model_id or settings.model_id)
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.post("/model/load", response_model=ApiResponse[LoadedChatModelView])
-    async def load_model(context: ContextDependency) -> ApiResponse[LoadedChatModelView]:
-        data = await ChatService(context, settings).load_model()
+    async def load_model(
+        context: ContextDependency,
+        request: LoadChatModelRequest | None = None,
+    ) -> ApiResponse[LoadedChatModelView]:
+        data = await ChatService(context, settings).load_model(
+            request.model_id if request is not None else settings.model_id
+        )
+        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
+
+    @router.delete("/model", response_model=ApiResponse[int])
+    async def unload_model(
+        context: ContextDependency,
+        model_id: str = Query(),
+    ) -> ApiResponse[int]:
+        data = await ChatService(context, settings).unload_model(model_id)
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.post("/messages", response_model=ApiResponse[ChatReplyView])

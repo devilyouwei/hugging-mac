@@ -45,8 +45,7 @@ asr = [
   "transformers>=4.57.3,<6",
 ]
 tts = [
-  "coremltools>=8,<10; sys_platform == 'darwin' and platform_machine == 'arm64'",
-  "kokoro>=0.9.4,<1",
+  "mlx-audio; sys_platform == 'darwin' and platform_machine == 'arm64'",
   "misaki[en,ja,zh]>=0.9.4,<1",
   "numpy>=2.0,<2.4",
   "safetensors>=0.5,<1",
@@ -112,6 +111,9 @@ docs = [
 [tool.uv]
 package = false
 default-groups = ["dev"]
+
+[tool.uv.sources]
+mlx-audio = { git = "https://github.com/Blaizzy/mlx-audio.git", rev = "223afd602c6d583455bdb9f181b91fc090f4aff9" }
 
 [tool.uv.workspace]
 members = [

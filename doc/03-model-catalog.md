@@ -18,7 +18,7 @@
 | Whisper | `SpeechTranscription`、`SpeechTranslation` | PyTorch MPS / Core ML | 验证音频、时间戳与长任务 |
 | Audio8-ASR | `SpeechTranscription` | PyTorch MPS | 验证短音频、自回归 ASR 与多文件资源 |
 | Audio8-TTS | `SpeechSynthesis` | PyTorch CPU FP32 | 验证多语言、自回归语音生成与参考音频克隆 |
-| Kokoro-82M | `SpeechSynthesis` | PyTorch MPS | 验证轻量本地语音合成与包内 voice 资源 |
+| Kokoro-82M | `SpeechSynthesis` | MLX BF16 | 验证轻量本地语音合成与 safetensors voice 资源 |
 | 小型 LLM | `TextCompletion`、`Chat`、`StreamingGeneration` | MLX | 验证流式生成与量化 |
 | 小型 VLM | `VisionLanguageChat`、`ImageUnderstanding` | MLX / PyTorch MPS | 验证多模态和较大资源压力 |
 
@@ -103,7 +103,7 @@ runtime 的 `auto` 选择不在 registry 内，而在 `RuntimePolicy` / `Instanc
 - `audio8/audio8-asr-0.1b`，以 `base` variant 和 `SpeechTranscription` 接入，详见
   [Audio8-ASR SDK](20-audio8-asr-sdk.md)。
 - `audio8/audio8-tts-preview-0.6b`，以 `preview` variant 和 `SpeechSynthesis` 接入；
-- `audio8/audio8-tts-preview-0.6b-onnx-int4`，以独立 `int4` variant、官方 ONNX Runtime 图和
+- `mlx-community/audio8-tts-preview-0.6b-bf16`，以独立 `bf16` variant、MLX GPU runtime 和
   `SpeechSynthesis` 接入；
-- `hexgrad/kokoro-82m`，以 `v1.0` variant 和 `SpeechSynthesis` 接入；
+- `mlx-community/kokoro-82m-bf16`，以 `bf16` variant、MLX runtime 和 `SpeechSynthesis` 接入；
   三者详见 [TTS SDK 与应用](22-text-to-speech-sdk.md)。

@@ -1,16 +1,56 @@
 import { ApiError, request } from "@/api/client"
 
-import type { ChatReply, ChatStreamEvent, LoadedChatModel } from "./types"
+import type { ChatModel, ChatReply, ChatResource, ChatStreamEvent, LoadedChatModel } from "./types"
 
 const PREFIX = "/api/v1/apps/chat"
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ""
 
-export async function fetchLoadedChatModel(): Promise<LoadedChatModel | null> {
-  return (await request<LoadedChatModel | null>(`${PREFIX}/model`)).data
+export async function fetchChatModels(): Promise<ChatModel[]> {
+  return (await request<ChatModel[]>(`${PREFIX}/models`)).data
 }
 
-export async function loadChatModel(): Promise<LoadedChatModel> {
-  return (await request<LoadedChatModel>(`${PREFIX}/model/load`, { method: "POST" })).data
+export async function fetchLoadedChatModel(modelId: string): Promise<LoadedChatModel | null> {
+  return (
+    await request<LoadedChatModel | null>(
+      `${PREFIX}/model?model_id=${encodeURIComponent(modelId)}`,
+    )
+  ).data
+}
+
+export async function downloadChatModel(modelId: string): Promise<ChatResource> {
+  return (
+    await request<ChatResource>(
+      `${PREFIX}/resources/source/download?model_id=${encodeURIComponent(modelId)}`,
+      { method: "POST" },
+    )
+  ).data
+}
+
+export async function deleteChatModel(modelId: string): Promise<ChatResource> {
+  return (
+    await request<ChatResource>(
+      `${PREFIX}/resources?model_id=${encodeURIComponent(modelId)}`,
+      { method: "DELETE" },
+    )
+  ).data
+}
+
+export async function loadChatModel(modelId: string): Promise<LoadedChatModel> {
+  return (
+    await request<LoadedChatModel>(`${PREFIX}/model/load`, {
+      method: "POST",
+      body: JSON.stringify({ model_id: modelId }),
+      headers: { "Content-Type": "application/json" },
+    })
+  ).data
+}
+
+export async function unloadChatModel(modelId: string): Promise<number> {
+  return (
+    await request<number>(`${PREFIX}/model?model_id=${encodeURIComponent(modelId)}`, {
+      method: "DELETE",
+    })
+  ).data
 }
 
 export async function sendChatMessage(options: {

@@ -10,7 +10,7 @@
 - 首选 runtime：MLX；
 - 目标设备：Apple Silicon GPU；
 - 能力：多语言文本转语音、预置音色、流式输出；
-- 定位：低延迟本地 TTS，优先补足 Audio8 ONNX INT4 无法有效使用 Apple GPU/ANE 的问题。
+- 定位：低延迟预置音色 TTS，与已接入的 Audio8 MLX BF16 声音克隆形成互补。
 
 MLX 路径以 Apple GPU 和统一内存为主，不声明 Neural Engine 支持。只有在独立的 Core ML 或
 ExecuTorch 产物通过正确性、稳定性和性能验证后，才能增加 ANE runtime。
@@ -49,7 +49,7 @@ packages/hugging_mac_sdk/src/hugging_mac_sdk/models/supertonic_3/
 
 ## 性能验收
 
-在项目目标 Apple Silicon 机器上，与 Kokoro PyTorch MPS 和 Audio8 ONNX INT4 使用相同文本比较：
+在项目目标 Apple Silicon 机器上，与 Kokoro PyTorch MPS 和 Audio8 MLX BF16 使用相同文本比较：
 
 - 冷加载时间与峰值统一内存；
 - 首个音频 chunk 延迟；

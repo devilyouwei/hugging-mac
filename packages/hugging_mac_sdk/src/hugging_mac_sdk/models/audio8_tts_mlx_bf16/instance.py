@@ -1,8 +1,9 @@
-"""Runtime-independent Audio8-TTS ONNX INT4 synthesis instance."""
+"""Runtime-independent Audio8-TTS MLX BF16 synthesis instance."""
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable
 from pathlib import Path
 from time import perf_counter
 from typing import Protocol, cast
@@ -17,37 +18,32 @@ from hugging_mac_sdk.schemas.speech_synthesis import (
 )
 
 from .config import (
-    AUDIO8_TTS_ONNX_INT4_MODEL_ID,
-    AUDIO8_TTS_ONNX_INT4_REVISION,
-    Audio8TtsOnnxInt4InstanceConfig,
+    AUDIO8_TTS_MLX_BF16_MODEL_ID,
+    AUDIO8_TTS_MLX_BF16_REVISION,
+    Audio8TtsMlxBf16InstanceConfig,
 )
 from .utils.types import TtsEngineOutput
 
 
-class Audio8TtsOnnxInt4Engine(Protocol):
+class Audio8TtsMlxBf16Engine(Protocol):
     runtime_name: str
 
     @property
     def device(self) -> str: ...
 
-    async def resolve(self) -> Path: ...
-
-    async def load(self, artifact: Path) -> None: ...
-
-    async def infer(self, request: SpeechSynthesisRequest) -> TtsEngineOutput: ...
-
-    async def close(self) -> None: ...
+    def resolve(self) -> Awaitable[Path]: ...
+    def load(self, artifact: Path) -> Awaitable[None]: ...
+    def infer(self, request: SpeechSynthesisRequest) -> Awaitable[TtsEngineOutput]: ...
+    def close(self) -> Awaitable[None]: ...
 
 
-class Audio8TtsOnnxInt4Instance(BaseModelInstance):
+class Audio8TtsMlxBf16Instance(BaseModelInstance):
     def __init__(
-        self,
-        config: Audio8TtsOnnxInt4InstanceConfig,
-        engine: Audio8TtsOnnxInt4Engine,
+        self, config: Audio8TtsMlxBf16InstanceConfig, engine: Audio8TtsMlxBf16Engine
     ) -> None:
         super().__init__(
-            model_id=AUDIO8_TTS_ONNX_INT4_MODEL_ID,
-            revision=AUDIO8_TTS_ONNX_INT4_REVISION,
+            model_id=AUDIO8_TTS_MLX_BF16_MODEL_ID,
+            revision=AUDIO8_TTS_MLX_BF16_REVISION,
             variant=config.variant,
             runtime=config.runtime,
             device=config.device,
@@ -61,22 +57,22 @@ class Audio8TtsOnnxInt4Instance(BaseModelInstance):
 
     async def synthesize(self, request: SpeechSynthesisRequest) -> SpeechSynthesisResponse:
         if self.state is not ModelState.READY:
-            raise InferenceError("Audio8-TTS ONNX INT4 instance must be READY before synthesize")
+            raise InferenceError("Audio8-TTS MLX BF16 instance must be READY before synthesize")
         async with self._inference_lock:
-            inference_started = perf_counter()
+            started = perf_counter()
             try:
                 output = await self._engine.infer(request)
             except asyncio.CancelledError:
                 raise
             except Exception as error:
                 raise InferenceError(
-                    "Audio8-TTS ONNX INT4 synthesis failed",
-                    details={"reason": _inference_reason(error)},
+                    "Audio8-TTS MLX BF16 synthesis failed",
+                    details={"reason": _reason(error)},
                     cause=error,
                 ) from error
-            inference_ms = (perf_counter() - inference_started) * 1000
+            inference_ms = (perf_counter() - started) * 1000
         return SpeechSynthesisResponse(
-            model_id=AUDIO8_TTS_ONNX_INT4_MODEL_ID,
+            model_id=AUDIO8_TTS_MLX_BF16_MODEL_ID,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,
@@ -99,9 +95,5 @@ class Audio8TtsOnnxInt4Instance(BaseModelInstance):
         await self._engine.close()
 
 
-def _inference_reason(error: Exception) -> str:
-    """Return a bounded local-runtime reason suitable for the API response."""
-
-    message = str(error.args[0]) if isinstance(error, KeyError) and error.args else str(error)
-    message = " ".join(message.strip().split())
-    return (message or type(error).__name__)[:500]
+def _reason(error: Exception) -> str:
+    return (" ".join(str(error).strip().split()) or type(error).__name__)[:500]

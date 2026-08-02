@@ -97,7 +97,7 @@ class TextToSpeechService:
         profile = self._profile(request.model_id)
         if profile.requires_reference_voice and not request.voice:
             raise ResourceNotFoundError(
-                "Audio8 ONNX requires a voice profile name",
+                "Audio8 MLX requires a voice profile name",
                 details={"model_id": profile.model_id},
             )
         if (reference_audio is None) != (reference_text is None):
@@ -157,6 +157,6 @@ class TextToSpeechService:
         options: dict[str, object] = {"model_home": self._context.settings.model_home}
         if profile.requires_reference_voice:
             options["voice_home"] = (
-                self._context.settings.data_dir / "voices" / "audio8-tts-onnx-int4"
+                self._context.settings.data_dir / "voices" / "audio8-tts-mlx-bf16"
             )
         return options

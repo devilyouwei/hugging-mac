@@ -12,8 +12,8 @@ MODEL_ROOT = (
 )
 MODEL_PACKAGES = ("yolov8", "yolov8_pose", "yolov8_seg")
 ASR_MODEL_PACKAGES = ("audio8_asr", "sensevoice_small")
-TTS_MODEL_PACKAGES = ("audio8_tts", "audio8_tts_onnx_int4", "kokoro_82m")
-LLM_MODEL_PACKAGES = ("qwen3_5_9b_mlx_4bit",)
+TTS_MODEL_PACKAGES = ("audio8_tts", "audio8_tts_mlx_bf16", "kokoro_82m")
+LLM_MODEL_PACKAGES = ("qwen3_5_9b_mlx_4bit", "qwen3_5_4b_optiq_4bit")
 REQUIRED_INTEGRATION_FILES = {
     "__init__.py",
     "config.py",
@@ -99,11 +99,11 @@ def test_audio8_tts_follows_the_integration_layout() -> None:
     assert (package / "utils" / "__init__.py").is_file()
 
 
-def test_audio8_tts_onnx_int4_follows_the_integration_layout() -> None:
-    package = MODEL_ROOT / "audio8_tts_onnx_int4"
+def test_audio8_tts_mlx_bf16_follows_the_integration_layout() -> None:
+    package = MODEL_ROOT / "audio8_tts_mlx_bf16"
     root_files = {path.name for path in package.iterdir() if path.is_file()}
 
-    assert root_files >= REQUIRED_INTEGRATION_FILES | {"resources.py", "onnx.py"}
+    assert root_files >= REQUIRED_INTEGRATION_FILES | {"resources.py", "mlx.py"}
     assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
     assert (package / "utils" / "__init__.py").is_file()
 
@@ -114,7 +114,7 @@ def test_kokoro_82m_follows_the_integration_layout() -> None:
 
     assert root_files >= REQUIRED_INTEGRATION_FILES | {
         "resources.py",
-        "torch.py",
+        "mlx.py",
     }
     assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
     assert (package / "utils" / "__init__.py").is_file()
@@ -122,6 +122,15 @@ def test_kokoro_82m_follows_the_integration_layout() -> None:
 
 def test_qwen3_5_9b_mlx_4bit_follows_the_integration_layout() -> None:
     package = MODEL_ROOT / "qwen3_5_9b_mlx_4bit"
+    root_files = {path.name for path in package.iterdir() if path.is_file()}
+
+    assert root_files >= REQUIRED_INTEGRATION_FILES | {"resources.py", "mlx.py"}
+    assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
+    assert (package / "utils" / "__init__.py").is_file()
+
+
+def test_qwen3_5_4b_optiq_4bit_follows_the_integration_layout() -> None:
+    package = MODEL_ROOT / "qwen3_5_4b_optiq_4bit"
     root_files = {path.name for path in package.iterdir() if path.is_file()}
 
     assert root_files >= REQUIRED_INTEGRATION_FILES | {"resources.py", "mlx.py"}

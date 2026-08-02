@@ -1,4 +1,4 @@
-"""Internal value types."""
+"""Private Audio8-TTS MLX runtime values."""
 
 from dataclasses import dataclass
 
@@ -8,4 +8,4 @@ class TtsEngineOutput:
     audio: bytes
     sample_rate: int
     duration_seconds: float
-    generated_tokens: int
+    generated_tokens: int = 0

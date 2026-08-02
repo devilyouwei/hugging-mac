@@ -7,6 +7,28 @@ export interface LoadedChatModel {
   state: string
 }
 
+export interface ChatResource {
+  model_id: string
+  revision: string
+  variant: string
+  artifacts: Array<{ artifact_id: string; available: boolean; size_bytes: number | null }>
+  total_size_bytes: number
+}
+
+export interface ChatModel {
+  model_id: string
+  display_name: string
+  short_name: string
+  description: string
+  variant: string
+  runtime: string
+  required_artifact_id: string
+  disk_size_bytes: number
+  supports_images: boolean
+  resource: ChatResource
+  ready_instance_id: string | null
+}
+
 export interface ChatReply {
   content: string
   model_id: string

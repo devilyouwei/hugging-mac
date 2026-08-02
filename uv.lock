@@ -1370,9 +1370,8 @@ training = [
     { name = "torchvision" },
 ]
 tts = [
-    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "kokoro" },
     { name = "misaki", extra = ["en", "ja", "zh"] },
+    { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "numpy" },
     { name = "safetensors" },
     { name = "soundfile" },
@@ -1414,18 +1413,17 @@ requires-dist = [
     { name = "accelerate", marker = "extra == 'llm'", specifier = ">=1.8,<2" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'apple'", specifier = ">=8,<10" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'asr'", specifier = ">=8,<10" },
-    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'tts'", specifier = ">=8,<10" },
     { name = "datasets", marker = "extra == 'training'", specifier = ">=4,<5" },
     { name = "einops", marker = "extra == 'vision'", specifier = ">=0.8,<1" },
     { name = "evaluate", marker = "extra == 'evaluation'", specifier = ">=0.4,<1" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.116,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "huggingface-hub", specifier = ">=0.33,<2" },
-    { name = "kokoro", marker = "extra == 'tts'", specifier = ">=0.9.4,<1" },
     { name = "lightning", marker = "extra == 'training'", specifier = ">=2.5,<3" },
     { name = "matplotlib", marker = "extra == 'evaluation'", specifier = ">=3.10,<4" },
     { name = "misaki", extras = ["en", "ja", "zh"], marker = "extra == 'tts'", specifier = ">=0.9.4,<1" },
     { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'apple'", specifier = ">=0.27,<1" },
+    { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'tts'", git = "https://github.com/Blaizzy/mlx-audio.git?rev=223afd602c6d583455bdb9f181b91fc090f4aff9" },
     { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'apple'", specifier = ">=0.26,<1" },
     { name = "numpy", specifier = ">=2.0,<3" },
     { name = "numpy", marker = "extra == 'asr'", specifier = ">=2.0,<2.4" },
@@ -1523,15 +1521,12 @@ llm = [
     { name = "mlx-vlm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
 tts = [
-    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "kokoro" },
     { name = "misaki", extra = ["en", "ja", "zh"] },
+    { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "numpy" },
-    { name = "onnxruntime" },
     { name = "safetensors" },
     { name = "scipy" },
     { name = "soundfile" },
-    { name = "tokenizers" },
     { name = "torch" },
     { name = "torchaudio" },
     { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
@@ -1549,18 +1544,16 @@ yolo = [
 [package.metadata]
 requires-dist = [
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'asr'", specifier = ">=8,<10" },
-    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'tts'", specifier = ">=8,<10" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'yolo'", specifier = ">=8,<10" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "huggingface-hub", specifier = ">=0.33,<2" },
-    { name = "kokoro", marker = "extra == 'tts'", specifier = ">=0.9.4,<1" },
     { name = "misaki", extras = ["en", "ja", "zh"], marker = "extra == 'tts'", specifier = ">=0.9.4,<1" },
+    { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'tts'", git = "https://github.com/Blaizzy/mlx-audio.git?rev=223afd602c6d583455bdb9f181b91fc090f4aff9" },
     { name = "mlx-vlm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'llm'", specifier = ">=0.6.3,<0.7" },
     { name = "numpy", marker = "extra == 'asr'", specifier = ">=2,<2.4" },
     { name = "numpy", marker = "extra == 'tts'", specifier = ">=2,<2.4" },
     { name = "numpy", marker = "extra == 'yolo'", specifier = ">=2,<2.4" },
     { name = "onnx", marker = "extra == 'yolo'", specifier = ">=1.18,<2" },
-    { name = "onnxruntime", marker = "extra == 'tts'", specifier = ">=1.22,<2" },
     { name = "onnxruntime", marker = "extra == 'yolo'", specifier = ">=1.22,<2" },
     { name = "opencv-python", marker = "extra == 'yolo'", specifier = ">=4.11,<5" },
     { name = "pillow", specifier = ">=11,<13" },
@@ -1575,7 +1568,6 @@ requires-dist = [
     { name = "sentencepiece", marker = "extra == 'asr'", specifier = ">=0.2,<1" },
     { name = "soundfile", marker = "extra == 'asr'", specifier = ">=0.13,<1" },
     { name = "soundfile", marker = "extra == 'tts'", specifier = ">=0.13,<1" },
-    { name = "tokenizers", marker = "extra == 'tts'", specifier = ">=0.22,<1" },
     { name = "torch", marker = "extra == 'asr'", specifier = ">=2.7,<3" },
     { name = "torch", marker = "extra == 'tts'", specifier = ">=2.7,<3" },
     { name = "torch", marker = "extra == 'yolo'", specifier = ">=2.7,<3" },
@@ -1854,25 +1846,6 @@ wheels = [
 ]
 
 [[package]]
-name = "kokoro"
-version = "0.9.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "huggingface-hub", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "loguru" },
-    { name = "misaki", extra = ["en"] },
-    { name = "numpy" },
-    { name = "torch" },
-    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "transformers", version = "5.14.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e8/48/88b8cdf28b068d070195c2817175549dee48e7682e3ab8994bee5f69217e/kokoro-0.9.4.tar.gz", hash = "sha256:fbf633262797f8cf46fdac3315cf9cade67dc8b762c0feccf334892772fb9ac4", size = 26215928, upload-time = "2025-04-05T22:01:35.294Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ea/cc/75f41633c75224ba820a4533163bc8b070b6bf25416014074c63284c2d4e/kokoro-0.9.4-py3-none-any.whl", hash = "sha256:a129dc6364a286bd6a92c396e9862459d3d3e45f2c15596ed5a94dcee5789efd", size = 32592, upload-time = "2025-04-05T22:01:23.018Z" },
-]
-
-[[package]]
 name = "language-tags"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1984,19 +1957,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/da/91/6bc8bb503dc259e46
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b8/22/f45b19379e162511a60b655037b1c3a3fadcb0c05aee082055a7be36fc15/llguidance-1.7.6-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:7def42f7866239b3b940982ed1dcae6b142c212fbd68b57107c1560d778f94f8", size = 3131216, upload-time = "2026-06-03T20:12:57.733Z" },
     { url = "https://files.pythonhosted.org/packages/46/fe/bb185f11bad82f2637e3cd8cbf6b200cbb6ed56ac395de47ea05a60d4649/llguidance-1.7.6-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:9c54c899db8cb4b4fba128a7d844730066576c70d806c95ada92b2bd2d6ab498", size = 3138127, upload-time = "2026-06-03T20:13:11.649Z" },
-]
-
-[[package]]
-name = "loguru"
-version = "0.7.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
-    { name = "win32-setctime", marker = "sys_platform == 'win32'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/3a/05/a1dae3dffd1116099471c643b8924f5aa6524411dc6c63fdae648c4f1aca/loguru-0.7.3.tar.gz", hash = "sha256:19480589e77d47b8d85b2c827ad95d49bf31b0dcde16593892eb51dd18706eb6", size = 63559, upload-time = "2024-12-06T11:20:56.608Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/0c/29/0348de65b8cc732daa3e33e67806420b2ae89bdce2b04af740289c5c6c8c/loguru-0.7.3-py3-none-any.whl", hash = "sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c", size = 61595, upload-time = "2024-12-06T11:20:54.538Z" },
 ]
 
 [[package]]
@@ -2331,8 +2291,8 @@ wheels = [
 
 [[package]]
 name = "mlx-audio"
-version = "0.4.4"
-source = { registry = "https://pypi.org/simple" }
+version = "0.4.7"
+source = { git = "https://github.com/Blaizzy/mlx-audio.git?rev=223afd602c6d583455bdb9f181b91fc090f4aff9#223afd602c6d583455bdb9f181b91fc090f4aff9" }
 dependencies = [
     { name = "huggingface-hub", version = "1.26.0", source = { registry = "https://pypi.org/simple" } },
     { name = "miniaudio" },
@@ -2343,10 +2303,6 @@ dependencies = [
     { name = "sounddevice" },
     { name = "tqdm" },
     { name = "transformers", version = "5.14.1", source = { registry = "https://pypi.org/simple" } },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/af/1e/f712c9f7997e5051c4da3b658f38162203bb703c750741984c8358c8b897/mlx_audio-0.4.4.tar.gz", hash = "sha256:d751e5f477517e4e7f04de5567318e2fe91b4606af5d7e4b2973603c4777814a", size = 1386491, upload-time = "2026-06-06T15:32:03.504Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b8/4d/93ac0e0526591c856a1ea2cd00a41f31530d9e021cc95bc9400550926d51/mlx_audio-0.4.4-py3-none-any.whl", hash = "sha256:39fe81b03e2b1354be70de82dc8bf01dd6e75efcb464150afef89f18f734d0d5", size = 1669932, upload-time = "2026-06-06T15:32:01.807Z" },
 ]
 
 [[package]]
@@ -5174,15 +5130,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/dd/b2/381be8cfdee792dd117872481b6e378f85c957dd7c5bca38897b08f765fd/werkzeug-3.1.8.tar.gz", hash = "sha256:9bad61a4268dac112f1c5cd4630a56ede601b6ed420300677a869083d70a4c44", size = 875852, upload-time = "2026-04-02T18:49:14.268Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/93/8c/2e650f2afeb7ee576912636c23ddb621c91ac6a98e66dc8d29c3c69446e1/werkzeug-3.1.8-py3-none-any.whl", hash = "sha256:63a77fb8892bf28ebc3178683445222aa500e48ebad5ec77b0ad80f8726b1f50", size = 226459, upload-time = "2026-04-02T18:49:12.72Z" },
-]
-
-[[package]]
-name = "win32-setctime"
-version = "1.2.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b3/8f/705086c9d734d3b663af0e9bb3d4de6578d08f46b1b101c2442fd9aecaa2/win32_setctime-1.2.0.tar.gz", hash = "sha256:ae1fdf948f5640aae05c511ade119313fb6a30d7eabe25fef9764dca5873c4c0", size = 4867, upload-time = "2024-12-07T15:28:28.314Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e1/07/c6fe3ad3e685340704d314d765b7912993bcb8dc198f0e7a89382d37974b/win32_setctime-1.2.0-py3-none-any.whl", hash = "sha256:95d644c4e708aba81dc3704a116d8cbc974d70b3bdb8be1d150e36be6e9d1390", size = 4083, upload-time = "2024-12-07T15:28:26.465Z" },
 ]
 
 [[package]]

@@ -85,7 +85,7 @@ hugging_mac_sdk/
 ```
 
 `models/yolov8`、`models/yolov8_pose`、`models/yolov8_seg`、`models/audio8_tts`、
-`models/audio8_tts_onnx_int4` 和 `models/kokoro_82m` 各自拥有独立 model ID、variant、资源目录、
+`models/audio8_tts_mlx_bf16` 和 `models/kokoro_82m` 各自拥有独立 model ID、variant、资源目录、
 converter（仅实际支持转换的模型）和
 capability。每个目录均以 `instance.py` 保持 runtime 无关的 capability 编排，以
 `torch.py`、`coreml.py`、`onnx.py` 实现可组合的 runtime engine，以 `utils/` 内聚自己的中间类型、

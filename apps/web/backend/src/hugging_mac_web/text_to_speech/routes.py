@@ -18,7 +18,7 @@ from hugging_mac_web.text_to_speech.schemas import (
 )
 from hugging_mac_web.text_to_speech.service import TextToSpeechService
 
-DEFAULT_MODEL_ID = "hexgrad/kokoro-82m"
+DEFAULT_MODEL_ID = "mlx-community/kokoro-82m-bf16"
 
 
 def create_router(settings: TextToSpeechSettings) -> APIRouter:

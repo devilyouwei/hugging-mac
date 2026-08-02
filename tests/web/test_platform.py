@@ -15,6 +15,9 @@ from hugging_mac_sdk import (
     ModelDefinition,
 )
 from hugging_mac_sdk.errors import InferenceError
+from hugging_mac_sdk.models.qwen3_5_4b_optiq_4bit.config import (
+    QWEN3_5_4B_OPTIQ_4BIT_REQUIRED_FILES,
+)
 from hugging_mac_sdk.models.yolov8.config import YOLOV8_SHA256
 from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
 from hugging_mac_sdk.models.yolov8.instance import YoloV8Instance
@@ -44,7 +47,7 @@ from hugging_mac_web.live_transcription.schemas import TranscriptionResultView
 from hugging_mac_web.main import create_app
 from hugging_mac_web.text_to_speech.audio import float32le_to_wav
 from hugging_mac_web.text_to_speech.config import (
-    AUDIO8_TTS_ONNX_INT4_PROFILE,
+    AUDIO8_TTS_MLX_BF16_PROFILE,
     AUDIO8_TTS_PROFILE,
     KOKORO_82M_PROFILE,
 )
@@ -90,6 +93,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         games = client.get("/api/v1/catalog/games")
         asr_models = client.get("/api/v1/apps/live-transcription/models")
         tts_models = client.get("/api/v1/apps/text-to-speech/models")
+        chat_models = client.get("/api/v1/apps/chat/models")
         resources = client.get("/api/v1/apps/object-detection/resources")
         openapi = client.get("/openapi.json")
         preflight = client.options(
@@ -127,12 +131,27 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert all(item["ready_instance_id"] is None for item in asr_models.json()["data"])
     assert {item["model_id"] for item in tts_models.json()["data"]} == {
         "audio8/audio8-tts-preview-0.6b",
-        "audio8/audio8-tts-preview-0.6b-onnx-int4",
-        "hexgrad/kokoro-82m",
+        "mlx-community/audio8-tts-preview-0.6b-bf16",
+        "mlx-community/kokoro-82m-bf16",
     }
+    chat_model_views = {item["model_id"]: item for item in chat_models.json()["data"]}
+    assert set(chat_model_views) == {
+        "mlx-community/qwen3.5-9b-mlx-4bit",
+        "mlx-community/qwen3.5-4b-optiq-4bit",
+    }
+    assert chat_model_views["mlx-community/qwen3.5-9b-mlx-4bit"]["supports_images"]
+    assert chat_model_views["mlx-community/qwen3.5-4b-optiq-4bit"]["supports_images"]
     assert games.status_code == 200
     game_summaries = {item["manifest"]["app_id"]: item for item in games.json()["data"]}
-    assert set(game_summaries) == {"yolo-pose-follow"}
+    assert set(game_summaries) == {"digital-human", "yolo-pose-follow"}
+    assert game_summaries["digital-human"]["manifest"]["category"] == "game"
+    assert game_summaries["digital-human"]["status"] == "available"
+    digital_human_models = {
+        item["model_id"]
+        for item in game_summaries["digital-human"]["manifest"]["required_models"]
+    }
+    assert "mlx-community/kokoro-82m-bf16" in digital_human_models
+    assert "mlx-community/audio8-tts-preview-0.6b-bf16" not in digital_human_models
     assert game_summaries["yolo-pose-follow"]["manifest"]["category"] == "game"
     assert game_summaries["yolo-pose-follow"]["status"] == "available"
     assert not any(item["available"] for item in resources.json()["data"]["artifacts"])
@@ -147,16 +166,23 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert "/api/v1/apps/chat/messages" in openapi.json()["paths"]
     assert "/api/v1/apps/chat/messages/stream" in openapi.json()["paths"]
     assert "/api/v1/apps/chat/model/load" in openapi.json()["paths"]
+    assert "/api/v1/apps/chat/resources/source/download" in openapi.json()["paths"]
+    assert "/api/v1/apps/chat/resources" in openapi.json()["paths"]
     assert "/api/v1/games/yolo-pose-follow/templates" in openapi.json()["paths"]
     assert "/api/v1/games/yolo-pose-follow/match" in openapi.json()["paths"]
+    assert "/api/v1/games/digital-human/setup" in openapi.json()["paths"]
+    assert "/api/v1/games/digital-human/voice/register" not in openapi.json()["paths"]
+    assert "/api/v1/games/digital-human/chat/stream" in openapi.json()["paths"]
+    assert "/api/v1/games/digital-human/synthesize" in openapi.json()["paths"]
     model = next(item for item in models.json()["data"] if item["model_id"] == "ultralytics/yolov8")
     assert {item["model_id"] for item in models.json()["data"]} >= {
         "audio8/audio8-asr-0.1b",
         "audio8/audio8-tts-preview-0.6b",
-        "audio8/audio8-tts-preview-0.6b-onnx-int4",
-        "hexgrad/kokoro-82m",
+        "mlx-community/audio8-tts-preview-0.6b-bf16",
+        "mlx-community/kokoro-82m-bf16",
         "funaudiollm/sensevoice-small",
         "mlx-community/qwen3.5-9b-mlx-4bit",
+        "mlx-community/qwen3.5-4b-optiq-4bit",
         "ultralytics/yolov8",
         "ultralytics/yolov8-pose",
         "ultralytics/yolov8-seg",
@@ -211,6 +237,42 @@ def test_chat_accepts_text_and_image(
     assert response.status_code == 200
     assert response.json()["data"]["content"] == "图中是一块深色背景。"
     assert not list((tmp_path / "cache" / "chat-uploads").iterdir())
+
+
+def test_chat_downloads_and_deletes_optiq_model(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_download(
+        _: ResourceDownloader,
+        source: Any,
+        destination: Path,
+        **__: object,
+    ) -> ResolvedResource:
+        for filename in QWEN3_5_4B_OPTIQ_4BIT_REQUIRED_FILES:
+            path = destination / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"optiq")
+        return ResolvedResource(path=destination, source=source, size_bytes=1)
+
+    monkeypatch.setattr(ResourceDownloader, "download", fake_download)
+    model_id = "mlx-community/qwen3.5-4b-optiq-4bit"
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        downloaded = client.post(
+            "/api/v1/apps/chat/resources/source/download",
+            params={"model_id": model_id},
+        )
+        deleted = client.delete(
+            "/api/v1/apps/chat/resources",
+            params={"model_id": model_id},
+        )
+
+    assert downloaded.status_code == 200
+    assert downloaded.json()["data"]["artifacts"][0]["available"]
+    assert deleted.status_code == 200
+    assert not deleted.json()["data"]["artifacts"][0]["available"]
 
 
 def test_chat_streams_deltas_and_cleans_up_images(
@@ -337,9 +399,9 @@ def test_text_to_speech_returns_playable_wave(
         return (
             float32le_to_wav(np.zeros(2400, dtype=np.float32).tobytes(), 24000),
             {
-                "x-model-id": "hexgrad/kokoro-82m",
-                "x-runtime": "pytorch-mps",
-                "x-device": "mps",
+                "x-model-id": "mlx-community/kokoro-82m-bf16",
+                "x-runtime": "mlx",
+                "x-device": "gpu",
                 "x-duration-seconds": "0.1",
                 "x-inference-ms": "12.0",
             },
@@ -355,7 +417,7 @@ def test_text_to_speech_returns_playable_wave(
         response = client.post(
             "/api/v1/apps/text-to-speech/synthesize",
             json={
-                "model_id": "hexgrad/kokoro-82m",
+                "model_id": "mlx-community/kokoro-82m-bf16",
                 "instance_id": "test-instance",
                 "text": "Hello from Kokoro.",
                 "voice": "af_heart",
@@ -366,7 +428,7 @@ def test_text_to_speech_returns_playable_wave(
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "audio/wav"
-    assert response.headers["x-runtime"] == "pytorch-mps"
+    assert response.headers["x-runtime"] == "mlx"
     assert response.content.startswith(b"RIFF")
 
 
@@ -376,7 +438,7 @@ def test_text_to_speech_returns_actionable_inference_reason(
 ) -> None:
     async def fail_synthesis(*_: object, **__: object) -> tuple[bytes, dict[str, str]]:
         raise InferenceError(
-            "Audio8-TTS ONNX INT4 synthesis failed",
+            "Audio8-TTS MLX BF16 synthesis failed",
             details={"reason": "reference audio duration must be between 0.5 and 30 seconds"},
         )
 
@@ -390,8 +452,8 @@ def test_text_to_speech_returns_actionable_inference_reason(
         response = client.post(
             "/api/v1/apps/text-to-speech/synthesize",
             json={
-                "model_id": AUDIO8_TTS_ONNX_INT4_PROFILE.model_id,
-                "instance_id": "onnx-instance",
+                "model_id": AUDIO8_TTS_MLX_BF16_PROFILE.model_id,
+                "instance_id": "mlx-instance",
                 "text": "你好。",
                 "voice": "speaker_a",
                 "speed": 1.0,
@@ -404,22 +466,23 @@ def test_text_to_speech_returns_actionable_inference_reason(
     )
 
 
-def test_kokoro_tts_uses_pytorch_mps() -> None:
-    assert KOKORO_82M_PROFILE.runtime == "pytorch-mps"
-    assert KOKORO_82M_PROFILE.required_artifact_id == "source"
+def test_kokoro_tts_uses_mlx_bf16() -> None:
+    assert KOKORO_82M_PROFILE.runtime == "mlx"
+    assert KOKORO_82M_PROFILE.variant == "bf16"
+    assert KOKORO_82M_PROFILE.required_artifact_id == "model"
 
 
-def test_audio8_onnx_tts_uses_direct_download_without_conversion() -> None:
+def test_audio8_mlx_tts_uses_direct_download_without_conversion() -> None:
     requirements = {
         requirement.model_id: requirement for requirement in TEXT_TO_SPEECH_MANIFEST.required_models
     }
 
     assert AUDIO8_TTS_PROFILE.runtime == "pytorch"
     assert requirements[AUDIO8_TTS_PROFILE.model_id].preferred_runtime == "pytorch"
-    assert AUDIO8_TTS_ONNX_INT4_PROFILE.runtime == "onnx"
-    assert AUDIO8_TTS_ONNX_INT4_PROFILE.required_artifact_id == "source"
-    assert AUDIO8_TTS_ONNX_INT4_PROFILE.requires_reference_voice
-    assert requirements[AUDIO8_TTS_ONNX_INT4_PROFILE.model_id].preferred_runtime == "onnx"
+    assert AUDIO8_TTS_MLX_BF16_PROFILE.runtime == "mlx"
+    assert AUDIO8_TTS_MLX_BF16_PROFILE.required_artifact_id == "model"
+    assert AUDIO8_TTS_MLX_BF16_PROFILE.requires_reference_voice
+    assert requirements[AUDIO8_TTS_MLX_BF16_PROFILE.model_id].preferred_runtime == "mlx"
 
 
 def test_text_to_speech_accepts_reference_voice_upload(
@@ -441,9 +504,9 @@ def test_text_to_speech_accepts_reference_voice_upload(
         return (
             float32le_to_wav(np.zeros(4410, dtype=np.float32).tobytes(), 44100),
             {
-                "x-model-id": AUDIO8_TTS_ONNX_INT4_PROFILE.model_id,
-                "x-runtime": "onnx",
-                "x-device": "cpu",
+                "x-model-id": AUDIO8_TTS_MLX_BF16_PROFILE.model_id,
+                "x-runtime": "mlx",
+                "x-device": "gpu",
                 "x-duration-seconds": "0.1",
                 "x-inference-ms": "20.0",
             },
@@ -460,8 +523,8 @@ def test_text_to_speech_accepts_reference_voice_upload(
             "/api/v1/apps/text-to-speech/synthesize/reference",
             files={"file": ("reference.wav", b"RIFF-reference", "audio/wav")},
             data={
-                "model_id": AUDIO8_TTS_ONNX_INT4_PROFILE.model_id,
-                "instance_id": "onnx-instance",
+                "model_id": AUDIO8_TTS_MLX_BF16_PROFILE.model_id,
+                "instance_id": "mlx-instance",
                 "text": "你好。",
                 "voice": "speaker_a",
                 "reference_text": "参考录音原文。",
@@ -470,7 +533,7 @@ def test_text_to_speech_accepts_reference_voice_upload(
         )
 
     assert response.status_code == 200
-    assert response.headers["x-runtime"] == "onnx"
+    assert response.headers["x-runtime"] == "mlx"
     assert captured["reference_audio"] == b"RIFF-reference"
     assert captured["reference_text"] == "参考录音原文。"
 

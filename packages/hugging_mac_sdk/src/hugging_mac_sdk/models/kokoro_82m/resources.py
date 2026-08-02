@@ -1,9 +1,8 @@
-"""Kokoro-82M PyTorch resource resolution, status, and deletion."""
+"""Kokoro-82M MLX BF16 resource resolution, status, and deletion."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
@@ -14,7 +13,7 @@ from hugging_mac_sdk.errors import (
     UnsupportedRuntimeError,
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
-from hugging_mac_sdk.resources.hashing import directory_size, file_sha256
+from hugging_mac_sdk.resources.hashing import directory_size
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
@@ -24,12 +23,10 @@ from hugging_mac_sdk.schemas.resources import (
 )
 
 from .config import (
-    KOKORO_82M_DEFAULT_VOICE_SHA256,
     KOKORO_82M_MODEL_ID,
     KOKORO_82M_REQUIRED_FILES,
     KOKORO_82M_REVISION,
     KOKORO_82M_VARIANT,
-    KOKORO_82M_WEIGHT_SHA256,
     Kokoro82mInstanceConfig,
 )
 
@@ -69,7 +66,7 @@ class Kokoro82mResourceResolver:
         return await self.resolve_source()
 
     async def delete(self, *, runtime: str | None = None) -> None:
-        if runtime not in {None, "pytorch-mps"}:
+        if runtime not in {None, "mlx"}:
             raise UnsupportedRuntimeError(
                 f"Kokoro-82M does not support runtime {runtime}",
                 details={"model_id": KOKORO_82M_MODEL_ID, "runtime": runtime},
@@ -96,9 +93,9 @@ class Kokoro82mResourceResolver:
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
-                    artifact_id="source",
-                    format=ArtifactFormat.PYTORCH.value,
-                    runtime="pytorch-mps",
+                    artifact_id="model",
+                    format=ArtifactFormat.MLX.value,
+                    runtime="mlx",
                     available=source_available,
                     size_bytes=directory_size(source) if source_available else None,
                 ),
@@ -106,56 +103,34 @@ class Kokoro82mResourceResolver:
         )
 
     def _default_source_path(self) -> Path:
-        return self._model_root() / "pytorch" / "model"
+        return self._model_root() / "mlx" / "model"
 
     def _model_root(self) -> Path:
         return (
             self._config.model_home
-            / "hexgrad"
-            / "kokoro-82m"
+            / "mlx-community"
+            / "kokoro-82m-bf16"
             / self._source.revision
             / self._config.variant
         )
 
     @staticmethod
     def _snapshot_files_exist(path: Path) -> bool:
-        return path.is_dir() and all(
-            (path / name).is_file() for name in KOKORO_82M_REQUIRED_FILES
-        )
+        return path.is_dir() and all((path / name).is_file() for name in KOKORO_82M_REQUIRED_FILES)
 
     def _validate_snapshot(self, path: Path) -> str:
         if not path.is_dir():
             raise ResourceNotFoundError(
                 "Kokoro-82M source model is not downloaded",
-                details={"model_id": KOKORO_82M_MODEL_ID, "artifact_id": "source"},
+                details={"model_id": KOKORO_82M_MODEL_ID, "artifact_id": "model"},
             )
-        missing = [
-            name for name in KOKORO_82M_REQUIRED_FILES if not (path / name).is_file()
-        ]
+        missing = [name for name in KOKORO_82M_REQUIRED_FILES if not (path / name).is_file()]
         if missing:
             raise ResourceNotFoundError(
                 "Kokoro-82M snapshot is incomplete",
                 details={"model_id": KOKORO_82M_MODEL_ID, "missing": missing},
             )
-        digest = file_sha256(path / "kokoro-v1_0.pth")
-        if digest != KOKORO_82M_WEIGHT_SHA256:
-            raise ResourceIntegrityError(
-                "Kokoro-82M weight SHA-256 mismatch",
-                details={"expected": KOKORO_82M_WEIGHT_SHA256, "actual": digest},
-            )
-        voice_digest = file_sha256(path / "voices" / "af_heart.pt")
-        if voice_digest != KOKORO_82M_DEFAULT_VOICE_SHA256:
-            raise ResourceIntegrityError(
-                "Kokoro-82M default voice SHA-256 mismatch",
-                details={
-                    "expected": KOKORO_82M_DEFAULT_VOICE_SHA256,
-                    "actual": voice_digest,
-                },
-            )
-        config = json.loads((path / "config.json").read_text(encoding="utf-8"))
-        if "vocab" not in config or int(config.get("n_token", 0)) <= 0:
-            raise ResourceIntegrityError("Kokoro-82M config is invalid")
-        return digest
+        return self._source.revision
 
     @staticmethod
     def _delete_path(path: Path) -> None:
@@ -225,7 +200,5 @@ class Kokoro82mResourceProvider:
                 "Conflicting Kokoro-82M variant values were provided",
                 details={"variant": variant, "options_variant": option_variant},
             )
-        config = Kokoro82mInstanceConfig.model_validate(
-            normalized | {"variant": variant}
-        )
+        config = Kokoro82mInstanceConfig.model_validate(normalized | {"variant": variant})
         return Kokoro82mResourceResolver(self._source, config)

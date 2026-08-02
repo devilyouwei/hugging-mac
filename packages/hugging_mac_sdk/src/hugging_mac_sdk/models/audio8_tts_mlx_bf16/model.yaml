@@ -1,0 +1,61 @@
+manifest:
+  schema_version: "1"
+  model_id: mlx-community/audio8-tts-preview-0.6b-bf16
+  revision: f7be312aaaed724b6ecb8e916b21c9fd0842db02
+  display_name: Audio8 TTS Preview 0.6B MLX BF16
+  description: MLX BF16 Audio8 TTS with a bundled FP32 44.1 kHz codec and zero-shot voice cloning.
+  tags: [audio, tts, voice-cloning, zero-shot, multilingual, arktts, mlx, bf16]
+  family: audio8-tts
+  capabilities: [speech-synthesis]
+  runtimes:
+    - name: mlx
+      devices: [gpu]
+      dtypes: [bfloat16, float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [mlx, mlx_audio, numpy]
+  variants:
+    - name: bf16
+      display_name: Audio8 TTS MLX BF16
+      description: BF16 DualAR language model with an FP32 MLX neural codec.
+      metadata:
+        parameters_millions: 600
+        sample_rate: 44100
+        weight_size_bytes: 2550000000
+        languages: 11
+      resources:
+        - kind: huggingface
+          repo_id: mlx-community/Audio8-TTS-Preview-0.6b-bf16
+          revision: f7be312aaaed724b6ecb8e916b21c9fd0842db02
+          allow_patterns:
+            - codec.safetensors
+            - config.json
+            - generation_config.json
+            - model.safetensors
+            - special_tokens_map.json
+            - tokenizer.json
+            - tokenizer_config.json
+  default_variant: bf16
+  license: Apache-2.0
+  source_url: https://huggingface.co/mlx-community/Audio8-TTS-Preview-0.6b-bf16
+  default_runtime: mlx
+
+artifacts:
+  - artifact_id: model
+    variant: bf16
+    runtime: mlx
+    format: mlx
+    path: mlx-community/audio8-tts-preview-0.6b-bf16/f7be312aaaed724b6ecb8e916b21c9fd0842db02/bf16/mlx/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: mlx-community/Audio8-TTS-Preview-0.6b-bf16
+      revision: f7be312aaaed724b6ecb8e916b21c9fd0842db02
+      allow_patterns:
+        - codec.safetensors
+        - config.json
+        - generation_config.json
+        - model.safetensors
+        - special_tokens_map.json
+        - tokenizer.json
+        - tokenizer_config.json

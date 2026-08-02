@@ -16,18 +16,18 @@ import type {
 const LANGUAGE_NAMES: Record<string, string> = {
   a: "American English",
   b: "British English",
-  e: "Español",
-  f: "Français",
-  h: "हिन्दी",
-  i: "Italiano",
-  p: "Português",
-  j: "日本語",
-  z: "中文",
+  e: "Spanish",
+  f: "French",
+  h: "Hindi",
+  i: "Italian",
+  p: "Portuguese",
+  j: "Japanese",
+  z: "Chinese",
 }
-const AUDIO8_ONNX_MODEL_ID = "audio8/audio8-tts-preview-0.6b-onnx-int4"
+const AUDIO8_CLONE_MODEL_ID = "mlx-community/audio8-tts-preview-0.6b-bf16"
 const SAMPLE_TEXTS = [
   "Every voice carries a different texture. Today, the whole studio runs locally on this Mac.",
-  "春风吹过湖面，声音也可以拥有温度与层次。",
+  "A warm breeze crosses the lake, and every voice gains texture and depth.",
   "A small model can still tell a beautiful story, one sentence at a time.",
 ]
 
@@ -40,6 +40,7 @@ const language = ref("a")
 const speed = ref(1)
 const voiceProfile = ref("speaker_a")
 const referenceAudio = ref<File | null>(null)
+const referenceAudioUrl = ref("")
 const referenceText = ref("")
 const useSavedProfile = ref(false)
 const resourceBusy = ref(false)
@@ -54,7 +55,9 @@ const selectedModel = computed(() =>
   models.value.find((item) => item.model_id === selectedModelId.value) ?? null,
 )
 const sourceArtifact = computed(() =>
-  selectedModel.value?.resource.artifacts.find((item) => item.artifact_id === "source"),
+  selectedModel.value?.resource.artifacts.find(
+    (item) => item.artifact_id === selectedModel.value?.required_artifact_id,
+  ),
 )
 const sourceReady = computed(() => Boolean(sourceArtifact.value?.available))
 const requiredReady = computed(() =>
@@ -68,11 +71,13 @@ const loadedModel = computed(() =>
   selectedModel.value ? loadedModels.value[selectedModel.value.model_id] ?? null : null,
 )
 const modelReady = computed(() => loadedModel.value?.state === "ready")
-const isKokoro = computed(() => selectedModel.value?.model_id === "hexgrad/kokoro-82m")
-const isAudio8Onnx = computed(() => selectedModel.value?.model_id === AUDIO8_ONNX_MODEL_ID)
+const isKokoro = computed(
+  () => selectedModel.value?.model_id === "mlx-community/kokoro-82m-bf16",
+)
+const isAudio8Clone = computed(() => selectedModel.value?.model_id === AUDIO8_CLONE_MODEL_ID)
 const characterCount = computed(() => text.value.length)
 const referenceReady = computed(() =>
-  !isAudio8Onnx.value
+  !isAudio8Clone.value
   || (Boolean(voiceProfile.value.trim())
     && (useSavedProfile.value
       || (referenceAudio.value !== null && Boolean(referenceText.value.trim())))),
@@ -102,11 +107,11 @@ async function loadModels() {
       }
     }
     selectedModelId.value =
-      models.value.find((item) => item.model_id === "hexgrad/kokoro-82m")?.model_id
+      models.value.find((item) => item.model_id === "mlx-community/kokoro-82m-bf16")?.model_id
       ?? models.value[0]?.model_id
       ?? ""
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "TTS 模型列表读取失败"
+    error.value = caught instanceof Error ? caught.message : "Failed to load the TTS model list"
   }
 }
 
@@ -125,7 +130,11 @@ function selectModel(modelId: string) {
 
 function selectReferenceAudio(event: Event) {
   const input = event.target as HTMLInputElement
+  if (referenceAudioUrl.value) URL.revokeObjectURL(referenceAudioUrl.value)
   referenceAudio.value = input.files?.[0] ?? null
+  referenceAudioUrl.value = referenceAudio.value
+    ? URL.createObjectURL(referenceAudio.value)
+    : ""
 }
 
 async function downloadModel() {
@@ -135,7 +144,7 @@ async function downloadModel() {
   try {
     selectedModel.value.resource = await downloadTtsWeights(selectedModel.value.model_id)
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "模型下载失败"
+    error.value = caught instanceof Error ? caught.message : "Model download failed"
   } finally {
     resourceBusy.value = false
   }
@@ -149,7 +158,7 @@ async function prepareModel() {
     loadedModels.value[selectedModel.value.model_id] =
       await loadTtsModel(selectedModel.value.model_id)
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "模型加载失败"
+    error.value = caught instanceof Error ? caught.message : "Model loading failed"
   } finally {
     loadBusy.value = false
   }
@@ -168,15 +177,15 @@ async function generateSpeech() {
         model_id: model.model_id,
         instance_id: instance.instance_id,
         text: text.value.trim(),
-        voice: isAudio8Onnx.value
+        voice: isAudio8Clone.value
           ? voiceProfile.value.trim()
           : isKokoro.value ? voice.value : null,
         language: isKokoro.value ? language.value : null,
         speed: speed.value,
-        referenceAudio: isAudio8Onnx.value && !useSavedProfile.value
+        referenceAudio: isAudio8Clone.value && !useSavedProfile.value
           ? referenceAudio.value
           : null,
-        referenceText: isAudio8Onnx.value && !useSavedProfile.value
+        referenceText: isAudio8Clone.value && !useSavedProfile.value
           ? referenceText.value.trim()
           : null,
       },
@@ -188,7 +197,7 @@ async function generateSpeech() {
       modelId: model.model_id,
       modelName: model.short_name,
       text: text.value.trim(),
-      voice: isAudio8Onnx.value ? voiceProfile.value.trim() : isKokoro.value ? voice.value : null,
+      voice: isAudio8Clone.value ? voiceProfile.value.trim() : isKokoro.value ? voice.value : null,
       runtime: response.headers.get("x-runtime") ?? model.runtime,
       device: response.headers.get("x-device") ?? model.runtime,
       durationSeconds: Number(response.headers.get("x-duration-seconds") ?? 0),
@@ -198,7 +207,7 @@ async function generateSpeech() {
     })
   } catch (caught) {
     if (!(caught instanceof DOMException && caught.name === "AbortError")) {
-      error.value = caught instanceof Error ? caught.message : "语音生成失败"
+      error.value = caught instanceof Error ? caught.message : "Speech generation failed"
     }
   } finally {
     activeRequest = null
@@ -219,6 +228,7 @@ function removeResult(id: number) {
 onMounted(loadModels)
 onBeforeUnmount(() => {
   activeRequest?.abort()
+  if (referenceAudioUrl.value) URL.revokeObjectURL(referenceAudioUrl.value)
   results.value.forEach((item) => URL.revokeObjectURL(item.url))
 })
 </script>
@@ -230,7 +240,7 @@ onBeforeUnmount(() => {
         <RouterLink class="back-link" to="/apps">← Neural Apps</RouterLink>
         <p class="kicker">LOCAL TEXT-TO-SPEECH · THREE ENGINES, ONE STUDIO</p>
         <h1>Type it.<br /><em>Hear it.</em></h1>
-        <p>在同一个本地工作台里对比 Audio8 PyTorch、Audio8 ONNX INT4 与 Kokoro。文字和生成音频都留在这台 Mac。</p>
+        <p>Compare Audio8 PyTorch, Audio8 MLX BF16, and Kokoro in one local studio. Your text and generated audio stay on this Mac.</p>
       </div>
       <div class="sound-object" aria-hidden="true">
         <span v-for="bar in 18" :key="bar" :style="{ '--bar': bar }"></span>
@@ -239,7 +249,7 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <section class="tts-model-switcher" aria-label="选择语音合成模型">
+    <section class="tts-model-switcher" aria-label="Select a text-to-speech model">
       <button
         v-for="(model, index) in models"
         :key="model.model_id"
@@ -272,13 +282,13 @@ onBeforeUnmount(() => {
         <textarea
           v-model="text"
           maxlength="2000"
-          placeholder="输入要转换成语音的文字…"
-          aria-label="要合成的文字"
+          placeholder="Enter the text you want to hear…"
+          aria-label="Text to synthesize"
         ></textarea>
         <div class="sample-row">
           <span>TRY A SAMPLE</span>
           <button v-for="(_, index) in SAMPLE_TEXTS" :key="index" type="button" @click="useSample(index)">
-            {{ ["EN", "中文", "STORY"][index] }}
+            {{ ["EN", "WARM", "STORY"][index] }}
           </button>
         </div>
       </section>
@@ -292,12 +302,12 @@ onBeforeUnmount(() => {
           <i :class="{ ready: modelReady }"></i>
         </div>
 
-        <div v-if="isAudio8Onnx" class="reference-controls">
+        <div v-if="isAudio8Clone" class="reference-controls">
           <label>
             <span>VOICE PROFILE</span>
             <input v-model="voiceProfile" maxlength="64" placeholder="speaker_a" />
           </label>
-          <div class="profile-mode" role="group" aria-label="音色 profile 来源">
+          <div class="profile-mode" role="group" aria-label="Voice profile source">
             <button
               type="button"
               :class="{ active: !useSavedProfile }"
@@ -319,17 +329,24 @@ onBeforeUnmount(() => {
               />
               <b>{{ referenceAudio?.name ?? "CHOOSE AUDIO" }}</b>
             </label>
+            <audio
+              v-if="referenceAudioUrl"
+              class="reference-player"
+              :src="referenceAudioUrl"
+              controls
+              preload="metadata"
+            ></audio>
             <label>
               <span>ACCURATE TRANSCRIPT</span>
               <textarea
                 v-model="referenceText"
                 class="reference-transcript"
-                placeholder="输入参考录音中实际说出的原文…"
+                placeholder="Enter the exact transcript spoken in the reference audio…"
               ></textarea>
             </label>
-            <p>首次合成会编码并保存该 profile；之后切换到 Saved Profile 可直接复用。</p>
+            <p>The first synthesis saves this profile. Select Saved Profile to reuse it later.</p>
           </template>
-          <p v-else>将使用本机已保存的 <strong>{{ voiceProfile || "未命名" }}</strong> profile。</p>
+          <p v-else>The locally saved <strong>{{ voiceProfile || "unnamed" }}</strong> profile will be used.</p>
         </div>
         <div v-else-if="isKokoro" class="voice-controls">
           <label>
@@ -351,7 +368,7 @@ onBeforeUnmount(() => {
         </div>
         <div v-else class="audio8-note">
           <strong>Natural multilingual mode</strong>
-          <p>Audio8 会从输入文字自动判断语言并生成自然语音。</p>
+          <p>Audio8 detects the input language automatically and generates natural speech.</p>
         </div>
 
         <label class="speed-control">
@@ -401,7 +418,7 @@ onBeforeUnmount(() => {
       </header>
       <div v-if="!results.length" class="empty-output">
         <span>♪</span>
-        <p>生成的音频会出现在这里。切换模型并使用同一段文字，就能直接比较。</p>
+        <p>Generated audio appears here. Use the same text across models for a direct comparison.</p>
       </div>
       <article v-for="result in results" :key="result.id" class="audio-result">
         <div class="result-model">
@@ -417,7 +434,7 @@ onBeforeUnmount(() => {
           <span>{{ result.durationSeconds.toFixed(1) }} SEC</span>
           <span>{{ result.inferenceMs.toFixed(0) }} MS</span>
           <a :href="result.url" :download="`hugging-mac-${result.id}.wav`">DOWNLOAD ↓</a>
-          <button type="button" aria-label="删除音频" @click="removeResult(result.id)">×</button>
+          <button type="button" aria-label="Delete audio" @click="removeResult(result.id)">×</button>
         </div>
       </article>
     </section>
@@ -473,6 +490,7 @@ textarea { background: transparent; border: 0; border-bottom: 1px solid var(--li
 .reference-file { border: 1px dashed #5b5c55; cursor: pointer; padding: .75rem; }
 .reference-file input { height: 1px; opacity: 0; position: absolute; width: 1px; }
 .reference-file b { color: var(--signal); font-family: var(--font-mono); font-size: .65rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reference-player { height: 2.5rem; width: 100%; }
 .reference-transcript { background: #292a26; border: 1px solid #4a4b46; color: var(--paper); font-size: .8rem; height: 4.5rem; line-height: 1.4; padding: .65rem; resize: vertical; }
 .reference-controls > p { color: #999b92; font-size: .72rem; line-height: 1.45; margin: 0; }
 .reference-controls > p strong { color: var(--signal); }

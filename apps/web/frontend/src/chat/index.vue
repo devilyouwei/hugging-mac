@@ -1,14 +1,25 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue"
 
-import { fetchLoadedChatModel, loadChatModel, streamChatMessage } from "./api"
-import type { ConversationMessage, LoadedChatModel } from "./types"
+import {
+  deleteChatModel,
+  downloadChatModel,
+  fetchChatModels,
+  fetchLoadedChatModel,
+  loadChatModel,
+  streamChatMessage,
+  unloadChatModel,
+} from "./api"
+import type { ChatModel, ConversationMessage, LoadedChatModel } from "./types"
 
 const model = ref<LoadedChatModel | null>(null)
+const models = ref<ChatModel[]>([])
+const selectedModelId = ref("")
 const messages = ref<ConversationMessage[]>([])
 const prompt = ref("")
 const images = ref<Array<{ file: File; url: string }>>([])
 const loadingModel = ref(false)
+const changingResources = ref(false)
 const sending = ref(false)
 const error = ref("")
 const maxTokens = ref(512)
@@ -20,23 +31,41 @@ let activeRequest: AbortController | null = null
 let nextId = 0
 
 const ready = computed(() => model.value?.state === "ready")
+const selectedProfile = computed(() =>
+  models.value.find((item) => item.model_id === selectedModelId.value),
+)
+const resourcesAvailable = computed(() => {
+  const profile = selectedProfile.value
+  return Boolean(
+    profile?.resource.artifacts.find(
+      (item) => item.artifact_id === profile.required_artifact_id,
+    )?.available,
+  )
+})
+const supportsImages = computed(() => selectedProfile.value?.supports_images ?? false)
 const canSend = computed(
   () => ready.value && Boolean(prompt.value.trim()) && !sending.value,
 )
 
 async function refreshModel() {
   try {
-    model.value = await fetchLoadedChatModel()
+    models.value = await fetchChatModels()
+    if (!selectedModelId.value) selectedModelId.value = models.value[0]?.model_id ?? ""
+    model.value = selectedModelId.value
+      ? await fetchLoadedChatModel(selectedModelId.value)
+      : null
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "模型状态读取失败"
   }
 }
 
 async function prepareModel() {
+  if (!selectedModelId.value) return
   loadingModel.value = true
   error.value = ""
   try {
-    model.value = await loadChatModel()
+    model.value = await loadChatModel(selectedModelId.value)
+    await refreshModel()
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "模型加载失败"
   } finally {
@@ -44,7 +73,65 @@ async function prepareModel() {
   }
 }
 
+async function selectModel() {
+  resetConversation()
+  images.value.forEach((item) => URL.revokeObjectURL(item.url))
+  images.value = []
+  error.value = ""
+  try {
+    model.value = await fetchLoadedChatModel(selectedModelId.value)
+  } catch (caught) {
+    model.value = null
+    error.value = caught instanceof Error ? caught.message : "模型状态读取失败"
+  }
+}
+
+async function downloadSelectedModel() {
+  if (!selectedModelId.value) return
+  changingResources.value = true
+  error.value = ""
+  try {
+    await downloadChatModel(selectedModelId.value)
+    await refreshModel()
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "模型下载失败"
+  } finally {
+    changingResources.value = false
+  }
+}
+
+async function deleteSelectedModel() {
+  if (!selectedModelId.value || !window.confirm("删除这个模型的本地权重？")) return
+  changingResources.value = true
+  error.value = ""
+  try {
+    await deleteChatModel(selectedModelId.value)
+    model.value = null
+    await refreshModel()
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "模型删除失败"
+  } finally {
+    changingResources.value = false
+  }
+}
+
+async function unloadSelectedModel() {
+  if (!selectedModelId.value) return
+  loadingModel.value = true
+  error.value = ""
+  try {
+    await unloadChatModel(selectedModelId.value)
+    model.value = null
+    await refreshModel()
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : "模型卸载失败"
+  } finally {
+    loadingModel.value = false
+  }
+}
+
 function selectImages(event: Event) {
+  if (!supportsImages.value) return
   const input = event.target as HTMLInputElement
   for (const file of Array.from(input.files ?? [])) {
     if (images.value.length >= 4) break
@@ -173,26 +260,40 @@ onBeforeUnmount(() => {
   <div class="chat-page">
     <aside class="chat-sidebar">
       <RouterLink class="chat-brand" to="/apps">← Neural Apps</RouterLink>
-      <div class="chat-model-mark">Q</div>
       <div>
-        <p class="chat-label">LOCAL MULTIMODAL MODEL</p>
-        <h1>Qwen 3.5<br />9B <em>MLX</em></h1>
-        <p class="chat-copy">文本、图片与多轮上下文都在这台 Mac 上完成处理。</p>
+        <p class="chat-label">LOCAL CHAT MODEL</p>
+        <h1>{{ selectedProfile?.short_name ?? "Qwen 3.5" }}<br /><em>MLX</em></h1>
+        <p class="chat-copy">{{ selectedProfile?.description ?? "选择一个本地模型开始对话。" }}</p>
       </div>
+
+      <label class="chat-model-select">
+        MODEL
+        <select v-model="selectedModelId" :disabled="sending || loadingModel" @change="selectModel">
+          <option v-for="item in models" :key="item.model_id" :value="item.model_id">
+            {{ item.display_name }}
+          </option>
+        </select>
+      </label>
 
       <div class="chat-status" :class="{ ready }">
         <span></span>
         <div>
           <b>{{ ready ? "Model ready" : "Model offline" }}</b>
-          <small>{{ model ? `${model.variant} · ${model.device}` : "5.95 GB weights" }}</small>
+          <small>{{ model ? `${model.variant} · ${model.device}` : `${((selectedProfile?.disk_size_bytes ?? 0) / 1e9).toFixed(1)} GB weights` }}</small>
         </div>
       </div>
-      <button v-if="!ready" class="chat-primary" :disabled="loadingModel" @click="prepareModel">
+      <button v-if="resourcesAvailable && !ready" class="chat-primary" :disabled="loadingModel" @click="prepareModel">
         {{ loadingModel ? "Loading into memory…" : "Load model" }}
       </button>
-      <RouterLink v-if="!ready" class="chat-model-link" to="/models">
-        Download weights in Models →
-      </RouterLink>
+      <button v-if="!resourcesAvailable" class="chat-primary" :disabled="changingResources" @click="downloadSelectedModel">
+        {{ changingResources ? "Downloading…" : "Download weights" }}
+      </button>
+      <button v-if="resourcesAvailable && !ready" class="chat-delete" :disabled="changingResources" @click="deleteSelectedModel">
+        {{ changingResources ? "Working…" : "Delete local weights" }}
+      </button>
+      <button v-if="ready" class="chat-delete" :disabled="loadingModel || sending" @click="unloadSelectedModel">
+        Unload model
+      </button>
 
       <details class="chat-settings">
         <summary>Generation settings</summary>
@@ -217,10 +318,10 @@ onBeforeUnmount(() => {
         <div v-if="!messages.length" class="chat-empty">
           <span>Q / 35</span>
           <h2>What can we<br /><i>explore?</i></h2>
-          <p>Ask a question, continue a thought, or attach an image for visual understanding.</p>
+          <p>Ask a question, continue a thought<span v-if="supportsImages">, or attach an image for visual understanding</span>.</p>
           <div class="chat-suggestions">
             <button @click="prompt = '解释一下 Transformer 的注意力机制。'">解释一个复杂概念</button>
-            <button @click="prompt = '请分析我上传的图片，并指出关键细节。'">分析一张图片</button>
+            <button v-if="supportsImages" @click="prompt = '请分析我上传的图片，并指出关键细节。'">分析一张图片</button>
             <button @click="prompt = '帮我设计一个清晰的项目实施计划。'">制定项目计划</button>
           </div>
         </div>
@@ -251,7 +352,7 @@ onBeforeUnmount(() => {
           </figure>
         </div>
         <div class="chat-input-row">
-          <label class="chat-attach" :class="{ disabled: !ready || images.length >= 4 }">
+          <label v-if="supportsImages" class="chat-attach" :class="{ disabled: !ready || images.length >= 4 }">
             <input type="file" accept="image/png,image/jpeg,image/webp" multiple :disabled="!ready || images.length >= 4" @change="selectImages" />
             <span>＋</span><small>IMAGE</small>
           </label>
@@ -260,7 +361,7 @@ onBeforeUnmount(() => {
             <span>{{ sending ? "···" : "↑" }}</span>
           </button>
         </div>
-        <small class="chat-hint">ENTER TO SEND · SHIFT + ENTER FOR NEW LINE · UP TO 4 IMAGES</small>
+        <small class="chat-hint">ENTER TO SEND · SHIFT + ENTER FOR NEW LINE<span v-if="supportsImages"> · UP TO 4 IMAGES</span></small>
       </footer>
     </main>
   </div>
@@ -271,7 +372,6 @@ onBeforeUnmount(() => {
 .chat-sidebar { border-right:1px solid #343630; display:flex; flex-direction:column; gap:1.5rem; min-height:0; overflow:auto; padding:2rem; }
 .chat-brand,.chat-label,.chat-status small,.chat-model-link,.chat-settings,.chat-clear,.chat-topbar,.chat-hint,.chat-bubble small { font-family:var(--font-mono); }
 .chat-brand { color:#aaa99f; font-size:.68rem; letter-spacing:.06em; }
-.chat-model-mark { align-items:center; background:var(--signal); border-radius:50%; color:#0d0e0d; display:flex; font-size:2rem; font-weight:800; height:4.5rem; justify-content:center; width:4.5rem; }
 .chat-label { color:#85877f; font-size:.62rem; letter-spacing:.1em; margin:0 0 .7rem; }
 .chat-sidebar h1 { font-size:2.5rem; letter-spacing:-.06em; line-height:.9; margin:0; }
 .chat-sidebar h1 em { color:var(--signal); font-style:normal; }
@@ -283,6 +383,8 @@ onBeforeUnmount(() => {
 .chat-status b { font-size:.75rem; }.chat-status small { color:#85877f; font-size:.56rem; }
 .chat-primary { background:var(--signal); border:0; color:#0d0e0d; cursor:pointer; font-weight:800; padding:.9rem; }.chat-primary:disabled { opacity:.5; }
 .chat-model-link { color:var(--signal); font-size:.6rem; text-align:center; }
+.chat-model-select { color:#85877f; display:flex; flex-direction:column; font:.56rem var(--font-mono); gap:.45rem; }.chat-model-select select { background:#191b18; border:1px solid #343630; color:#f4f2e9; font:inherit; padding:.7rem; width:100%; }
+.chat-delete { background:none; border:1px solid #5d3934; color:#e7a59d; cursor:pointer; font:.58rem var(--font-mono); padding:.7rem; }.chat-delete:disabled { opacity:.5; }
 .chat-settings { border-top:1px solid #343630; color:#aaa99f; font-size:.62rem; padding-top:1rem; }.chat-settings summary { cursor:pointer; margin-bottom:1rem; }.chat-settings label { display:flex; justify-content:space-between; margin-top:.7rem; }.chat-settings input[type=range] { accent-color:var(--signal); width:100%; }.chat-toggle { justify-content:flex-start!important; gap:.5rem; }
 .chat-clear { background:none; border:1px solid #343630; color:#f4f2e9; cursor:pointer; font-size:.62rem; margin-top:auto; padding:.8rem; }
 .chat-workspace { display:grid; grid-template-rows:auto minmax(0,1fr) auto auto; height:100%; min-height:0; min-width:0; overflow:hidden; position:relative; }
@@ -297,5 +399,5 @@ onBeforeUnmount(() => {
 .chat-scroll-latest { background:#262923; border:1px solid #52554c; border-radius:2rem; bottom:7.4rem; color:#f4f2e9; cursor:pointer; font:600 .62rem var(--font-mono); left:50%; padding:.65rem 1rem; position:absolute; transform:translateX(-50%); z-index:3; }
 .chat-composer { border-top:1px solid #343630; padding:1rem max(4vw,2rem) 1.4rem; }.chat-input-row { align-items:end; background:#191b18; border:1px solid #3b3d37; display:grid; grid-template-columns:auto minmax(0,1fr) auto; padding:.6rem; }.chat-input-row:focus-within { border-color:#77796f; }.chat-attach { align-items:center; cursor:pointer; display:flex; gap:.35rem; padding:.6rem; }.chat-attach input { display:none; }.chat-attach span { font-size:1.4rem; }.chat-attach small { color:#8c8d85; font:.52rem var(--font-mono); }.chat-attach.disabled { opacity:.35; }.chat-input-row textarea { background:none; border:0; color:#f4f2e9; font:1rem var(--font-display); max-height:10rem; min-height:2.6rem; outline:0; padding:.7rem; resize:vertical; }.chat-send { align-items:center; background:var(--signal); border:0; border-radius:50%; color:#111; cursor:pointer; display:flex; font-size:1.4rem; height:2.7rem; justify-content:center; width:2.7rem; }.chat-send:disabled { background:#42443e; color:#85877f; cursor:default; }.chat-hint { color:#62645d; display:block; font-size:.5rem; letter-spacing:.08em; margin-top:.55rem; text-align:center; }
 .chat-previews { display:flex; gap:.6rem; margin-bottom:.7rem; }.chat-previews figure { height:4.5rem; margin:0; position:relative; width:4.5rem; }.chat-previews img { border-radius:.4rem; height:100%; object-fit:cover; width:100%; }.chat-previews button { background:#111; border:1px solid #555; border-radius:50%; color:white; cursor:pointer; height:1.3rem; position:absolute; right:-.3rem; top:-.3rem; width:1.3rem; }
-@media(max-width:800px){.chat-page{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.chat-sidebar{border-bottom:1px solid #343630;border-right:0;display:grid;grid-template-columns:1fr auto;height:auto;overflow:visible;padding:1rem 1.2rem}.chat-sidebar>div:nth-of-type(2),.chat-model-mark,.chat-copy,.chat-settings,.chat-clear{display:none}.chat-status{grid-column:2;grid-row:1 / span 2}.chat-brand{align-self:center}.chat-workspace{height:100%;min-height:0}.chat-suggestions{grid-template-columns:1fr}.chat-conversation{padding:2rem 1rem}.chat-composer{padding:1rem}}
+@media(max-width:800px){.chat-page{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.chat-sidebar{border-bottom:1px solid #343630;border-right:0;display:grid;grid-template-columns:1fr auto;height:auto;overflow:visible;padding:1rem 1.2rem}.chat-sidebar>div:nth-of-type(2),.chat-copy,.chat-settings,.chat-clear{display:none}.chat-status{grid-column:2;grid-row:1 / span 2}.chat-brand{align-self:center}.chat-workspace{height:100%;min-height:0}.chat-suggestions{grid-template-columns:1fr}.chat-conversation{padding:2rem 1rem}.chat-composer{padding:1rem}}
 </style>

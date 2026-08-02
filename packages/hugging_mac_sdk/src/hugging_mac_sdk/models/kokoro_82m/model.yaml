@@ -1,23 +1,23 @@
 manifest:
   schema_version: "1"
-  model_id: hexgrad/kokoro-82m
-  revision: f3ff3571791e39611d31c381e3a41a3af07b4987
-  display_name: Kokoro 82M
-  description: 轻量、非自回归的多语言 StyleTTS2 语音合成模型，输出 24 kHz 音频。
-  tags: [audio, tts, styletts2, istftnet, multilingual]
+  model_id: mlx-community/kokoro-82m-bf16
+  revision: a71e4d38b236d968966a2002c4c895dbd12b1c3c
+  display_name: Kokoro 82M MLX BF16
+  description: 面向 Apple Silicon 的 MLX BF16 Kokoro 语音合成模型，输出 24 kHz 音频。
+  tags: [audio, tts, styletts2, istftnet, multilingual, mlx, bf16]
   family: kokoro
   capabilities: [speech-synthesis]
   runtimes:
-    - name: pytorch-mps
-      devices: [mps, cpu]
-      dtypes: [float16, float32]
+    - name: mlx
+      devices: [gpu]
+      dtypes: [bfloat16]
       platforms: [darwin]
       architectures: [arm64]
-      required_modules: [torch, kokoro, misaki, numpy]
+      required_modules: [mlx, mlx_audio, misaki, numpy]
   variants:
-    - name: v1.0
-      display_name: Kokoro 82M v1.0
-      description: 82M 参数、54 种声音、8 个语言系列的正式 v1.0 权重。
+    - name: bf16
+      display_name: Kokoro 82M MLX BF16
+      description: 82M 参数、MLX BF16 权重和 safetensors voices。
       metadata:
         parameters_millions: 82
         weight_size_bytes: 327212226
@@ -27,29 +27,29 @@ manifest:
         context_phonemes: 510
       resources:
         - kind: huggingface
-          repo_id: hexgrad/Kokoro-82M
-          revision: f3ff3571791e39611d31c381e3a41a3af07b4987
+          repo_id: mlx-community/Kokoro-82M-bf16
+          revision: a71e4d38b236d968966a2002c4c895dbd12b1c3c
           allow_patterns:
             - config.json
-            - kokoro-v1_0.pth
-            - voices/*.pt
-  default_variant: v1.0
+            - kokoro-v1_0.safetensors
+            - voices/*.safetensors
+  default_variant: bf16
   license: Apache-2.0
-  source_url: https://huggingface.co/hexgrad/Kokoro-82M
-  default_runtime: pytorch-mps
+  source_url: https://huggingface.co/mlx-community/Kokoro-82M-bf16
+  default_runtime: mlx
 
 artifacts:
-  - artifact_id: source
-    variant: v1.0
-    runtime: pytorch-mps
-    format: pytorch
-    path: hexgrad/kokoro-82m/f3ff3571791e39611d31c381e3a41a3af07b4987/v1.0/pytorch/model
+  - artifact_id: model
+    variant: bf16
+    runtime: mlx
+    format: mlx
+    path: mlx-community/kokoro-82m-bf16/a71e4d38b236d968966a2002c4c895dbd12b1c3c/bf16/mlx/model
     kind: directory
     source:
       kind: huggingface
-      repo_id: hexgrad/Kokoro-82M
-      revision: f3ff3571791e39611d31c381e3a41a3af07b4987
+      repo_id: mlx-community/Kokoro-82M-bf16
+      revision: a71e4d38b236d968966a2002c4c895dbd12b1c3c
       allow_patterns:
         - config.json
-        - kokoro-v1_0.pth
-        - voices/*.pt
+        - kokoro-v1_0.safetensors
+        - voices/*.safetensors

@@ -42,15 +42,12 @@ yolo = [
   "torch>=2.7,<3",
 ]
 tts = [
-  "coremltools>=8,<10; sys_platform == 'darwin' and platform_machine == 'arm64'",
-  "kokoro>=0.9.4,<1",
+  "mlx-audio; sys_platform == 'darwin' and platform_machine == 'arm64'",
   "misaki[en,ja,zh]>=0.9.4,<1",
   "numpy>=2,<2.4",
-  "onnxruntime>=1.22,<2",
   "safetensors>=0.5,<1",
   "soundfile>=0.13,<1",
   "scipy>=1.15,<2",
-  "tokenizers>=0.22,<1",
   "torch>=2.7,<3",
   "torchaudio>=2.7,<3",
   "transformers>=4.57.3,<6",
@@ -62,3 +59,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hugging_mac_sdk"]
+
+[tool.uv.sources]
+mlx-audio = { git = "https://github.com/Blaizzy/mlx-audio.git", rev = "223afd602c6d583455bdb9f181b91fc090f4aff9" }

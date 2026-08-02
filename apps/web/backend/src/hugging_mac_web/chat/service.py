@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 from time import perf_counter
@@ -9,13 +10,15 @@ from time import perf_counter
 from hugging_mac_sdk import ReusePolicy
 from hugging_mac_sdk.capabilities import Chat
 from hugging_mac_sdk.core.instance import ModelState
-from hugging_mac_sdk.errors import ResourceNotFoundError
+from hugging_mac_sdk.errors import ResourceNotFoundError, UnsupportedCapabilityError
 from hugging_mac_sdk.schemas.chat import ChatImage, ChatMessage, ChatRequest
 
-from hugging_mac_web.chat.config import ChatSettings
+from hugging_mac_web.chat.config import CHAT_MODEL_PROFILES, ChatModelProfile, ChatSettings
 from hugging_mac_web.chat.schemas import (
     ChatHistoryMessage,
+    ChatModelView,
     ChatReplyView,
+    ChatResourceView,
     ChatStreamEventView,
     LoadedChatModelView,
 )
@@ -27,12 +30,56 @@ class ChatService:
         self._context = context
         self._settings = settings
 
-    async def load_model(self) -> LoadedChatModelView:
+    async def list_models(self) -> tuple[ChatModelView, ...]:
+        return tuple(
+            await asyncio.gather(*(self.model_view(model_id) for model_id in CHAT_MODEL_PROFILES))
+        )
+
+    async def model_view(self, model_id: str) -> ChatModelView:
+        profile = self._profile(model_id)
+        return ChatModelView.from_profile(
+            profile,
+            await self.resource_status(model_id),
+            ready_instance_id=await self._ready_instance_id(profile),
+        )
+
+    async def resource_status(self, model_id: str) -> ChatResourceView:
+        profile = self._profile(model_id)
+        status = await self._context.models.resources.status(
+            profile.model_id,
+            variant=profile.variant,
+            options=self._model_options(),
+        )
+        return ChatResourceView.from_sdk(status)
+
+    async def download_source(self, model_id: str, *, overwrite: bool = False) -> ChatResourceView:
+        profile = self._profile(model_id)
+        await self._ensure_resources_mutable(profile)
+        await self._context.models.resources.download_source(
+            profile.model_id,
+            variant=profile.variant,
+            options=self._model_options(),
+            overwrite=overwrite,
+        )
+        return await self.resource_status(model_id)
+
+    async def delete_resources(self, model_id: str) -> ChatResourceView:
+        profile = self._profile(model_id)
+        await self._ensure_resources_mutable(profile)
+        await self._context.models.resources.delete(
+            profile.model_id,
+            variant=profile.variant,
+            options=self._model_options(),
+        )
+        return await self.resource_status(model_id)
+
+    async def load_model(self, model_id: str) -> LoadedChatModelView:
+        profile = self._profile(model_id)
         handle = await self._context.models.load(
-            self._settings.model_id,
-            variant=self._settings.variant,
-            runtime=self._settings.runtime,
-            options={"model_home": self._context.settings.model_home},
+            profile.model_id,
+            variant=profile.variant,
+            runtime=profile.runtime,
+            options=self._model_options(),
             reuse=ReusePolicy.SHARED,
         )
         try:
@@ -40,17 +87,29 @@ class ChatService:
         finally:
             await handle.close()
 
-    async def ready_model(self) -> LoadedChatModelView | None:
+    async def ready_model(self, model_id: str) -> LoadedChatModelView | None:
+        profile = self._profile(model_id)
         for snapshot in await self._context.models.instances.snapshots():
             if (
-                snapshot.model_id == self._settings.model_id
-                and snapshot.variant == self._settings.variant
-                and snapshot.runtime == self._settings.runtime
+                snapshot.model_id == profile.model_id
+                and snapshot.variant == profile.variant
+                and snapshot.runtime == profile.runtime
                 and snapshot.state is ModelState.READY
             ):
                 instance = await self._context.models.instances.require(snapshot.instance_id)
                 return LoadedChatModelView.from_sdk(instance.info())
         return None
+
+    async def unload_model(self, model_id: str) -> int:
+        profile = self._profile(model_id)
+        matching = tuple(
+            snapshot
+            for snapshot in await self._context.models.instances.snapshots()
+            if snapshot.model_id == profile.model_id and snapshot.variant == profile.variant
+        )
+        for snapshot in matching:
+            await self._context.models.instances.unload(snapshot.instance_id)
+        return len(matching)
 
     async def chat(
         self,
@@ -65,10 +124,16 @@ class ChatService:
     ) -> ChatReplyView:
         instance = await self._context.models.instances.require(instance_id)
         info = instance.info()
-        if info.model_id != self._settings.model_id or info.state is not ModelState.READY:
+        profile = self._profile(info.model_id or "")
+        if info.state is not ModelState.READY:
             raise ResourceNotFoundError(
                 "The selected chat model instance is not ready",
                 details={"instance_id": instance_id},
+            )
+        if image_paths and not profile.supports_images:
+            raise UnsupportedCapabilityError(
+                "The selected chat model does not support images",
+                details={"model_id": profile.model_id},
             )
         messages = [ChatMessage(role=item.role, content=item.content) for item in history]
         messages.append(
@@ -111,10 +176,16 @@ class ChatService:
     ) -> AsyncIterator[ChatStreamEventView]:
         instance = await self._context.models.instances.require(instance_id)
         info = instance.info()
-        if info.model_id != self._settings.model_id or info.state is not ModelState.READY:
+        profile = self._profile(info.model_id or "")
+        if info.state is not ModelState.READY:
             raise ResourceNotFoundError(
                 "The selected chat model instance is not ready",
                 details={"instance_id": instance_id},
+            )
+        if image_paths and not profile.supports_images:
+            raise UnsupportedCapabilityError(
+                "The selected chat model does not support images",
+                details={"model_id": profile.model_id},
             )
         messages = [ChatMessage(role=item.role, content=item.content) for item in history]
         messages.append(
@@ -137,12 +208,44 @@ class ChatService:
             yield ChatStreamEventView(
                 delta=event.delta,
                 finish_reason=event.finish_reason,
-                model_id=info.model_id or self._settings.model_id,
+                model_id=info.model_id or profile.model_id,
                 instance_id=info.instance_id,
-                runtime=info.runtime or self._settings.runtime,
+                runtime=info.runtime or profile.runtime,
                 device=info.device or "gpu",
                 generated_tokens=event.generated_tokens,
                 inference_ms=(
                     (perf_counter() - started) * 1000 if event.finish_reason is not None else None
                 ),
+            )
+
+    def _profile(self, model_id: str) -> ChatModelProfile:
+        try:
+            return CHAT_MODEL_PROFILES[model_id]
+        except KeyError as error:
+            raise ResourceNotFoundError(f"Chat model is not supported: {model_id}") from error
+
+    def _model_options(self) -> dict[str, object]:
+        return {"model_home": self._context.settings.model_home}
+
+    async def _ready_instance_id(self, profile: ChatModelProfile) -> str | None:
+        for snapshot in await self._context.models.instances.snapshots():
+            if (
+                snapshot.model_id == profile.model_id
+                and snapshot.variant == profile.variant
+                and snapshot.runtime == profile.runtime
+                and snapshot.state is ModelState.READY
+            ):
+                return snapshot.instance_id
+        return None
+
+    async def _ensure_resources_mutable(self, profile: ChatModelProfile) -> None:
+        active = tuple(
+            snapshot
+            for snapshot in await self._context.models.instances.snapshots()
+            if snapshot.model_id == profile.model_id and snapshot.variant == profile.variant
+        )
+        if active:
+            raise UnsupportedCapabilityError(
+                "Unload the chat model before changing its files",
+                details={"model_id": profile.model_id, "instance_count": len(active)},
             )

@@ -1,6 +1,6 @@
 # TTS SDK 与 Text-to-Speech 应用
 
-状态：`Audio8-TTS PyTorch CPU、Audio8-TTS ONNX INT4、Kokoro PyTorch MPS 及本地 Web 应用已实现`
+状态：`Audio8-TTS PyTorch CPU、Audio8-TTS MLX BF16、Kokoro PyTorch MPS 及本地 Web 应用已实现`
 
 ## 统一契约
 
@@ -15,10 +15,10 @@ Kokoro 不支持参考音频克隆，会明确返回 `InferenceError`；Audio8-T
 flowchart LR
     App["Text-to-Speech App"] --> Capability["SpeechSynthesis"]
     Capability --> A8["Audio8TtsInstance"]
-    Capability --> A8Onnx["Audio8TtsOnnxInt4Instance"]
+    Capability --> A8Mlx["Audio8TtsMlxBf16Instance"]
     Capability --> K["Kokoro82mInstance"]
     A8 --> A8Torch["torch.py · PyTorch CPU FP32"]
-    A8Onnx --> A8Ort["onnx.py · ONNX Runtime CPU"]
+    A8Mlx --> A8Gpu["mlx.py · MLX GPU"]
     K --> KTorch["torch.py · PyTorch MPS / CPU"]
 ```
 
@@ -40,15 +40,15 @@ models/audio8_tts/
 ├── torch.py         # Audio8 的 PyTorch CPU FP32 engine
 └── utils/types.py   # 私有 engine 输出
 
-models/audio8_tts_onnx_int4/
-├── __init__.py      # 仅导出 definition、manifest、register_audio8_tts_onnx_int4
-├── model.yaml       # 固定官方 ONNX revision、INT4 variant 与 artifact
-├── config.py        # CPU runtime、模型/音色资源配置
+models/audio8_tts_mlx_bf16/
+├── __init__.py      # 仅导出 definition、manifest、register_audio8_tts_mlx_bf16
+├── model.yaml       # 固定 MLX Community revision、BF16 variant 与 artifact
+├── config.py        # MLX GPU runtime、模型/音色资源配置
 ├── definition.py    # 独立 model ID、factory 与 registry 注册
 ├── instance.py      # SpeechSynthesis 生命周期和串行 engine 编排
-├── resources.py     # ONNX snapshot、manifest/fingerprint 校验、状态、删除
-├── onnx.py          # 多 Session ONNX engine 与 voice profile 编排
-└── utils/           # prompt、DualAR/KV cache、参考音频编码及私有类型
+├── resources.py     # MLX snapshot 校验、状态、下载和删除
+├── mlx.py           # mlx-audio ArkTTS engine 与取消边界
+└── utils/           # reference voice profile 与私有类型
 
 models/kokoro_82m/
 ├── __init__.py      # 仅导出 definition、manifest、register_kokoro_82m
@@ -76,25 +76,18 @@ models/kokoro_82m/
 
 ### Kokoro 82M
 
-- model ID：`hexgrad/kokoro-82m`；variant：`v1.0`；输出：24 kHz；
+- model ID：`mlx-community/kokoro-82m-bf16`；variant：`bf16`；MLX BF16；输出：24 kHz；
 - 仅提供 PyTorch MPS runtime；Core ML 转换曾因动态 predictor shape 导致不稳定的系统编译和进程退出，
   因此已移除，不再向用户暴露转换入口；
 
-### Audio8 TTS Preview 0.6B ONNX INT4
+### Audio8 TTS Preview 0.6B MLX BF16
 
-- model ID：`audio8/audio8-tts-preview-0.6b-onnx-int4`；variant：`int4`；输出：44.1 kHz；
-- 与 PyTorch 版是两个独立 model pack、资源目录和注册项，下载或删除任一版本不会修改另一版本；
-- 使用上游导出的 Slow AR / Fast AR weight-only INT4 图与 FP16 codec 图。当前上游实现只在
-  `CPUExecutionProvider` 上验证，因此该 runtime 明确声明 `device=cpu`，不会伪装为 Core ML 或 MPS；
-- 已在 macOS 的 ONNX Runtime CoreML EP 上分别验证 Slow AR、Fast AR、codec encoder 和 codec decoder。
-  三个动态图会因零长度 KV cache、无界音频长度或动态 attention shape 在建图/执行阶段失败；decoder 改成
-  固定 64 帧后虽能以 Core ML NeuralNetwork 格式执行，但 CPU、`CPUAndGPU`、
-  `CPUAndNeuralEngine` 的实测耗时均约 1.4 秒，没有加速收益。因此当前不提供实验性 Core ML 开关；
-- 默认限制为 5 个 ONNX Runtime 线程，可通过 instance option `threads` 调整；
+- model ID：`mlx-community/audio8-tts-preview-0.6b-bf16`；variant：`bf16`；输出：44.1 kHz；
+- 固定 MLX Community commit `f7be312aaaed724b6ecb8e916b21c9fd0842db02`；
+- DualAR language model 使用 BF16，codec 使用 FP32，在 Apple Silicon GPU 和统一内存上执行；
 - 合成需要 `reference_audio + reference_text`，或者 `voice` 指向此前由同一模型保存的 profile。请求同时提供
-  reference 与 voice 时会编码并覆盖该名称的本地 profile；
-- 参考音频 encoder 是可选下载组件。编码时 SDK 会先释放三个在线 Session，编码完成后再恢复，以避免两套模型
-  同时常驻。官方完整 snapshot 约 968 MiB，SDK 固定 revision 并校验 runtime/registration fingerprint。
+  reference 与 voice 时会保存并覆盖该名称的本地 profile；也支持不传参考音频时使用模型默认音色；
+- 模型与 codec 权重约 2.55 GB，不再注册或支持原 ONNX INT4 CPU model pack。
 
 ## 安装、下载与调用
 
@@ -140,22 +133,22 @@ from hugging_mac_sdk import ArtifactFormat
 from hugging_mac_sdk.models.kokoro_82m import register_kokoro_82m
 
 register_kokoro_82m(sdk.registry)
-await sdk.resources.download_source("hexgrad/kokoro-82m", options=options)
+await sdk.resources.download_source("mlx-community/kokoro-82m-bf16", options=options)
 ```
 
-Audio8 ONNX INT4 使用独立注册项，并要求参考音频或已保存 voice profile：
+Audio8 MLX BF16 使用独立注册项，并支持参考音频或已保存 voice profile：
 
 ```python
-from hugging_mac_sdk.models.audio8_tts_onnx_int4 import register_audio8_tts_onnx_int4
+from hugging_mac_sdk.models.audio8_tts_mlx_bf16 import register_audio8_tts_mlx_bf16
 from hugging_mac_sdk.schemas.transcription import AudioInput
 
-register_audio8_tts_onnx_int4(sdk.registry)
-model_id = "audio8/audio8-tts-preview-0.6b-onnx-int4"
-await sdk.resources.download_source(model_id, variant="int4", options=options)
-handle = await sdk.load(model_id, runtime="onnx", options=options)
+register_audio8_tts_mlx_bf16(sdk.registry)
+model_id = "mlx-community/audio8-tts-preview-0.6b-bf16"
+await sdk.resources.download_source(model_id, variant="bf16", options=options)
+handle = await sdk.load(model_id, runtime="mlx", options=options)
 speech = await handle.require(SpeechSynthesis).synthesize(
     SpeechSynthesisRequest(
-        text="你好，这是 ONNX INT4 版本。",
+        text="你好，这是 MLX BF16 版本。",
         voice="speaker_a",
         reference_audio=AudioInput(path=Path("reference.wav")),
         reference_text="参考录音对应的准确原文。",
@@ -168,20 +161,19 @@ await handle.close()
 ## Web 应用
 
 `apps/web/backend/src/hugging_mac_web/text_to_speech/` 是独立 App blueprint，前端位于
-`apps/web/frontend/src/text_to_speech/`。页面支持文本输入、Audio8 PyTorch / Audio8 ONNX INT4 / Kokoro
-切换、资源下载、加载和 WAV 播放。ONNX 模式可上传 0.5–30 秒参考音频、填写准确原文并命名 voice profile；
-首次合成保存 profile，后续可直接选择 Saved Profile 复用。官方 artifact 已是 ONNX，因此该模式只提供下载，
+`apps/web/frontend/src/text_to_speech/`。页面支持文本输入、Audio8 PyTorch / Audio8 MLX BF16 / Kokoro
+切换、资源下载、加载和 WAV 播放。MLX 模式可上传参考音频、填写准确原文并命名 voice profile；
+首次合成保存 profile，后续可直接选择 Saved Profile 复用。官方 artifact 已是 MLX，因此该模式只提供下载，
 不显示转换步骤。
 API 仅接收/返回 Web schema；服务层将 SDK 的 `f32le` waveform 编码为 WAV，浏览器
 不需要理解模型格式。
 
-Kokoro 页面始终使用 PyTorch MPS source artifact；Audio8 ONNX 页面直接使用 ONNX source artifact。
+Kokoro 页面始终使用 PyTorch MPS source artifact；Audio8 MLX 页面直接使用 MLX model artifact。
 
 ## 当前边界
 
 - Audio8 的 Core ML runtime 和转换器尚未实现；
-- Audio8 ONNX INT4 是官方 CPUExecutionProvider 运行包，不是 Core ML 转换产物；现有动态图不能通过简单切换
-  ONNX Runtime provider 安全下放到 GPU/ANE；
+- Audio8 MLX BF16 使用 Apple GPU，不声明 Neural Engine 支持；
 - Kokoro 不提供 Core ML 转换；
 - 三个 engine 都对单个 instance 串行化合成；Audio8 的默认 CPU 推理优先正确性而非低延迟，并发请求应由
   应用层排队或创建受控实例；
@@ -190,5 +182,5 @@ Kokoro 页面始终使用 PyTorch MPS source artifact；Audio8 ONNX 页面直接
 ## 上游资料
 
 - [Audio8 TTS Preview 0.6B](https://huggingface.co/Audio8/Audio8-TTS-Preview-0.6b)
-- [Audio8 TTS Preview 0.6B ONNX INT4](https://huggingface.co/Audio8/Audio8-TTS-Preview-0.6B-ONNX-INT4)
-- [Kokoro 82M](https://huggingface.co/hexgrad/Kokoro-82M)
+- [Audio8 TTS Preview 0.6B MLX BF16](https://huggingface.co/mlx-community/Audio8-TTS-Preview-0.6b-bf16)
+- [Kokoro 82M MLX BF16](https://huggingface.co/mlx-community/Kokoro-82M-bf16)
