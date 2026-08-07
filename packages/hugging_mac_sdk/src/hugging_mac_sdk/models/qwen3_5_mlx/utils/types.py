@@ -1,9 +1,9 @@
-"""Private runtime result types."""
+"""Internal Qwen3.5 generation values."""
 
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GenerationOutput:
     text: str
     prompt_tokens: int | None = None

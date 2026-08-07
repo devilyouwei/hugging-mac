@@ -1,4 +1,4 @@
-"""Resource management for Qwen3.5 4B OptiQ 4-bit."""
+"""Variant-aware resource management for Qwen3.5 MLX."""
 
 from __future__ import annotations
 
@@ -23,30 +23,42 @@ from hugging_mac_sdk.schemas.resources import (
 )
 
 from .config import (
-    QWEN3_5_4B_OPTIQ_4BIT_MODEL_ID,
-    QWEN3_5_4B_OPTIQ_4BIT_REQUIRED_FILES,
-    QWEN3_5_4B_OPTIQ_4BIT_REVISION,
-    QWEN3_5_4B_OPTIQ_4BIT_VARIANT,
-    Qwen35OptiQMlxInstanceConfig,
+    QWEN3_5_MLX_MODEL_ID,
+    QWEN3_5_MLX_REQUIRED_FILES,
+    QWEN3_5_MLX_VARIANTS,
+    Qwen35MlxInstanceConfig,
 )
 
 
-class Qwen35OptiQMlxResourceResolver:
+class Qwen35MlxResourceResolver:
     def __init__(
         self,
         source: HuggingFaceSource,
-        config: Qwen35OptiQMlxInstanceConfig,
+        config: Qwen35MlxInstanceConfig,
         *,
         downloader: ResourceDownloader | None = None,
     ) -> None:
-        self._source = source
-        self._config = config
+        self._source, self._config = source, config
         self._downloader = downloader or ResourceDownloader(timeout=3600)
 
+    @property
+    def path(self) -> Path:
+        return (
+            self._config.source_path
+            or self._config.model_home
+            / "mlx-community"
+            / "qwen3.5-mlx"
+            / self._config.variant
+            / self._source.revision
+            / "mlx"
+            / "model"
+        )
+
     async def resolve_source(self) -> ResolvedResource:
-        path = self.path
-        self._validate(path)
-        return ResolvedResource(path=path, source=self._source, size_bytes=directory_size(path))
+        self._validate(self.path, self._config.variant)
+        return ResolvedResource(
+            path=self.path, source=self._source, size_bytes=directory_size(self.path)
+        )
 
     async def download_source(self, *, overwrite: bool = False) -> ResolvedResource:
         if self.path.exists() and not overwrite:
@@ -56,17 +68,14 @@ class Qwen35OptiQMlxResourceResolver:
         )
         return await self.resolve_source()
 
-    @property
-    def path(self) -> Path:
-        return self._config.source_path or self._model_root() / "mlx" / "model"
-
     def status(self) -> ModelResourceStatus:
         available = self.path.is_dir() and all(
-            (self.path / name).is_file() for name in QWEN3_5_4B_OPTIQ_4BIT_REQUIRED_FILES
+            (self.path / name).is_file()
+            for name in QWEN3_5_MLX_REQUIRED_FILES[self._config.variant]
         )
         return ModelResourceStatus(
-            model_id=QWEN3_5_4B_OPTIQ_4BIT_MODEL_ID,
-            revision=QWEN3_5_4B_OPTIQ_4BIT_REVISION,
+            model_id=QWEN3_5_MLX_MODEL_ID,
+            revision=self._source.revision,
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
@@ -82,37 +91,32 @@ class Qwen35OptiQMlxResourceResolver:
     async def delete(self, *, runtime: str | None = None) -> None:
         if runtime not in {None, "mlx"}:
             raise UnsupportedRuntimeError(f"Qwen3.5 does not support runtime {runtime}")
-        root = self._model_root().expanduser().resolve(strict=False)
-        target = (root if runtime is None else self.path).expanduser().resolve(strict=False)
-        if target != root and not target.is_relative_to(root):
-            raise ResourceIntegrityError(
-                "Refusing to delete Qwen3.5 resources outside the model directory"
-            )
-        await asyncio.to_thread(shutil.rmtree, target, True)
-
-    def _model_root(self) -> Path:
-        return (
-            self._config.model_home
-            / "mlx-community"
-            / "qwen3.5-4b-optiq-4bit"
-            / self._source.revision
-            / self._config.variant
+        target = self.path.expanduser().resolve(strict=False)
+        root = (
+            (self._config.model_home / "mlx-community" / "qwen3.5-mlx" / self._config.variant)
+            .expanduser()
+            .resolve(strict=False)
         )
+        if not target.is_relative_to(root):
+            raise ResourceIntegrityError(
+                "Refusing to delete Qwen3.5 resources outside the variant directory"
+            )
+        await asyncio.to_thread(shutil.rmtree, target if runtime else root, True)
 
     @staticmethod
-    def _validate(path: Path) -> None:
+    def _validate(path: Path, variant: str) -> None:
         missing = [
-            name for name in QWEN3_5_4B_OPTIQ_4BIT_REQUIRED_FILES if not (path / name).is_file()
+            name for name in QWEN3_5_MLX_REQUIRED_FILES[variant] if not (path / name).is_file()
         ]
         if missing:
             raise ResourceNotFoundError(
-                "Qwen3.5 OptiQ MLX snapshot is incomplete", details={"missing": missing}
+                "Qwen3.5 MLX snapshot is incomplete", details={"missing": missing}
             )
 
 
-class Qwen35OptiQMlxResourceProvider:
-    def __init__(self, source: HuggingFaceSource) -> None:
-        self._source = source
+class Qwen35MlxResourceProvider:
+    def __init__(self, sources: Mapping[str, HuggingFaceSource]) -> None:
+        self._sources = dict(sources)
 
     async def status(
         self, variant: str, options: Mapping[str, object] | None = None
@@ -134,7 +138,7 @@ class Qwen35OptiQMlxResourceProvider:
         *,
         overwrite: bool = False,
     ) -> ModelResourceStatus:
-        del options, overwrite
+        del variant, options, overwrite
         raise UnsupportedRuntimeError(f"Qwen3.5 conversion to {target_format} is not implemented")
 
     async def delete(
@@ -150,14 +154,13 @@ class Qwen35OptiQMlxResourceProvider:
 
     def _resolver(
         self, variant: str, options: Mapping[str, object] | None
-    ) -> Qwen35OptiQMlxResourceResolver:
-        if variant != QWEN3_5_4B_OPTIQ_4BIT_VARIANT:
+    ) -> Qwen35MlxResourceResolver:
+        if variant not in QWEN3_5_MLX_VARIANTS:
             raise ResourceNotFoundError(f"Qwen3.5 variant is not registered: {variant}")
         normalized = dict(options or {})
-        option_variant = normalized.get("variant")
-        if option_variant not in {None, variant}:
+        if normalized.get("variant") not in {None, variant}:
             raise ResourceIntegrityError("Conflicting Qwen3.5 variant values were provided")
-        return Qwen35OptiQMlxResourceResolver(
-            self._source,
-            Qwen35OptiQMlxInstanceConfig.model_validate(normalized | {"variant": variant}),
+        return Qwen35MlxResourceResolver(
+            self._sources[variant],
+            Qwen35MlxInstanceConfig.model_validate(normalized | {"variant": variant}),
         )

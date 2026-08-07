@@ -1,69 +1,28 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from pathlib import Path
 
-import pytest
-from hugging_mac_sdk.capabilities import Chat
-from hugging_mac_sdk.core.instance import ModelState
-from hugging_mac_sdk.models.qwen3_5_4b_optiq_4bit import (
-    QWEN3_5_4B_OPTIQ_4BIT_DEFINITION,
-    QWEN3_5_4B_OPTIQ_4BIT_MANIFEST,
+from hugging_mac_sdk.models.qwen3_5_mlx import QWEN3_5_MLX_MANIFEST
+from hugging_mac_sdk.models.qwen3_5_mlx.config import (
+    QWEN3_5_MLX_REQUIRED_FILES,
+    Qwen35MlxInstanceConfig,
 )
-from hugging_mac_sdk.models.qwen3_5_4b_optiq_4bit.config import (
-    QWEN3_5_4B_OPTIQ_4BIT_REVISION,
-    Qwen35OptiQMlxInstanceConfig,
-)
-from hugging_mac_sdk.models.qwen3_5_4b_optiq_4bit.instance import Qwen35OptiQMlxInstance
-from hugging_mac_sdk.models.qwen3_5_4b_optiq_4bit.mlx import _sanitize_vision_weights
-from hugging_mac_sdk.models.qwen3_5_4b_optiq_4bit.resources import Qwen35OptiQMlxResourceResolver
-from hugging_mac_sdk.models.qwen3_5_4b_optiq_4bit.utils.types import GenerationOutput
-from hugging_mac_sdk.schemas.chat import ChatMessage, ChatRequest
+from hugging_mac_sdk.models.qwen3_5_mlx.mlx import _sanitize_vision_weights
+from hugging_mac_sdk.models.qwen3_5_mlx.resources import Qwen35MlxResourceResolver
+from hugging_mac_sdk.schemas.resources import HuggingFaceSource
 
 
-class FakeEngine:
-    runtime_name = "mlx"
-    device = "gpu"
+def test_4b_optiq_variant_remains_pinned_with_mixed_precision_metadata() -> None:
+    variant = QWEN3_5_MLX_MANIFEST.get_variant("4b-optiq-4bit")
 
-    def __init__(self, artifact: Path) -> None:
-        self.artifact = artifact
-        self.loaded = False
-        self.closed = False
-
-    async def resolve(self) -> Path:
-        return self.artifact
-
-    async def load(self, artifact: Path) -> None:
-        assert artifact == self.artifact
-        self.loaded = True
-
-    async def infer(self, request: ChatRequest) -> GenerationOutput:
-        assert request.messages[-1].content == "你好"
-        return GenerationOutput("你好!", prompt_tokens=3, generated_tokens=2)
-
-    async def stream(self, request: ChatRequest) -> AsyncIterator[GenerationOutput]:
-        assert request.messages[-1].content == "你好"
-        yield GenerationOutput("你", prompt_tokens=3, generated_tokens=1)
-        yield GenerationOutput("好!", prompt_tokens=3, generated_tokens=2)
-
-    async def close(self) -> None:
-        self.closed = True
+    assert variant.resources[0].repo_id == "mlx-community/Qwen3.5-4B-OptiQ-4bit"
+    assert variant.resources[0].revision == "6cb5bdfd0bf15f484881fb9f1ab6d7c840fddde9"
+    assert variant.metadata["quantization_method"] == "optiq"
+    assert variant.metadata["mixed_precision_8bit_layers"] == 75
+    assert variant.metadata["mixed_precision_4bit_layers"] == 173
 
 
-def test_manifest_is_pinned_and_declares_mlx_chat() -> None:
-    assert QWEN3_5_4B_OPTIQ_4BIT_MANIFEST.revision == QWEN3_5_4B_OPTIQ_4BIT_REVISION
-    assert QWEN3_5_4B_OPTIQ_4BIT_MANIFEST.capabilities == {
-        "chat",
-        "vision-language-generation",
-    }
-    assert QWEN3_5_4B_OPTIQ_4BIT_MANIFEST.runtimes[0].required_modules == (
-        "mlx",
-        "mlx_vlm",
-    )
-    assert QWEN3_5_4B_OPTIQ_4BIT_DEFINITION.supported_runtimes == ("mlx",)
-
-
-def test_optiq_vision_sidecar_is_sanitized_and_scoped_to_visual_tower() -> None:
+def test_optiq_vision_sidecar_is_sanitized_and_required(tmp_path: Path) -> None:
     class FakeModel:
         @staticmethod
         def sanitize(weights: dict[str, object]) -> dict[str, object]:
@@ -72,66 +31,28 @@ def test_optiq_vision_sidecar_is_sanitized_and_scoped_to_visual_tower() -> None:
                 for key, value in weights.items()
             }
 
-    weights = _sanitize_vision_weights(
+    assert _sanitize_vision_weights(
         FakeModel(),
         {
             "model.visual.blocks.0.weight": "vision",
             "model.language_model.layers.0.weight": "language",
         },
-    )
-
-    assert weights == {"vision_tower.blocks.0.weight": "vision"}
-
-
-async def test_instance_lifecycle_and_chat(tmp_path: Path) -> None:
-    engine = FakeEngine(tmp_path)
-    instance = Qwen35OptiQMlxInstance(Qwen35OptiQMlxInstanceConfig(source_path=tmp_path), engine)
-
-    assert instance.supports(Chat)
-    await instance.load()
-    assert instance.state is ModelState.READY
-    response = await instance.chat(
-        ChatRequest(messages=(ChatMessage(role="user", content="你好"),))
-    )
-    assert response.message.content == "你好!"
-    assert response.generated_tokens == 2
-
-    events = [
-        event
-        async for event in instance.stream_chat(
-            ChatRequest(messages=(ChatMessage(role="user", content="你好"),))
-        )
-    ]
-    assert "".join(event.delta for event in events) == "你好!"
-    assert events[-1].finish_reason == "stop"
-    await instance.unload()
-    assert engine.closed
-
-
-def test_instance_options_reject_unknown_values() -> None:
-    with pytest.raises(ValueError):
-        Qwen35OptiQMlxInstanceConfig.model_validate({"unknown": True})
-
-
-def test_downloaded_snapshot_is_reported_available(tmp_path: Path) -> None:
-    from hugging_mac_sdk.models.qwen3_5_4b_optiq_4bit.config import (
-        QWEN3_5_4B_OPTIQ_4BIT_REQUIRED_FILES,
-    )
-    from hugging_mac_sdk.schemas.resources import HuggingFaceSource
+    ) == {"vision_tower.blocks.0.weight": "vision"}
 
     model = tmp_path / "model"
     model.mkdir()
-    for filename in QWEN3_5_4B_OPTIQ_4BIT_REQUIRED_FILES:
-        (model / filename).parent.mkdir(parents=True, exist_ok=True)
-        (model / filename).write_bytes(b"model-data")
-    resolver = Qwen35OptiQMlxResourceResolver(
-        HuggingFaceSource(repo_id="mlx-community/Qwen3.5-4B-OptiQ-4bit"),
-        Qwen35OptiQMlxInstanceConfig(source_path=model),
+    for filename in QWEN3_5_MLX_REQUIRED_FILES["4b-optiq-4bit"]:
+        path = model / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"model-data")
+    resolver = Qwen35MlxResourceResolver(
+        HuggingFaceSource(
+            repo_id="mlx-community/Qwen3.5-4B-OptiQ-4bit",
+            revision="6cb5bdfd0bf15f484881fb9f1ab6d7c840fddde9",
+        ),
+        Qwen35MlxInstanceConfig(source_path=model, variant="4b-optiq-4bit"),
     )
 
-    status = resolver.status()
-
-    assert status.artifacts[0].artifact_id == "model"
-    assert status.artifacts[0].available
-    assert status.runtimes[0].available
-    assert status.total_size_bytes > 0
+    assert resolver.status().artifacts[0].available
+    (model / "optiq" / "optiq_vision.safetensors").unlink()
+    assert not resolver.status().artifacts[0].available

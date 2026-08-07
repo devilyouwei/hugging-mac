@@ -1,4 +1,4 @@
-"""Runtime-independent Qwen3.5 chat instance."""
+"""Runtime-independent Qwen3.5 MLX chat instance."""
 
 from __future__ import annotations
 
@@ -19,11 +19,7 @@ from hugging_mac_sdk.schemas.chat import (
     ChatTimings,
 )
 
-from .config import (
-    QWEN3_5_4B_OPTIQ_4BIT_MODEL_ID,
-    QWEN3_5_4B_OPTIQ_4BIT_REVISION,
-    Qwen35OptiQMlxInstanceConfig,
-)
+from .config import QWEN3_5_MLX_MODEL_ID, Qwen35MlxInstanceConfig
 from .utils.types import GenerationOutput
 
 
@@ -32,7 +28,6 @@ class Qwen35Engine(Protocol):
 
     @property
     def device(self) -> str: ...
-
     async def resolve(self) -> Path: ...
     async def load(self, artifact: Path) -> None: ...
     async def infer(self, request: ChatRequest) -> GenerationOutput: ...
@@ -40,21 +35,17 @@ class Qwen35Engine(Protocol):
     async def close(self) -> None: ...
 
 
-class Qwen35OptiQMlxInstance(BaseModelInstance):
-    def __init__(self, config: Qwen35OptiQMlxInstanceConfig, engine: Qwen35Engine) -> None:
+class Qwen35MlxInstance(BaseModelInstance):
+    def __init__(self, config: Qwen35MlxInstanceConfig, engine: Qwen35Engine) -> None:
         super().__init__(
-            model_id=QWEN3_5_4B_OPTIQ_4BIT_MODEL_ID,
-            revision=QWEN3_5_4B_OPTIQ_4BIT_REVISION,
+            model_id=QWEN3_5_MLX_MODEL_ID,
+            revision="variant-pinned",
             variant=config.variant,
             runtime=config.runtime,
             device=config.device,
         )
-        self._engine = engine
-        self._inference_lock = asyncio.Lock()
-        self.register_capability(
-            Chat,  # type: ignore[type-abstract]
-            cast(Chat, self),
-        )
+        self._engine, self._inference_lock = engine, asyncio.Lock()
+        self.register_capability(Chat, cast(Chat, self))  # type: ignore[type-abstract]
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         if self.state is not ModelState.READY:
@@ -69,16 +60,15 @@ class Qwen35OptiQMlxInstance(BaseModelInstance):
                 raise InferenceError(
                     "Qwen3.5 chat failed", details={"reason": str(error)[:500]}, cause=error
                 ) from error
-            inference_ms = (perf_counter() - started) * 1000
         return ChatResponse(
-            model_id=QWEN3_5_4B_OPTIQ_4BIT_MODEL_ID,
+            model_id=QWEN3_5_MLX_MODEL_ID,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,
             message=ChatMessage(role="assistant", content=output.text),
             prompt_tokens=output.prompt_tokens,
             generated_tokens=output.generated_tokens,
-            timings=ChatTimings(inference_ms=inference_ms),
+            timings=ChatTimings(inference_ms=(perf_counter() - started) * 1000),
         )
 
     async def stream_chat(self, request: ChatRequest) -> AsyncIterator[ChatStreamEvent]:
@@ -89,10 +79,7 @@ class Qwen35OptiQMlxInstance(BaseModelInstance):
             try:
                 async for output in self._engine.stream(request):
                     generated_tokens = output.generated_tokens
-                    yield ChatStreamEvent(
-                        delta=output.text,
-                        generated_tokens=generated_tokens,
-                    )
+                    yield ChatStreamEvent(delta=output.text, generated_tokens=generated_tokens)
             except asyncio.CancelledError:
                 raise
             except Exception as error:
