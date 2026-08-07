@@ -11,15 +11,9 @@ CHAT_MANIFEST = AppManifest(
     api_prefix="/api/v1/apps/chat",
     required_models=(
         AppModelRequirement(
-            model_id="mlx-community/qwen3.5-9b-mlx-4bit",
+            model_id="mlx-community/qwen3.5-mlx",
             capabilities=("chat", "vision-language-generation"),
             preferred_runtime="mlx",
-        ),
-        AppModelRequirement(
-            model_id="mlx-community/qwen3.5-4b-optiq-4bit",
-            capabilities=("chat", "vision-language-generation"),
-            preferred_runtime="mlx",
-            required=False,
         ),
     ),
 )

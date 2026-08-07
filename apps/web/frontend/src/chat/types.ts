@@ -16,6 +16,7 @@ export interface ChatResource {
 }
 
 export interface ChatModel {
+  profile_id: string
   model_id: string
   display_name: string
   short_name: string

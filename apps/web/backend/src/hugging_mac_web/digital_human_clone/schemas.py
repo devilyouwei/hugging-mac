@@ -19,6 +19,8 @@ class SetupView(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     models: tuple[ModelStateView, ...]
+    llm_variants: tuple["LlmVariantView", ...]
+    selected_llm_variant: str
 
     @property
     def ready(self) -> bool:
@@ -31,6 +33,14 @@ class LoadedModelsView(BaseModel):
     asr_instance_id: str
     llm_instance_id: str
     tts_instance_id: str
+
+
+class LlmVariantView(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    display_name: str
+    description: str
 
 
 class TranscriptView(BaseModel):

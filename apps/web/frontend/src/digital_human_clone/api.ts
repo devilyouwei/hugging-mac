@@ -11,12 +11,18 @@ import type {
 const PREFIX = "/api/v1/games/digital-human"
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ""
 
-export async function fetchSetup(): Promise<Setup> {
-  return (await request<Setup>(`${PREFIX}/setup`)).data
+export async function fetchSetup(llmVariant?: string): Promise<Setup> {
+  const query = llmVariant ? `?llm_variant=${encodeURIComponent(llmVariant)}` : ""
+  return (await request<Setup>(`${PREFIX}/setup${query}`)).data
 }
 
-export async function prepareModels(): Promise<LoadedModels> {
-  return (await request<LoadedModels>(`${PREFIX}/setup/prepare`, { method: "POST" })).data
+export async function prepareModels(llmVariant: string): Promise<LoadedModels> {
+  return (
+    await request<LoadedModels>(
+      `${PREFIX}/setup/prepare?llm_variant=${encodeURIComponent(llmVariant)}`,
+      { method: "POST" },
+    )
+  ).data
 }
 
 export async function transcribe(

@@ -10,8 +10,7 @@ from hugging_mac_sdk.models.audio8_asr import register_audio8_asr
 from hugging_mac_sdk.models.audio8_tts import register_audio8_tts
 from hugging_mac_sdk.models.audio8_tts_mlx_bf16 import register_audio8_tts_mlx_bf16
 from hugging_mac_sdk.models.kokoro_82m import register_kokoro_82m
-from hugging_mac_sdk.models.qwen3_5_4b_optiq_4bit import register_qwen3_5_4b_optiq_4bit
-from hugging_mac_sdk.models.qwen3_5_9b_mlx_4bit import register_qwen3_5_9b_mlx_4bit
+from hugging_mac_sdk.models.qwen3_5_mlx import register_qwen3_5_mlx
 from hugging_mac_sdk.models.qwen3_tts_0_6b_base_4bit import (
     register_qwen3_tts_0_6b_base_4bit,
 )
@@ -51,8 +50,7 @@ def create_context(settings: WebSettings) -> PlatformContext:
     register_audio8_tts_mlx_bf16(models.registry)
     register_kokoro_82m(models.registry)
     register_qwen3_tts_0_6b_base_4bit(models.registry)
-    register_qwen3_5_4b_optiq_4bit(models.registry)
-    register_qwen3_5_9b_mlx_4bit(models.registry)
+    register_qwen3_5_mlx(models.registry)
     register_sensevoice_small(models.registry)
     register_yolov8(models.registry, converters)
     register_yolov8_pose(models.registry, converters)

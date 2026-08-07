@@ -32,7 +32,7 @@ let nextId = 0
 
 const ready = computed(() => model.value?.state === "ready")
 const selectedProfile = computed(() =>
-  models.value.find((item) => item.model_id === selectedModelId.value),
+  models.value.find((item) => item.profile_id === selectedModelId.value),
 )
 const resourcesAvailable = computed(() => {
   const profile = selectedProfile.value
@@ -50,7 +50,9 @@ const canSend = computed(
 async function refreshModel() {
   try {
     models.value = await fetchChatModels()
-    if (!selectedModelId.value) selectedModelId.value = models.value[0]?.model_id ?? ""
+    if (!models.value.some((item) => item.profile_id === selectedModelId.value)) {
+      selectedModelId.value = models.value[0]?.profile_id ?? ""
+    }
     model.value = selectedModelId.value
       ? await fetchLoadedChatModel(selectedModelId.value)
       : null
@@ -269,7 +271,7 @@ onBeforeUnmount(() => {
       <label class="chat-model-select">
         MODEL
         <select v-model="selectedModelId" :disabled="sending || loadingModel" @change="selectModel">
-          <option v-for="item in models" :key="item.model_id" :value="item.model_id">
+          <option v-for="item in models" :key="item.profile_id" :value="item.profile_id">
             {{ item.display_name }}
           </option>
         </select>

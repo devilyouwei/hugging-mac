@@ -20,6 +20,7 @@ from hugging_mac_web.digital_human_clone.config import DigitalHumanSettings
 from hugging_mac_web.digital_human_clone.schemas import (
     ConversationMessage,
     LoadedModelsView,
+    LlmVariantView,
     ModelStateView,
     SetupView,
     TranscriptView,
@@ -27,12 +28,12 @@ from hugging_mac_web.digital_human_clone.schemas import (
 from hugging_mac_web.text_to_speech.audio import float32le_to_wav
 
 ASR_MODEL_ID = "audio8/audio8-asr-0.1b"
-LLM_MODEL_ID = "mlx-community/qwen3.5-4b-optiq-4bit"
+LLM_MODEL_ID = "mlx-community/qwen3.5-mlx"
 TTS_MODEL_ID = "mlx-community/kokoro-82m-bf16"
 
 _MODEL_SPECS = (
     ("asr", ASR_MODEL_ID, "base", "coreml", "coreml"),
-    ("llm", LLM_MODEL_ID, "4bit", "mlx", "model"),
+    ("llm", LLM_MODEL_ID, "4b-optiq-4bit", "mlx", "model"),
     ("tts", TTS_MODEL_ID, "bf16", "mlx", "model"),
 )
 _UNSPEAKABLE = re.compile(r"[`*_#>|~\[\]{}]+")
@@ -43,10 +44,11 @@ class DigitalHumanService:
         self._context = context
         self._settings = settings
 
-    async def setup(self) -> SetupView:
+    async def setup(self, llm_variant: str | None = None) -> SetupView:
+        llm_variant = self._llm_variant(llm_variant)
         snapshots = await self._context.models.instances.snapshots()
         models: list[ModelStateView] = []
-        for role, model_id, variant, runtime, required_artifact in _MODEL_SPECS:
+        for role, model_id, variant, runtime, required_artifact in self._model_specs(llm_variant):
             status = await self._context.models.resources.status(
                 model_id,
                 variant=variant,
@@ -76,10 +78,15 @@ class DigitalHumanService:
                     ready_instance_id=ready,
                 )
             )
-        return SetupView(models=tuple(models))
+        return SetupView(
+            models=tuple(models),
+            llm_variants=self._llm_variants(),
+            selected_llm_variant=llm_variant,
+        )
 
-    async def prepare(self) -> LoadedModelsView:
-        await self._prepare_resources()
+    async def prepare(self, llm_variant: str | None = None) -> LoadedModelsView:
+        llm_variant = self._llm_variant(llm_variant)
+        await self._prepare_resources(llm_variant)
 
         async def load(role: str, model_id: str, variant: str, runtime: str) -> str:
             handle = await self._context.models.load(
@@ -97,7 +104,7 @@ class DigitalHumanService:
         asr, llm, tts = await asyncio.gather(
             *(
                 load(role, model_id, variant, runtime)
-                for role, model_id, variant, runtime, _ in _MODEL_SPECS
+                for role, model_id, variant, runtime, _ in self._model_specs(llm_variant)
             )
         )
         return LoadedModelsView(
@@ -187,8 +194,8 @@ class DigitalHumanService:
         )
         return float32le_to_wav(response.audio, response.sample_rate)
 
-    async def _prepare_resources(self) -> None:
-        for role, model_id, variant, _, required_artifact in _MODEL_SPECS:
+    async def _prepare_resources(self, llm_variant: str) -> None:
+        for role, model_id, variant, _, required_artifact in self._model_specs(llm_variant):
             options = self._options(role)
             status = await self._context.models.resources.status(
                 model_id, variant=variant, options=options
@@ -225,6 +232,32 @@ class DigitalHumanService:
     def _options(self, role: str) -> dict[str, object]:
         options: dict[str, object] = {"model_home": self._context.settings.model_home}
         return options
+
+    @staticmethod
+    def _model_specs(llm_variant: str):
+        return (
+            ("asr", ASR_MODEL_ID, "base", "coreml", "coreml"),
+            ("llm", LLM_MODEL_ID, llm_variant, "mlx", "model"),
+            ("tts", TTS_MODEL_ID, "bf16", "mlx", "model"),
+        )
+
+    def _llm_variants(self) -> tuple[LlmVariantView, ...]:
+        manifest = self._context.models.registry.get(LLM_MODEL_ID).manifest
+        return tuple(
+            LlmVariantView(
+                name=variant.name,
+                display_name=variant.display_name,
+                description=variant.description,
+            )
+            for variant in manifest.variants
+        )
+
+    def _llm_variant(self, value: str | None) -> str:
+        variants = self._llm_variants()
+        selected = value or "4b-optiq-4bit"
+        if selected not in {variant.name for variant in variants}:
+            raise ResourceNotFoundError("The selected Qwen3.5 variant is not registered")
+        return selected
 
 
 def _clean_for_speech(text: str) -> str:

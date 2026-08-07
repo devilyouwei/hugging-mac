@@ -17,7 +17,7 @@ DIGITAL_HUMAN_MANIFEST = AppManifest(
             preferred_runtime="coreml",
         ),
         AppModelRequirement(
-            model_id="mlx-community/qwen3.5-4b-optiq-4bit",
+            model_id="mlx-community/qwen3.5-mlx",
             capabilities=("chat", "vision-language-generation"),
             preferred_runtime="mlx",
         ),

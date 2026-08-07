@@ -84,6 +84,8 @@ const MAX_SPEECH_SECONDS = 20
 const MAX_HISTORY_MESSAGES = 15
 
 const models = ref<ModelState[]>([])
+const llmVariants = ref<Array<{ name: string; display_name: string; description: string }>>([])
+const llmVariant = ref("")
 const loaded = ref<LoadedModels | null>(null)
 const preparing = ref(false)
 const voiceId = ref("af_heart")
@@ -143,8 +145,10 @@ function voiceLabel(voice: string): string {
 
 async function refreshSetup() {
   try {
-    const setup = await fetchSetup()
+    const setup = await fetchSetup(llmVariant.value || undefined)
     models.value = setup.models
+    llmVariants.value = setup.llm_variants
+    llmVariant.value = setup.selected_llm_variant
     const byRole = Object.fromEntries(setup.models.map((model) => [model.role, model]))
     if (byRole.asr?.ready_instance_id && byRole.llm?.ready_instance_id && byRole.tts?.ready_instance_id) {
       loaded.value = {
@@ -166,7 +170,7 @@ async function prepare() {
     ? "Loading all three models"
     : "Preparing model resources. The first run may take a while"
   try {
-    loaded.value = await prepareModels()
+    loaded.value = await prepareModels(llmVariant.value)
     phase.value = "Models ready. Choose a voice and start"
     await refreshSetup()
   } catch (caught) {
@@ -602,7 +606,19 @@ onBeforeUnmount(() => {
           <div class="model-stack">
             <div v-for="model in models" :key="model.role" class="mini-model">
               <b>{{ model.role.toUpperCase() }}</b>
-              <span>{{ model.model_id.split('/').at(-1) }}</span>
+              <select
+                v-if="model.role === 'llm'"
+                v-model="llmVariant"
+                class="mini-model-select"
+                aria-label="Language model variant"
+                :disabled="preparing || modelsReady"
+                @change="refreshSetup"
+              >
+                <option v-for="item in llmVariants" :key="item.name" :value="item.name">
+                  {{ item.display_name }}
+                </option>
+              </select>
+              <span v-else>{{ model.model_id.split('/').at(-1) }}</span>
               <i :class="{ ready: model.ready_instance_id }">{{ model.ready_instance_id ? "LOADED" : model.resources_ready ? "LOCAL" : "NEEDED" }}</i>
             </div>
           </div>
@@ -681,6 +697,7 @@ onBeforeUnmount(() => {
 .model-stack { display: grid; gap: .45rem; margin-bottom: 1rem; }
 .mini-model { align-items: center; background: var(--paper-deep); display: grid; font: .65rem var(--font-mono); gap: .6rem; grid-template-columns: 2.8rem minmax(0, 1fr) auto; padding: .65rem; }
 .mini-model span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-model-select { background: transparent; border: 0; color: inherit; font: inherit; min-width: 0; padding: 0; width: 100%; }
 .mini-model i { color: var(--orange); font-size: .57rem; font-style: normal; }
 .mini-model i.ready { color: #548500; }
 .action-button, .start-button, .stop-button { border: 0; cursor: pointer; font-weight: 800; padding: .9rem 1rem; width: 100%; }

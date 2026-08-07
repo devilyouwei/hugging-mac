@@ -8,6 +8,8 @@ export interface ModelState {
 
 export interface Setup {
   models: ModelState[]
+  llm_variants: Array<{ name: string; display_name: string; description: string }>
+  selected_llm_variant: string
 }
 
 export interface LoadedModels {

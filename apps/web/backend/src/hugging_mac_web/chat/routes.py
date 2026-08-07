@@ -66,7 +66,7 @@ def create_router(settings: ChatSettings) -> APIRouter:
         context: ContextDependency,
         model_id: str | None = Query(default=None),
     ) -> ApiResponse[LoadedChatModelView | None]:
-        data = await ChatService(context, settings).ready_model(model_id or settings.model_id)
+        data = await ChatService(context, settings).ready_model(model_id or settings.model_variant)
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.post("/model/load", response_model=ApiResponse[LoadedChatModelView])
@@ -75,7 +75,7 @@ def create_router(settings: ChatSettings) -> APIRouter:
         request: LoadChatModelRequest | None = None,
     ) -> ApiResponse[LoadedChatModelView]:
         data = await ChatService(context, settings).load_model(
-            request.model_id if request is not None else settings.model_id
+            request.model_id if request is not None else settings.model_variant
         )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 

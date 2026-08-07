@@ -48,13 +48,19 @@ def create_router(settings: DigitalHumanSettings) -> APIRouter:
     )
 
     @router.get("/setup", response_model=ApiResponse[SetupView])
-    async def setup(context: ContextDependency) -> ApiResponse[SetupView]:
-        data = await DigitalHumanService(context, settings).setup()
+    async def setup(
+        context: ContextDependency,
+        llm_variant: str | None = None,
+    ) -> ApiResponse[SetupView]:
+        data = await DigitalHumanService(context, settings).setup(llm_variant)
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.post("/setup/prepare", response_model=ApiResponse[LoadedModelsView])
-    async def prepare(context: ContextDependency) -> ApiResponse[LoadedModelsView]:
-        data = await DigitalHumanService(context, settings).prepare()
+    async def prepare(
+        context: ContextDependency,
+        llm_variant: str | None = None,
+    ) -> ApiResponse[LoadedModelsView]:
+        data = await DigitalHumanService(context, settings).prepare(llm_variant)
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.post("/transcribe", response_model=ApiResponse[TranscriptView])

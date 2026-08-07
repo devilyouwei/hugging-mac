@@ -57,6 +57,7 @@ class ChatResourceView(BaseModel):
 class ChatModelView(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    profile_id: str
     model_id: str
     display_name: str
     short_name: str

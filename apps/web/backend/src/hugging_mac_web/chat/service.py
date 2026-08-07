@@ -13,7 +13,7 @@ from hugging_mac_sdk.core.instance import ModelState
 from hugging_mac_sdk.errors import ResourceNotFoundError, UnsupportedCapabilityError
 from hugging_mac_sdk.schemas.chat import ChatImage, ChatMessage, ChatRequest
 
-from hugging_mac_web.chat.config import CHAT_MODEL_PROFILES, ChatModelProfile, ChatSettings
+from hugging_mac_web.chat.config import CHAT_MODEL_ID, ChatModelProfile, ChatSettings
 from hugging_mac_web.chat.schemas import (
     ChatHistoryMessage,
     ChatModelView,
@@ -32,7 +32,9 @@ class ChatService:
 
     async def list_models(self) -> tuple[ChatModelView, ...]:
         return tuple(
-            await asyncio.gather(*(self.model_view(model_id) for model_id in CHAT_MODEL_PROFILES))
+            await asyncio.gather(
+                *(self.model_view(profile.profile_id) for profile in self._profiles())
+            )
         )
 
     async def model_view(self, model_id: str) -> ChatModelView:
@@ -124,7 +126,7 @@ class ChatService:
     ) -> ChatReplyView:
         instance = await self._context.models.instances.require(instance_id)
         info = instance.info()
-        profile = self._profile(info.model_id or "")
+        profile = self._profile_for_instance(info.model_id, info.variant)
         if info.state is not ModelState.READY:
             raise ResourceNotFoundError(
                 "The selected chat model instance is not ready",
@@ -176,7 +178,7 @@ class ChatService:
     ) -> AsyncIterator[ChatStreamEventView]:
         instance = await self._context.models.instances.require(instance_id)
         info = instance.info()
-        profile = self._profile(info.model_id or "")
+        profile = self._profile_for_instance(info.model_id, info.variant)
         if info.state is not ModelState.READY:
             raise ResourceNotFoundError(
                 "The selected chat model instance is not ready",
@@ -219,10 +221,39 @@ class ChatService:
             )
 
     def _profile(self, model_id: str) -> ChatModelProfile:
-        try:
-            return CHAT_MODEL_PROFILES[model_id]
-        except KeyError as error:
-            raise ResourceNotFoundError(f"Chat model is not supported: {model_id}") from error
+        for profile in self._profiles():
+            if profile.profile_id == model_id:
+                return profile
+        raise ResourceNotFoundError(f"Chat model variant is not supported: {model_id}")
+
+    def _profile_for_instance(
+        self,
+        model_id: str | None,
+        variant: str | None,
+    ) -> ChatModelProfile:
+        for profile in self._profiles():
+            if profile.model_id == model_id and profile.variant == variant:
+                return profile
+        raise ResourceNotFoundError(f"Chat model is not supported: {model_id}/{variant}")
+
+    def _profiles(self) -> tuple[ChatModelProfile, ...]:
+        definition = self._context.models.registry.get(CHAT_MODEL_ID)
+        manifest = definition.manifest
+        return tuple(
+            ChatModelProfile(
+                profile_id=variant.name,
+                model_id=manifest.model_id,
+                display_name=variant.display_name,
+                short_name=variant.display_name,
+                description=variant.description or manifest.description,
+                variant=variant.name,
+                runtime=manifest.default_runtime or "mlx",
+                required_artifact_id="model",
+                disk_size_bytes=int(variant.metadata.get("disk_size_bytes", 0)),
+                supports_images="vision-language-generation" in manifest.capabilities,
+            )
+            for variant in manifest.variants
+        )
 
     def _model_options(self) -> dict[str, object]:
         return {"model_home": self._context.settings.model_home}
