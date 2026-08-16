@@ -3,7 +3,7 @@ manifest:
   model_id: qwen/qwen3-tts-12hz
   revision: 0d6bb6f
   display_name: Qwen3-TTS
-  description: Qwen3-TTS Base 的 MLX 4-bit 与预编译 Core ML 实现。
+  description: Qwen3-TTS Base 的 MLX 4-bit 与 aufklarer 预编译 Core ML 实现。
   tags: [audio, tts, voice-cloning, multilingual, qwen3-tts, mlx, coreml, 4bit]
   family: qwen3-tts
   capabilities: [speech-synthesis]
@@ -19,11 +19,11 @@ manifest:
       dtypes: [int8, float16, float32]
       platforms: [darwin]
       architectures: [arm64]
-      required_modules: [coremltools, numpy, transformers]
+      required_modules: [coremltools, numpy]
   variants:
     - name: 0.6b-base
-      display_name: Qwen3-TTS 0.6B Base MLX 4-bit
-      description: 0.6B Base 模型的 4-bit MLX 权重，包含 12.5 Hz speech tokenizer。
+      display_name: Qwen3-TTS 0.6B Base
+      description: 0.6B Base 的 MLX 4-bit 声音克隆与预编译 Core ML 默认音色实现。
       metadata:
         parameters_millions: 600
         sample_rate: 24000
@@ -39,14 +39,15 @@ manifest:
             - model.safetensors
             - model.safetensors.index.json
         - kind: huggingface
-          repo_id: FluidInference/qwen3-tts-coreml
-          revision: 7bb6c4e5c425ddecc0aa2339f125398623d2da36
+          repo_id: aufklarer/Qwen3-TTS-CoreML
+          revision: 66ca03b95a684d45e020b1d2d5c3ab34a48356f9
           allow_patterns:
             - "*.mlmodelc/**"
             - "*.npy"
+            - config.json
   default_variant: 0.6b-base
   license: Apache-2.0
-  source_url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
+  source_url: https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base
   default_runtime: mlx
 
 artifacts:
@@ -87,12 +88,13 @@ artifacts:
     variant: 0.6b-base
     runtime: coreml
     format: coreml
-    path: qwen/qwen3-tts-12hz/7bb6c4e5c425ddecc0aa2339f125398623d2da36/0.6b-base/coreml/model
+    path: qwen/qwen3-tts-12hz/66ca03b95a684d45e020b1d2d5c3ab34a48356f9/0.6b-base/coreml/model
     kind: directory
     source:
       kind: huggingface
-      repo_id: FluidInference/qwen3-tts-coreml
-      revision: 7bb6c4e5c425ddecc0aa2339f125398623d2da36
+      repo_id: aufklarer/Qwen3-TTS-CoreML
+      revision: 66ca03b95a684d45e020b1d2d5c3ab34a48356f9
       allow_patterns:
         - "*.mlmodelc/**"
         - "*.npy"
+        - config.json

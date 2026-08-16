@@ -8,7 +8,7 @@ import json
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -55,12 +55,21 @@ def create_router(settings: DigitalHumanSettings) -> APIRouter:
         data = await DigitalHumanService(context, settings).setup(llm_variant)
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
-    @router.post("/setup/prepare", response_model=ApiResponse[LoadedModelsView])
-    async def prepare(
+    @router.post("/setup/load", response_model=ApiResponse[LoadedModelsView])
+    async def load_models(
         context: ContextDependency,
         llm_variant: str | None = None,
     ) -> ApiResponse[LoadedModelsView]:
-        data = await DigitalHumanService(context, settings).prepare(llm_variant)
+        data = await DigitalHumanService(context, settings).load_models(llm_variant)
+        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
+
+    @router.post("/setup/models/{role}/load", response_model=ApiResponse[str])
+    async def load_model(
+        role: Literal["asr", "llm", "tts"],
+        context: ContextDependency,
+        llm_variant: str | None = None,
+    ) -> ApiResponse[str]:
+        data = await DigitalHumanService(context, settings).load_model(role, llm_variant)
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.post("/transcribe", response_model=ApiResponse[TranscriptView])
@@ -68,10 +77,17 @@ def create_router(settings: DigitalHumanSettings) -> APIRouter:
         context: ContextDependency,
         file: Annotated[UploadFile, File(description="One VAD utterance")],
         instance_id: Annotated[str, Form(min_length=1)],
+        vad_instance_id: Annotated[str | None, Form()] = None,
+        enhancement_instance_id: Annotated[str | None, Form()] = None,
     ) -> ApiResponse[TranscriptView]:
         _require_audio(file)
         audio = await read_upload_limited(file, settings.max_audio_bytes)
-        data = await DigitalHumanService(context, settings).transcribe(audio, instance_id)
+        data = await DigitalHumanService(context, settings).transcribe(
+            audio,
+            instance_id,
+            vad_instance_id=vad_instance_id,
+            enhancement_instance_id=enhancement_instance_id,
+        )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.post("/chat/stream", response_class=StreamingResponse)

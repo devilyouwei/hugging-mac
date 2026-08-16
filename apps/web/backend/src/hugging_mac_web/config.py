@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class WebSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="HUGGING_MAC_WEB_",
+        env_prefix="WEB_",
         env_file=".env",
         extra="ignore",
     )
@@ -21,7 +21,7 @@ class WebSettings(BaseSettings):
     port: int = Field(default=8000, ge=1, le=65535)
     log_level: str = "INFO"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
-    runtime_preference: str = "coreml,pytorch-mps"
+    runtime_preference: str = "coreml,mlx,mps,onnx"
     data_dir: Path = Field(default_factory=lambda: user_data_path("hugging-mac") / "web")
     cache_dir: Path = Field(default_factory=lambda: user_cache_path("hugging-mac") / "web")
     model_home: Path = Field(default_factory=lambda: user_cache_path("hugging-mac") / "models")

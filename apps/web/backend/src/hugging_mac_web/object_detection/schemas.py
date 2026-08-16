@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from hugging_mac_sdk.schemas.detection import DetectionResponse
+from hugging_mac_sdk.schemas.detection import (
+    DEFAULT_DETECTION_CONFIDENCE,
+    DEFAULT_DETECTION_IOU_THRESHOLD,
+    DEFAULT_MAX_DETECTIONS,
+    DetectionResponse,
+)
 from hugging_mac_sdk.schemas.resources import ModelResourceStatus
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,9 +25,9 @@ class DetectCommand(BaseModel):
 
     runtime: RuntimeChoice = RuntimeChoice.AUTO
     variant: str | None = None
-    confidence: float = Field(default=0.25, ge=0.0, le=1.0)
-    iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
-    max_detections: int = Field(default=100, ge=1, le=1000)
+    confidence: float = Field(default=DEFAULT_DETECTION_CONFIDENCE, ge=0.0, le=1.0)
+    iou_threshold: float = Field(default=DEFAULT_DETECTION_IOU_THRESHOLD, ge=0.0, le=1.0)
+    max_detections: int = Field(default=DEFAULT_MAX_DETECTIONS, ge=1, le=1000)
 
 
 class BoxView(BaseModel):

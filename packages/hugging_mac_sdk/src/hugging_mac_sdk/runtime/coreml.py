@@ -35,7 +35,7 @@ _COMPUTE_UNIT_ALIASES = {
 
 
 class CoreMLSession:
-    def __init__(self, model: Any, device: str) -> None:
+    def __init__(self, model: Any, device: str, *, retained_predictions: int = 8) -> None:
         self._model = model
         self._device = device
         get_spec = getattr(model, "get_spec", None)
@@ -48,7 +48,7 @@ class CoreMLSession:
         # storage. Retain a small history of both feature providers until Core
         # ML's internal asynchronous work has fully quiesced.
         self._retained_predictions: deque[tuple[dict[str, Any], Mapping[str, Any]]] = deque(
-            maxlen=8
+            maxlen=retained_predictions
         )
 
     @property
@@ -140,7 +140,10 @@ class CoreMLProvider(RuntimeBackend):
                 function_name=str(function_name) if function_name is not None else None,
             ),
         )
-        return CoreMLSession(model, requested)
+        retained_predictions = int(options.get("retained_predictions", 8))
+        if retained_predictions < 0 or retained_predictions > 8:
+            raise ValueError("retained_predictions must be between 0 and 8")
+        return CoreMLSession(model, requested, retained_predictions=retained_predictions)
 
 
 def _copy_outputs(outputs: Mapping[str, Any]) -> dict[str, Any]:

@@ -10,17 +10,26 @@ export interface Setup {
   models: ModelState[]
   llm_variants: Array<{ name: string; display_name: string; description: string }>
   selected_llm_variant: string
+  vad_instance_id: string | null
+  enhancement_instance_id: string | null
 }
 
 export interface LoadedModels {
   asr_instance_id: string
   llm_instance_id: string
   tts_instance_id: string
+  vad_instance_id: string | null
+  enhancement_instance_id: string | null
 }
 
 export interface Transcript {
   text: string
   inference_ms: number | null
+  source_duration_seconds: number | null
+  speech_duration_seconds: number | null
+  speech_segment_count: number
+  vad_inference_ms: number | null
+  enhancement_inference_ms: number | null
 }
 
 export interface ConversationMessage {

@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from hugging_mac_sdk import ReusePolicy
 from hugging_mac_sdk.capabilities import ObjectDetection
-from hugging_mac_sdk.schemas.conversion import ArtifactFormat
+from hugging_mac_sdk.models.yolov8.config import YOLOV8_MODEL_ID
 from hugging_mac_sdk.schemas.detection import DetectionRequest, ImageInput
 
 from hugging_mac_web.context import PlatformContext
-from hugging_mac_web.object_detection.config import ObjectDetectionSettings
 from hugging_mac_web.object_detection.schemas import (
     DetectCommand,
     DetectionResult,
@@ -19,24 +18,19 @@ from hugging_mac_web.object_detection.schemas import (
 
 
 class ObjectDetectionService:
-    def __init__(
-        self,
-        context: PlatformContext,
-        settings: ObjectDetectionSettings,
-    ) -> None:
+    def __init__(self, context: PlatformContext) -> None:
         self._context = context
-        self._settings = settings
 
     async def resource_status(self, *, variant: str | None = None) -> ResourceStatusView:
         selected_variant = self._resolve_variant(variant)
         status = await self._context.models.resources.status(
-            self._settings.model_id,
+            YOLOV8_MODEL_ID,
             variant=selected_variant,
             options=self._model_options,
         )
         catalog = await self._context.models.catalog.snapshot()
         model = next(
-            (item for item in catalog.models if item.model_id == self._settings.model_id),
+            (item for item in catalog.models if item.model_id == YOLOV8_MODEL_ID),
             None,
         )
         return ResourceStatusView.from_sdk(
@@ -52,37 +46,6 @@ class ObjectDetectionService:
                 for item in (model.variants if model is not None else ())
             ),
         )
-
-    async def download_source(
-        self,
-        *,
-        variant: str | None = None,
-        overwrite: bool = False,
-    ) -> ResourceStatusView:
-        selected_variant = self._resolve_variant(variant)
-        await self._context.models.resources.download_source(
-            self._settings.model_id,
-            variant=selected_variant,
-            options=self._model_options,
-            overwrite=overwrite,
-        )
-        return await self.resource_status(variant=selected_variant)
-
-    async def convert_coreml(
-        self,
-        *,
-        variant: str | None = None,
-        overwrite: bool = False,
-    ) -> ResourceStatusView:
-        selected_variant = self._resolve_variant(variant)
-        await self._context.models.resources.convert(
-            self._settings.model_id,
-            ArtifactFormat.COREML,
-            variant=selected_variant,
-            options=self._model_options,
-            overwrite=overwrite,
-        )
-        return await self.resource_status(variant=selected_variant)
 
     async def detect(
         self,
@@ -111,7 +74,7 @@ class ObjectDetectionService:
         runtime = None if command.runtime is RuntimeChoice.AUTO else command.runtime.value
         selected_variant = self._resolve_variant(command.variant)
         async with await self._context.models.acquire(
-            self._settings.model_id,
+            YOLOV8_MODEL_ID,
             variant=selected_variant,
             runtime=runtime,
             options=self._model_options,
@@ -135,9 +98,7 @@ class ObjectDetectionService:
         )
 
     def _resolve_variant(self, variant: str | None) -> str:
-        return self._context.models.registry.get(
-            self._settings.model_id
-        ).manifest.get_variant(variant or self._settings.model_variant).name
+        return self._context.models.registry.get(YOLOV8_MODEL_ID).manifest.get_variant(variant).name
 
     @property
     def _model_options(self) -> dict[str, object]:

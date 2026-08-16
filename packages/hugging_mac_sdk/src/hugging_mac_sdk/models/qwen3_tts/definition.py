@@ -1,4 +1,4 @@
-"""Qwen3-TTS 0.6B Base 4-bit definition and registration."""
+"""Qwen3-TTS 0.6B Base definition and registration."""
 
 from pathlib import Path
 

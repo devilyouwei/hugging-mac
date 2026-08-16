@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from http import HTTPStatus
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from hugging_mac_sdk.errors import (
+    DownloadError,
     HuggingMacSdkError,
     InferenceError,
     InsufficientResourceError,
@@ -20,7 +22,10 @@ from hugging_mac_sdk.errors import (
 
 from hugging_mac_web.schemas import ErrorBody, ErrorResponse
 
+logger = logging.getLogger(__name__)
+
 _SDK_STATUS: tuple[tuple[type[HuggingMacSdkError], HTTPStatus], ...] = (
+    (DownloadError, HTTPStatus.SERVICE_UNAVAILABLE),
     (ResourceNotFoundError, HTTPStatus.NOT_FOUND),
     (ResourceIntegrityError, HTTPStatus.UNPROCESSABLE_ENTITY),
     (UnsupportedCapabilityError, HTTPStatus.CONFLICT),
@@ -41,6 +46,15 @@ async def _sdk_error_handler(
     error: Exception,
 ) -> JSONResponse:
     assert isinstance(error, HuggingMacSdkError)
+    logger.error(
+        "SDK request failed method=%s path=%s trace_id=%s code=%s details=%r",
+        request.method,
+        request.url.path,
+        getattr(request.state, "trace_id", None),
+        error.code,
+        error.details,
+        exc_info=(type(error), error, error.__traceback__),
+    )
     status = next(
         (value for error_type, value in _SDK_STATUS if isinstance(error, error_type)),
         HTTPStatus.INTERNAL_SERVER_ERROR,
@@ -63,6 +77,15 @@ async def _http_error_handler(
     error: Exception,
 ) -> JSONResponse:
     assert isinstance(error, HTTPException)
+    if error.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
+        logger.error(
+            "HTTP request failed method=%s path=%s trace_id=%s status=%s",
+            request.method,
+            request.url.path,
+            getattr(request.state, "trace_id", None),
+            error.status_code,
+            exc_info=(type(error), error, error.__traceback__),
+        )
     message = str(error.detail)
     response = ErrorResponse(
         error=ErrorBody(

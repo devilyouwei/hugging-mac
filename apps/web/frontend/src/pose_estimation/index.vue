@@ -1,11 +1,6 @@
 <script setup lang="ts">
 import VisionAppPage from "@/vision/components/VisionAppPage.vue"
-import {
-  convertCoreMl,
-  downloadSource,
-  estimatePoses,
-  fetchResourceStatus,
-} from "./api"
+import { estimatePoses, fetchResourceStatus } from "./api"
 import PoseResultsPanel from "./components/PoseResultsPanel.vue"
 import PoseSkeletonLayer from "./components/PoseSkeletonLayer.vue"
 </script>
@@ -25,7 +20,5 @@ import PoseSkeletonLayer from "./components/PoseSkeletonLayer.vue"
     :results="PoseResultsPanel"
     :infer="estimatePoses"
     :fetch-status="fetchResourceStatus"
-    :download-source="downloadSource"
-    :convert-core-ml="convertCoreMl"
   />
 </template>

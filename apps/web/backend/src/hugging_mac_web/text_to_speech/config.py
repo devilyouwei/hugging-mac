@@ -23,37 +23,24 @@ class TtsModelProfile:
 
 
 AUDIO8_TTS_PROFILE = TtsModelProfile(
-    model_id="audio8/audio8-tts-preview-0.6b",
+    model_id="audio8/audio8-tts-preview",
     display_name="Audio8 TTS Preview 0.6B",
     short_name="Audio8 TTS",
-    description="多语言生成与声音克隆模型；仅使用稳定的 PyTorch CPU FP32 路径。",
-    variant="preview",
+    description="多语言生成与声音克隆模型；支持 PyTorch CPU FP32 与 MLX BF16。",
+    variant="0.6b-preview",
     runtime="pytorch",
     required_artifact_id="source",
     languages=("auto",),
 )
 
-AUDIO8_TTS_MLX_BF16_PROFILE = TtsModelProfile(
-    model_id="mlx-community/audio8-tts-preview-0.6b-bf16",
-    display_name="Audio8 TTS MLX BF16",
-    short_name="Audio8 MLX",
-    description="Apple Silicon GPU 版本，支持多语言和零样本参考音频声音克隆。",
-    variant="bf16",
-    runtime="mlx",
-    required_artifact_id="model",
-    languages=("auto",),
-    requires_reference_voice=True,
-    max_new_tokens=256,
-)
-
 KOKORO_82M_PROFILE = TtsModelProfile(
-    model_id="mlx-community/kokoro-82m-bf16",
+    model_id="hexgrad/kokoro",
     display_name="Kokoro 82M",
     short_name="Kokoro",
-    description="轻量快速的 24 kHz 本地语音，使用 MLX BF16 在 Apple Silicon GPU 上推理。",
-    variant="bf16",
-    runtime="mlx",
-    required_artifact_id="model",
+    description="预编译端到端 Core ML 模型，优先使用 Apple Neural Engine。",
+    variant="v1.0",
+    runtime="coreml",
+    required_artifact_id="coreml",
     voices=(
         "af_alloy",
         "af_aoede",
@@ -110,17 +97,17 @@ KOKORO_82M_PROFILE = TtsModelProfile(
         "zm_yunxia",
         "zm_yunyang",
     ),
-    languages=("a", "b", "e", "f", "h", "i", "p", "j", "z"),
+    languages=("en-us", "en-gb", "es", "fr", "hi", "it", "pt", "ja", "zh"),
 )
 
 QWEN3_TTS_0_6B_BASE_4BIT_PROFILE = TtsModelProfile(
-    model_id="mlx-community/qwen3-tts-12hz-0.6b-base-4bit",
-    display_name="Qwen3-TTS 12Hz 0.6B Base 4-bit",
-    short_name="Qwen3 TTS",
-    description="MLX 4-bit 多语言 Base 模型，使用参考音频和准确文本克隆声音。",
-    variant="4bit",
+    model_id="qwen/qwen3-tts-12hz",
+    display_name="Qwen3-TTS",
+    short_name="Qwen3-TTS",
+    description="支持 MLX 声音克隆与 Core ML 默认音色合成。",
+    variant="0.6b-base",
     runtime="mlx",
-    required_artifact_id="model",
+    required_artifact_id="mlx-4bit",
     languages=(
         "auto",
         "chinese",
@@ -142,7 +129,6 @@ TTS_MODEL_PROFILES = {
     profile.model_id: profile
     for profile in (
         AUDIO8_TTS_PROFILE,
-        AUDIO8_TTS_MLX_BF16_PROFILE,
         KOKORO_82M_PROFILE,
         QWEN3_TTS_0_6B_BASE_4BIT_PROFILE,
     )
@@ -151,7 +137,7 @@ TTS_MODEL_PROFILES = {
 
 class TextToSpeechSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="HUGGING_MAC_APP_TEXT_TO_SPEECH_",
+        env_prefix="APP_TEXT_TO_SPEECH_",
         env_file=".env",
         extra="ignore",
     )

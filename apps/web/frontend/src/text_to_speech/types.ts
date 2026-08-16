@@ -9,6 +9,12 @@ export interface TtsResource {
     available: boolean
     size_bytes: number | null
   }>
+  runtimes?: Array<{
+    runtime: string
+    available: boolean
+    size_bytes: number
+    artifact_ids: string[]
+  }>
 }
 
 export interface TtsModel {
@@ -26,6 +32,10 @@ export interface TtsModel {
   max_new_tokens: number
   resource: TtsResource
   ready_instance_id: string | null
+  ready_instances?: Array<{
+    instance_id: string
+    runtime: string
+  }>
 }
 
 export interface LoadedTtsModel {

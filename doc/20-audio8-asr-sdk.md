@@ -100,13 +100,13 @@ register_audio8_asr(sdk.registry)
 options = {"model_home": Path("models")}
 
 await sdk.resources.download_source(
-    "audio8/audio8-asr-0.1b",
-    variant="base",
+    "audio8/audio8-asr",
+    variant="0.1b",
     options=options,
 )
 handle = await sdk.load(
-    "audio8/audio8-asr-0.1b",
-    variant="base",
+    "audio8/audio8-asr",
+    variant="0.1b",
     runtime="pytorch-mps",
     options=options,
 )
@@ -142,15 +142,15 @@ runtime；SDK 当前选择 MPS decoder，而不是官方示例中的 ONNX CPU de
 from hugging_mac_sdk import ArtifactFormat
 
 await sdk.resources.convert(
-    "audio8/audio8-asr-0.1b",
+    "audio8/audio8-asr",
     ArtifactFormat.COREML,
-    variant="base",
+    variant="0.1b",
     options=options,
     overwrite=True,
 )
 handle = await sdk.load(
-    "audio8/audio8-asr-0.1b",
-    variant="base",
+    "audio8/audio8-asr",
+    variant="0.1b",
     runtime="coreml",
     device="cpu-and-neural-engine",
     options=options,
@@ -160,7 +160,7 @@ handle = await sdk.load(
 转换产物位于：
 
 ```text
-models/audio8/audio8-asr-0.1b/<revision>/base/coreml/audio8-asr-coreml/
+models/audio8/audio8-asr/<revision>/base/coreml/audio8-asr-coreml/
 ├── audio_tower.mlpackage
 ├── language_model.safetensors
 ├── projector.safetensors

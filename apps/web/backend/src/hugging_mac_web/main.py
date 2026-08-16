@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import faulthandler
+import logging
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 
@@ -36,6 +39,28 @@ from hugging_mac_web.text_to_speech import (
 )
 from hugging_mac_web.yolo_pose_follow import create_blueprint as create_pose_follow_blueprint
 
+logger = logging.getLogger(__name__)
+
+
+def _install_process_diagnostics() -> None:
+    """Expose Python exceptions and native fatal signals in the server log."""
+    if not faulthandler.is_enabled():
+        faulthandler.enable(all_threads=True)
+
+    loop = asyncio.get_running_loop()
+
+    def report_asyncio_error(_loop: asyncio.AbstractEventLoop, context: dict[str, object]) -> None:
+        exception = context.get("exception")
+        logger.error(
+            "Unhandled asyncio error: %s",
+            context.get("message", "no message"),
+            exc_info=(type(exception), exception, exception.__traceback__)
+            if isinstance(exception, BaseException)
+            else None,
+        )
+
+    loop.set_exception_handler(report_asyncio_error)
+
 
 def create_app(
     settings: WebSettings | None = None,
@@ -64,6 +89,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        _install_process_diagnostics()
         context = create_context(resolved)
         app.state.context = context
         try:

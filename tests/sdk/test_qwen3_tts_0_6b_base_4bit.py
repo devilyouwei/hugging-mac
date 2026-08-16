@@ -15,7 +15,9 @@ from hugging_mac_sdk.models.qwen3_tts import (
     register_qwen3_tts,
 )
 from hugging_mac_sdk.models.qwen3_tts.config import (
+    QWEN3_TTS_COREML_REPO_ID,
     QWEN3_TTS_COREML_REQUIRED_FILES,
+    QWEN3_TTS_COREML_REVISION,
     QWEN3_TTS_MODEL_ID,
     QWEN3_TTS_REQUIRED_FILES,
     QWEN3_TTS_REVISION,
@@ -29,6 +31,7 @@ from hugging_mac_sdk.models.qwen3_tts.resources import (
     Qwen3TtsCoreMlResourceResolver,
     Qwen3TtsResourceResolver,
 )
+from hugging_mac_sdk.models.qwen3_tts.utils.tokenizer import Qwen3CoreMlTokenizer
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource
 from hugging_mac_sdk.schemas.speech_synthesis import SpeechSynthesisRequest
 
@@ -65,6 +68,12 @@ def test_qwen3_tts_manifest_and_registration() -> None:
     assert {runtime.name for runtime in manifest.runtimes} == {"mlx", "coreml"}
     assert manifest.revision == QWEN3_TTS_REVISION == "0d6bb6f"
     assert manifest.capabilities == {"speech-synthesis"}
+    coreml_source = manifest.get_variant("0.6b-base").resources[1]
+    assert isinstance(coreml_source, HuggingFaceSource)
+    assert coreml_source.repo_id == QWEN3_TTS_COREML_REPO_ID == "aufklarer/Qwen3-TTS-CoreML"
+    assert coreml_source.revision == QWEN3_TTS_COREML_REVISION
+    coreml_runtime = next(runtime for runtime in manifest.runtimes if runtime.name == "coreml")
+    assert coreml_runtime.required_modules == ("coremltools", "numpy")
 
     definition = register_qwen3_tts(ModelRegistry())
     instance = definition.create(runtime="mlx", variant="0.6b-base")
@@ -154,12 +163,28 @@ async def test_qwen3_tts_coreml_resource_validation(tmp_path: Path) -> None:
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch()
+    (tmp_path / "config.json").write_text(
+        json.dumps(
+            {
+                "model_type": "qwen3_tts_coreml",
+                "models": [
+                    "TextProjector",
+                    "CodeEmbedder",
+                    "MultiCodeEmbedder",
+                    "CodeDecoder",
+                    "MultiCodeDecoder",
+                    "SpeechDecoder",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    source = HuggingFaceSource(repo_id="test/qwen-coreml", revision="pinned")
     tokenizer_path = tmp_path / "tokenizers"
     for name in QWEN3_TTS_TOKENIZER_REQUIRED_FILES:
         path = tokenizer_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch()
-    source = HuggingFaceSource(repo_id="test/qwen-coreml", revision="pinned")
     resolver = Qwen3TtsCoreMlResourceResolver(
         source,
         source,
@@ -173,7 +198,64 @@ async def test_qwen3_tts_coreml_resource_validation(tmp_path: Path) -> None:
 
     resolved = await resolver.resolve_source()
     assert resolved.path == tmp_path
-    assert resolver.status().artifacts[0].available
+    status = resolver.status()
+    assert status.artifacts[0].available
+    assert status.runtimes[0].runtime == "coreml"
+    assert status.runtimes[0].available
+    assert status.runtimes[0].artifact_ids == ("coreml-w8a16", "tokenizers")
+
+
+def test_qwen3_tts_coreml_tokenizer_matches_bundle_bpe(tmp_path: Path) -> None:
+    vocab = {"Hello": 10, "Ġworld": 11}
+    merges = "\n".join(
+        (
+            "H e",
+            "He l",
+            "Hel l",
+            "Hell o",
+            "Ġ w",
+            "Ġw o",
+            "Ġwo r",
+            "Ġwor l",
+            "Ġworl d",
+        )
+    )
+    (tmp_path / "vocab.json").write_text(json.dumps(vocab), encoding="utf-8")
+    (tmp_path / "merges.txt").write_text(merges, encoding="utf-8")
+
+    tokenizer = Qwen3CoreMlTokenizer.from_files(
+        tmp_path / "vocab.json", tmp_path / "merges.txt"
+    )
+
+    assert tokenizer.encode("Hello world") == [10, 11]
+
+
+def test_qwen3_tts_coreml_decoder_uses_mlstate_and_normalizes_rank() -> None:
+    seen: dict[str, object] = {}
+    state = object()
+
+    class StatefulSession:
+        def run_with_state(self, inputs: dict[str, object], received_state: object):
+            seen.update(inputs)
+            seen["state"] = received_state
+            return {"logits": np.zeros((1, 1, 3072), dtype=np.float16)}
+
+    result, key, value = CoreMlQwen3TtsEngine._decode_step(
+        StatefulSession(),  # type: ignore[arg-type]
+        np.zeros((1024, 1, 1), dtype=np.float16),
+        3,
+        None,
+        None,
+        16,
+        state=state,
+    )
+
+    assert result["logits"].shape == (1, 1, 3072)
+    assert key is value is None
+    assert seen["state"] is state
+    assert np.asarray(seen["input_embeds"]).shape == (1, 1024, 1, 1)
+    assert "key_cache" not in seen and "value_cache" not in seen
+    assert np.asarray(seen["key_padding_mask"])[0, :4].tolist() == [0.0] * 4
 
 
 async def test_qwen3_tts_resource_status_exposes_both_runtimes(tmp_path: Path) -> None:
@@ -187,3 +269,63 @@ async def test_qwen3_tts_resource_status_exposes_both_runtimes(tmp_path: Path) -
         "coreml-w8a16",
         "tokenizers",
     }
+    runtimes = {runtime.runtime: runtime for runtime in status.runtimes}
+    assert runtimes["mlx"].artifact_ids == ("mlx-4bit", "tokenizers")
+    assert runtimes["coreml"].artifact_ids == ("coreml-w8a16", "tokenizers")
+
+
+async def test_qwen3_tts_coreml_requires_shared_tokenizers(tmp_path: Path) -> None:
+    coreml_path = (
+        tmp_path
+        / "qwen"
+        / "qwen3-tts-12hz"
+        / QWEN3_TTS_COREML_REVISION
+        / "0.6b-base"
+        / "coreml"
+        / "model"
+    )
+    for name in QWEN3_TTS_COREML_REQUIRED_FILES:
+        path = coreml_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    (coreml_path / "config.json").write_text(
+        json.dumps(
+            {
+                "model_type": "qwen3_tts_coreml",
+                "models": [
+                    "TextProjector",
+                    "CodeEmbedder",
+                    "MultiCodeEmbedder",
+                    "CodeDecoder",
+                    "MultiCodeDecoder",
+                    "SpeechDecoder",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    provider = QWEN3_TTS_DEFINITION.resource_provider
+    assert provider is not None
+
+    status = await provider.status("0.6b-base", {"model_home": tmp_path})
+    runtimes = {runtime.runtime: runtime for runtime in status.runtimes}
+
+    assert not runtimes["coreml"].available
+    assert not runtimes["mlx"].available
+
+    tokenizer_path = (
+        tmp_path
+        / "qwen"
+        / "qwen3-tts-12hz"
+        / "shared"
+        / "tokenizers"
+        / QWEN3_TTS_REVISION
+    )
+    for name in QWEN3_TTS_TOKENIZER_REQUIRED_FILES:
+        path = tokenizer_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+    status = await provider.status("0.6b-base", {"model_home": tmp_path})
+    runtimes = {runtime.runtime: runtime for runtime in status.runtimes}
+    assert runtimes["coreml"].available

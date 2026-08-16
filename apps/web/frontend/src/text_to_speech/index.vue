@@ -1,17 +1,14 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 
-import {
-  downloadTtsWeights,
-  fetchTtsModels,
-  loadTtsModel,
-  synthesizeSpeech,
-} from "./api"
+import { fetchTtsModels, loadTtsModel, synthesizeSpeech } from "./api"
 import type {
   GeneratedSpeech,
   LoadedTtsModel,
   TtsModel,
 } from "./types"
+import { encodeWave } from "@/live_transcription/wav"
+import { errorMessage, unloadModel } from "@/modelLifecycle"
 
 const LANGUAGE_NAMES: Record<string, string> = {
   a: "American English",
@@ -34,9 +31,27 @@ const LANGUAGE_NAMES: Record<string, string> = {
   portuguese: "Portuguese",
   spanish: "Spanish",
   italian: "Italian",
+  "en-us": "American English",
+  "en-gb": "British English",
+  es: "Spanish",
+  fr: "French",
+  hi: "Hindi",
+  it: "Italian",
+  pt: "Portuguese",
+  ja: "Japanese",
+  zh: "Chinese",
 }
-const AUDIO8_CLONE_MODEL_ID = "mlx-community/audio8-tts-preview-0.6b-bf16"
-const QWEN3_TTS_MODEL_ID = "mlx-community/qwen3-tts-12hz-0.6b-base-4bit"
+const KOKORO_LANGUAGE_PREFIXES: Record<string, string> = {
+  "en-us": "a",
+  "en-gb": "b",
+  es: "e",
+  fr: "f",
+  hi: "h",
+  it: "i",
+  pt: "p",
+  ja: "j",
+  zh: "z",
+}
 const SAMPLE_TEXTS = [
   "Every voice carries a different texture. Today, the whole studio runs locally on this Mac.",
   "A warm breeze crosses the lake, and every voice gains texture and depth.",
@@ -45,49 +60,85 @@ const SAMPLE_TEXTS = [
 
 const models = ref<TtsModel[]>([])
 const selectedModelId = ref("")
+const selectedRuntimeByModel = ref<Record<string, string>>({})
 const loadedModels = ref<Record<string, LoadedTtsModel>>({})
+const loadingModel = ref(false)
 const text = ref(SAMPLE_TEXTS[0])
 const voice = ref("af_heart")
-const language = ref("a")
+const language = ref("en-us")
 const speed = ref(1)
 const voiceProfile = ref("speaker_a")
 const referenceAudio = ref<File | null>(null)
 const referenceAudioUrl = ref("")
 const referenceText = ref("")
+const referenceRecording = ref(false)
 const useSavedProfile = ref(false)
-const resourceBusy = ref(false)
-const loadBusy = ref(false)
 const synthesisBusy = ref(false)
 const error = ref("")
+const lifecycleMessage = ref<{ type: "success" | "error"; text: string } | null>(null)
 const results = ref<GeneratedSpeech[]>([])
 let resultId = 0
 let activeRequest: AbortController | null = null
+let referenceStream: MediaStream | null = null
+let referenceContext: AudioContext | null = null
+let referenceSource: MediaStreamAudioSourceNode | null = null
+let referenceProcessor: ScriptProcessorNode | null = null
+let referenceGain: GainNode | null = null
+let referenceChunks: Float32Array[] = []
 
 const selectedModel = computed(() =>
   models.value.find((item) => item.model_id === selectedModelId.value) ?? null,
 )
-const sourceArtifact = computed(() =>
-  selectedModel.value?.resource.artifacts.find(
-    (item) => item.artifact_id === selectedModel.value?.required_artifact_id,
-  ),
+const runtimeKey = (modelId: string, runtime: string) => `${modelId}::${runtime}`
+const runtimeForModel = (model: TtsModel) =>
+  selectedRuntimeByModel.value[model.model_id] ?? model.runtime
+const resourceRuntimes = (model: TtsModel) => model.resource.runtimes?.length
+  ? model.resource.runtimes
+  : model.resource.artifacts
+    .filter((item) => item.runtime !== null)
+    .map((item) => ({
+      runtime: item.runtime!,
+      available: item.available,
+      size_bytes: item.size_bytes ?? 0,
+      artifact_ids: [item.artifact_id],
+    }))
+const runtimeAvailable = (model: TtsModel, runtime = runtimeForModel(model)) =>
+  Boolean(resourceRuntimes(model).find((item) => item.runtime === runtime)?.available)
+const runtimeOptions = (model: TtsModel) => [...resourceRuntimes(model)].sort((left, right) =>
+  left.runtime === "coreml" ? -1 : right.runtime === "coreml" ? 1 : 0,
 )
-const sourceReady = computed(() => Boolean(sourceArtifact.value?.available))
-const requiredReady = computed(() =>
-  Boolean(
-    selectedModel.value?.resource.artifacts.find(
-      (item) => item.artifact_id === selectedModel.value?.required_artifact_id,
-    )?.available,
-  ),
-)
+const runtimeLabel = (runtime: string) => runtime === "pytorch-mps"
+  ? "Torch MPS"
+  : runtime === "pytorch" ? "PyTorch CPU" : runtime === "coreml" ? "Core ML" : runtime
+const loadedInstanceFor = (model: TtsModel) =>
+  loadedModels.value[runtimeKey(model.model_id, runtimeForModel(model))] ?? null
+const modelIsReady = (model: TtsModel) => loadedInstanceFor(model)?.state === "ready"
+const sourceArtifact = computed(() => {
+  const model = selectedModel.value
+  if (!model) return undefined
+  return model.resource.artifacts.find((item) => item.runtime === runtimeForModel(model))
+})
 const loadedModel = computed(() =>
-  selectedModel.value ? loadedModels.value[selectedModel.value.model_id] ?? null : null,
+  selectedModel.value ? loadedInstanceFor(selectedModel.value) : null,
 )
 const modelReady = computed(() => loadedModel.value?.state === "ready")
 const isKokoro = computed(
-  () => selectedModel.value?.model_id === "mlx-community/kokoro-82m-bf16",
+  () => Boolean(selectedModel.value?.voices.length) && !selectedModel.value?.requires_reference_voice,
 )
-const isAudio8Clone = computed(() => selectedModel.value?.model_id === AUDIO8_CLONE_MODEL_ID)
-const isQwen3Clone = computed(() => selectedModel.value?.model_id === QWEN3_TTS_MODEL_ID)
+const isAudio8Clone = computed(() => Boolean(selectedModel.value?.requires_reference_voice))
+const isQwen3 = computed(() => Boolean(selectedModel.value?.requires_reference_audio))
+const isQwen3CoreMl = computed(() =>
+  isQwen3.value && selectedModel.value !== null && runtimeForModel(selectedModel.value) === "coreml",
+)
+const isQwen3Clone = computed(() => isQwen3.value && !isQwen3CoreMl.value)
+const qwen3CoreMlLanguages = computed(() =>
+  (selectedModel.value?.languages ?? []).filter((item) => item === "english" || item === "chinese"),
+)
+const availableVoices = computed(() => {
+  const prefix = KOKORO_LANGUAGE_PREFIXES[language.value]
+  const voices = selectedModel.value?.voices ?? []
+  return prefix ? voices.filter((item) => item.startsWith(prefix)) : voices
+})
 const characterCount = computed(() => text.value.length)
 const referenceReady = computed(() =>
   isQwen3Clone.value
@@ -98,31 +149,40 @@ const referenceReady = computed(() =>
       || (referenceAudio.value !== null && Boolean(referenceText.value.trim())))),
 )
 const canGenerate = computed(() =>
-  modelReady.value && Boolean(text.value.trim()) && referenceReady.value && !synthesisBusy.value,
+  Boolean(text.value.trim()) && referenceReady.value && !synthesisBusy.value && !loadingModel.value
+    && Boolean(sourceArtifact.value?.available),
 )
 
-function formatBytes(value: number | null | undefined): string {
-  if (value == null) return "not downloaded"
-  return `${(value / 1024 ** 2).toFixed(0)} MB`
-}
+watch([language, selectedModel], () => {
+  if (isKokoro.value && !availableVoices.value.includes(voice.value)) {
+    voice.value = availableVoices.value[0] ?? ""
+  }
+})
+
+watch(isQwen3CoreMl, (enabled) => {
+  if (enabled && !qwen3CoreMlLanguages.value.some((item) => item === language.value)) {
+    language.value = qwen3CoreMlLanguages.value[0] ?? "english"
+  }
+})
 
 async function loadModels() {
   try {
     models.value = await fetchTtsModels()
     for (const model of models.value) {
-      if (model.ready_instance_id) {
-        loadedModels.value[model.model_id] = {
-          instance_id: model.ready_instance_id,
+      selectedRuntimeByModel.value[model.model_id] = runtimeForModel(model)
+      for (const ready of model.ready_instances ?? []) {
+        loadedModels.value[runtimeKey(model.model_id, ready.runtime)] = {
+          instance_id: ready.instance_id,
           model_id: model.model_id,
           variant: model.variant,
-          runtime: model.runtime,
-          device: model.runtime,
+          runtime: ready.runtime,
+          device: ready.runtime,
           state: "ready",
         }
       }
     }
     selectedModelId.value =
-      models.value.find((item) => item.model_id === "mlx-community/kokoro-82m-bf16")?.model_id
+      models.value.find((item) => item.model_id === "hexgrad/kokoro")?.model_id
       ?? models.value[0]?.model_id
       ?? ""
   } catch (caught) {
@@ -130,63 +190,141 @@ async function loadModels() {
   }
 }
 
+async function ensureSelectedModelLoaded(): Promise<LoadedTtsModel> {
+  if (modelReady.value && loadedModel.value) return loadedModel.value
+  if (!selectedModel.value || !sourceArtifact.value?.available) {
+    throw new Error("模型资产不可用，请先在 Models 页面准备模型。")
+  }
+  loadingModel.value = true
+  lifecycleMessage.value = null
+  try {
+    const runtime = runtimeForModel(selectedModel.value)
+    const loaded = await loadTtsModel(selectedModel.value.model_id, runtime)
+    loadedModels.value[runtimeKey(loaded.model_id, loaded.runtime)] = loaded
+    lifecycleMessage.value = { type: "success", text: "模型加载成功" }
+    return loaded
+  } catch (caught) {
+    const message = errorMessage(caught, "TTS 模型加载失败")
+    lifecycleMessage.value = { type: "error", text: message }
+    throw caught
+  } finally {
+    loadingModel.value = false
+  }
+}
+
 function selectModel(modelId: string) {
   if (synthesisBusy.value) return
   selectedModelId.value = modelId
+  lifecycleMessage.value = null
   const model = models.value.find((item) => item.model_id === modelId)
-  if (model?.voices.length && !model.voices.includes(voice.value)) {
-    voice.value = model.voices[0] ?? "af_heart"
-  }
   if (model?.languages.length && !model.languages.includes(language.value)) {
-    language.value = model.languages[0] ?? "a"
+    language.value = model.languages[0] ?? "en-us"
   }
   error.value = ""
+}
+
+function selectRuntime(model: TtsModel, runtime: string) {
+  if (synthesisBusy.value || loadingModel.value) return
+  selectedRuntimeByModel.value[model.model_id] = runtime
+  if (selectedModelId.value === model.model_id) lifecycleMessage.value = null
+}
+
+function onRuntimeChange(model: TtsModel, event: Event) {
+  selectRuntime(model, (event.target as HTMLSelectElement).value)
+}
+
+async function toggleSelectedModel() {
+  const current = loadedModel.value
+  if (loadingModel.value) return
+  if (!current) {
+    try { await ensureSelectedModelLoaded() } catch { /* inline feedback */ }
+    return
+  }
+  loadingModel.value = true
+  lifecycleMessage.value = null
+  try {
+    await unloadModel(current.instance_id)
+    delete loadedModels.value[runtimeKey(current.model_id, current.runtime)]
+    lifecycleMessage.value = { type: "success", text: "模型卸载成功" }
+  } catch (caught) {
+    lifecycleMessage.value = { type: "error", text: errorMessage(caught, "模型卸载失败") }
+  } finally {
+    loadingModel.value = false
+  }
+}
+
+async function toggleModel(model: TtsModel) {
+  selectModel(model.model_id)
+  await toggleSelectedModel()
 }
 
 function selectReferenceAudio(event: Event) {
   const input = event.target as HTMLInputElement
+  setReferenceAudio(input.files?.[0] ?? null)
+  input.value = ""
+}
+
+function setReferenceAudio(file: File | null) {
   if (referenceAudioUrl.value) URL.revokeObjectURL(referenceAudioUrl.value)
-  referenceAudio.value = input.files?.[0] ?? null
-  referenceAudioUrl.value = referenceAudio.value
-    ? URL.createObjectURL(referenceAudio.value)
-    : ""
+  referenceAudio.value = file
+  referenceAudioUrl.value = file ? URL.createObjectURL(file) : ""
 }
 
-async function downloadModel() {
-  if (!selectedModel.value) return
-  resourceBusy.value = true
+async function startReferenceRecording() {
+  if (referenceRecording.value) return
   error.value = ""
   try {
-    selectedModel.value.resource = await downloadTtsWeights(selectedModel.value.model_id)
+    referenceStream = await navigator.mediaDevices.getUserMedia({
+      audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+    })
+    referenceContext = new AudioContext()
+    referenceSource = referenceContext.createMediaStreamSource(referenceStream)
+    referenceProcessor = referenceContext.createScriptProcessor(4096, 1, 1)
+    referenceGain = referenceContext.createGain()
+    referenceGain.gain.value = 0
+    referenceChunks = []
+    referenceProcessor.onaudioprocess = (event) => {
+      referenceChunks.push(new Float32Array(event.inputBuffer.getChannelData(0)))
+    }
+    referenceSource.connect(referenceProcessor)
+    referenceProcessor.connect(referenceGain)
+    referenceGain.connect(referenceContext.destination)
+    referenceRecording.value = true
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "Model download failed"
-  } finally {
-    resourceBusy.value = false
+    stopReferenceCapture()
+    error.value = caught instanceof Error ? caught.message : "Microphone access failed"
   }
 }
 
-async function prepareModel() {
-  if (!selectedModel.value || !requiredReady.value) return
-  loadBusy.value = true
-  error.value = ""
-  try {
-    loadedModels.value[selectedModel.value.model_id] =
-      await loadTtsModel(selectedModel.value.model_id)
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "Model loading failed"
-  } finally {
-    loadBusy.value = false
-  }
+async function stopReferenceRecording() {
+  if (!referenceContext) return
+  const wav = encodeWave(referenceChunks, referenceContext.sampleRate)
+  setReferenceAudio(new File([wav], `reference-${Date.now()}.wav`, { type: "audio/wav" }))
+  stopReferenceCapture()
+}
+
+function stopReferenceCapture() {
+  referenceProcessor?.disconnect()
+  referenceSource?.disconnect()
+  referenceGain?.disconnect()
+  referenceStream?.getTracks().forEach((track) => track.stop())
+  void referenceContext?.close()
+  referenceStream = null
+  referenceContext = null
+  referenceSource = null
+  referenceProcessor = null
+  referenceGain = null
+  referenceRecording.value = false
 }
 
 async function generateSpeech() {
   const model = selectedModel.value
-  const instance = loadedModel.value
-  if (!model || !instance || !text.value.trim()) return
+  if (!model || !text.value.trim() || synthesisBusy.value) return
   synthesisBusy.value = true
   error.value = ""
   activeRequest = new AbortController()
   try {
+    const instance = await ensureSelectedModelLoaded()
     const response = await synthesizeSpeech(
       {
         model_id: model.model_id,
@@ -195,7 +333,7 @@ async function generateSpeech() {
         voice: isAudio8Clone.value
           ? voiceProfile.value.trim()
           : isKokoro.value ? voice.value : null,
-        language: isKokoro.value || isQwen3Clone.value ? language.value : null,
+        language: isKokoro.value || isQwen3.value ? language.value : null,
         speed: speed.value,
         referenceAudio: (isAudio8Clone.value && !useSavedProfile.value) || isQwen3Clone.value
           ? referenceAudio.value
@@ -215,8 +353,8 @@ async function generateSpeech() {
       voice: isAudio8Clone.value
         ? voiceProfile.value.trim()
         : isKokoro.value ? voice.value : isQwen3Clone.value ? "reference" : null,
-      runtime: response.headers.get("x-runtime") ?? model.runtime,
-      device: response.headers.get("x-device") ?? model.runtime,
+      runtime: response.headers.get("x-runtime") ?? instance.runtime,
+      device: response.headers.get("x-device") ?? instance.device,
       durationSeconds: Number(response.headers.get("x-duration-seconds") ?? 0),
       inferenceMs: Number(response.headers.get("x-inference-ms") ?? 0),
       url,
@@ -245,6 +383,7 @@ function removeResult(id: number) {
 onMounted(loadModels)
 onBeforeUnmount(() => {
   activeRequest?.abort()
+  stopReferenceCapture()
   if (referenceAudioUrl.value) URL.revokeObjectURL(referenceAudioUrl.value)
   results.value.forEach((item) => URL.revokeObjectURL(item.url))
 })
@@ -253,37 +392,69 @@ onBeforeUnmount(() => {
 <template>
   <div class="page inner-page tts-page">
     <header class="tts-hero">
-      <div>
+      <div class="hero-copy">
         <RouterLink class="back-link" to="/apps">← Neural Apps</RouterLink>
-        <p class="kicker">LOCAL TEXT-TO-SPEECH · FOUR ENGINES, ONE STUDIO</p>
-        <h1>Type it.<br /><em>Hear it.</em></h1>
+        <p class="kicker">LOCAL TEXT-TO-SPEECH · MULTI-RUNTIME VOICE STUDIO</p>
+        <h1>Type it. <em>Hear it.</em></h1>
         <p>Compare Audio8, Kokoro, and Qwen3-TTS in one local studio. Your text, reference voice, and generated audio stay on this Mac.</p>
       </div>
-      <div class="sound-object" aria-hidden="true">
-        <span v-for="bar in 18" :key="bar" :style="{ '--bar': bar }"></span>
-        <strong>24 / 44.1</strong>
-        <small>KHZ · LOCAL WAVEFORM</small>
-      </div>
+      <section class="tts-model-picker" aria-label="Select a text-to-speech model">
+        <article
+          v-for="model in models"
+          :key="model.model_id"
+          :class="{
+            selected: selectedModelId === model.model_id,
+            loaded: modelIsReady(model),
+            unavailable: !runtimeAvailable(model),
+          }"
+        >
+          <button
+            class="model-identity"
+            type="button"
+            :disabled="synthesisBusy"
+            @click="selectModel(model.model_id)"
+          >
+            <span>♪</span>
+            <span>
+              <small>{{ model.variant }} · {{ modelIsReady(model) ? "LOADED" : "TTS MODEL" }}</small>
+              <strong>{{ model.display_name }}</strong>
+              <em>{{ model.description }}</em>
+            </span>
+            <i aria-hidden="true"></i>
+          </button>
+          <div class="model-controls">
+            <label>
+              <span>RUNTIME</span>
+              <select
+                :value="runtimeForModel(model)"
+                :disabled="synthesisBusy || loadingModel"
+                @change="onRuntimeChange(model, $event)"
+              >
+                <option
+                  v-for="runtime in runtimeOptions(model)"
+                  :key="runtime.runtime"
+                  :value="runtime.runtime"
+                  :disabled="!runtime.available"
+                >
+                  {{ runtimeLabel(runtime.runtime) }}{{ runtime.available ? "" : " · unavailable" }}
+                </option>
+              </select>
+            </label>
+            <button
+              type="button"
+              :disabled="(!modelIsReady(model) && !runtimeAvailable(model)) || loadingModel || synthesisBusy"
+              @click="toggleModel(model)"
+            >
+              {{ loadingModel && selectedModelId === model.model_id ? "WAIT…" : modelIsReady(model) ? "UNLOAD" : "LOAD" }}
+            </button>
+          </div>
+          <small
+            v-if="selectedModelId === model.model_id && lifecycleMessage"
+            :class="`lifecycle-${lifecycleMessage.type}`"
+          >{{ lifecycleMessage.text }}</small>
+        </article>
+      </section>
     </header>
-
-    <section class="tts-model-switcher" aria-label="Select a text-to-speech model">
-      <button
-        v-for="(model, index) in models"
-        :key="model.model_id"
-        type="button"
-        :class="{ selected: selectedModelId === model.model_id }"
-        :disabled="synthesisBusy"
-        @click="selectModel(model.model_id)"
-      >
-        <span class="model-index">0{{ index + 1 }}</span>
-        <div>
-          <small>{{ model.runtime }} · {{ model.variant }}</small>
-          <strong>{{ model.display_name }}</strong>
-          <p>{{ model.description }}</p>
-        </div>
-        <i>{{ selectedModelId === model.model_id ? "ACTIVE" : "COMPARE →" }}</i>
-      </button>
-    </section>
 
     <div v-if="error" class="error-banner" role="alert">{{ error }}</div>
 
@@ -346,6 +517,10 @@ onBeforeUnmount(() => {
               />
               <b>{{ referenceAudio?.name ?? "CHOOSE AUDIO" }}</b>
             </label>
+            <div class="reference-actions">
+              <button type="button" :disabled="referenceRecording" @click="startReferenceRecording">Record reference</button>
+              <button v-if="referenceRecording" type="button" class="recording" @click="stopReferenceRecording">Stop recording</button>
+            </div>
             <audio
               v-if="referenceAudioUrl"
               class="reference-player"
@@ -367,14 +542,6 @@ onBeforeUnmount(() => {
         </div>
         <div v-else-if="isKokoro" class="voice-controls">
           <label>
-            <span>VOICE</span>
-            <select v-model="voice">
-              <option v-for="item in selectedModel?.voices" :key="item" :value="item">
-                {{ item.replaceAll("_", " ") }}
-              </option>
-            </select>
-          </label>
-          <label>
             <span>LANGUAGE</span>
             <select v-model="language">
               <option v-for="item in selectedModel?.languages" :key="item" :value="item">
@@ -382,6 +549,28 @@ onBeforeUnmount(() => {
               </option>
             </select>
           </label>
+          <label>
+            <span>VOICE</span>
+            <select v-model="voice">
+              <option v-for="item in availableVoices" :key="item" :value="item">
+                {{ item.replaceAll("_", " ") }}
+              </option>
+            </select>
+          </label>
+        </div>
+        <div v-else-if="isQwen3CoreMl" class="voice-controls">
+          <label>
+            <span>LANGUAGE</span>
+            <select v-model="language">
+              <option v-for="item in qwen3CoreMlLanguages" :key="item" :value="item">
+                {{ LANGUAGE_NAMES[item] ?? item }}
+              </option>
+            </select>
+          </label>
+          <div class="audio8-note">
+            <strong>Bundled speaker</strong>
+            <p>Core ML uses the model's built-in voice and supports English and Chinese.</p>
+          </div>
         </div>
         <div v-else-if="isQwen3Clone" class="reference-controls">
           <label class="reference-file">
@@ -393,6 +582,10 @@ onBeforeUnmount(() => {
             />
             <b>{{ referenceAudio?.name ?? "CHOOSE AUDIO" }}</b>
           </label>
+          <div class="reference-actions">
+            <button type="button" :disabled="referenceRecording" @click="startReferenceRecording">Record reference</button>
+            <button v-if="referenceRecording" type="button" class="recording" @click="stopReferenceRecording">Stop recording</button>
+          </div>
           <audio
             v-if="referenceAudioUrl"
             class="reference-player"
@@ -427,26 +620,6 @@ onBeforeUnmount(() => {
           <span><b>SPEED</b><output>{{ speed.toFixed(2) }}×</output></span>
           <input v-model.number="speed" type="range" min="0.5" max="2" step="0.05" />
         </label>
-
-        <div class="model-state">
-          <div>
-            <span>{{ modelReady ? "MODEL LOADED" : requiredReady ? "READY TO LOAD" : "SETUP REQUIRED" }}</span>
-            <small v-if="modelReady">{{ loadedModel?.device }}</small>
-            <small v-else>{{ formatBytes(sourceArtifact?.size_bytes) }}</small>
-          </div>
-          <button
-            v-if="!sourceReady"
-            type="button"
-            :disabled="resourceBusy"
-            @click="downloadModel"
-          >{{ resourceBusy ? "DOWNLOADING…" : "DOWNLOAD WEIGHTS" }}</button>
-          <button
-            v-else-if="!modelReady"
-            type="button"
-            :disabled="loadBusy"
-            @click="prepareModel"
-          >{{ loadBusy ? "LOADING…" : "LOAD MODEL" }}</button>
-        </div>
 
         <button
           class="generate-button"
@@ -495,25 +668,35 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .tts-page { padding-bottom: 6rem; }
-.tts-hero { align-items: end; border-bottom: 1px solid var(--line); display: grid; gap: 5vw; grid-template-columns: 1.4fr .6fr; min-height: 31rem; padding: 4rem 0 3rem; }
-.tts-hero h1 { font-size: clamp(4.5rem, 10vw, 9rem); font-weight: 600; letter-spacing: -.08em; line-height: .78; margin: 1.4rem 0 2rem; }
+.tts-hero { align-items: stretch; display: grid; gap: clamp(1.5rem, 3vw, 3.5rem); grid-template-columns: minmax(0, 1fr) minmax(25rem, .72fr); min-height: 0; padding: .65rem 0 1.4rem; }
+.hero-copy { align-self: center; min-width: 0; }
+.tts-hero h1 { font-size: clamp(2.4rem, 5vw, 4.6rem); font-weight: 600; letter-spacing: -.065em; line-height: .95; margin: .55rem 0 .8rem; white-space: nowrap; }
 .tts-hero h1 em { color: transparent; font-style: normal; -webkit-text-stroke: 1.5px var(--ink); }
-.tts-hero > div:first-child > p:last-child { font-size: 1.08rem; line-height: 1.7; max-width: 42rem; }
-.sound-object { align-items: center; background: var(--ink); color: var(--paper); display: flex; gap: .35rem; height: 19rem; justify-content: center; overflow: hidden; padding: 2rem; position: relative; }
-.sound-object span { animation: sound-pulse 1.8s ease-in-out infinite alternate; animation-delay: calc(var(--bar) * -80ms); background: var(--signal); height: calc(18px + var(--bar) * 4px); opacity: .82; width: 5px; }
-.sound-object strong { bottom: 1.8rem; font-family: var(--font-mono); font-size: 1.2rem; left: 1.8rem; position: absolute; }
-.sound-object small { bottom: 1.8rem; color: #999b92; font-family: var(--font-mono); position: absolute; right: 1.8rem; }
-@keyframes sound-pulse { to { transform: scaleY(.35); } }
-.tts-model-switcher { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); margin: 2rem 0; }
-.tts-model-switcher button { align-items: center; background: transparent; border: 1px solid var(--line); cursor: pointer; display: grid; gap: 1.2rem; grid-template-columns: auto 1fr auto; min-height: 10rem; padding: 1.4rem; text-align: left; }
-.tts-model-switcher button + button { border-left: 0; }
-.tts-model-switcher button.selected { background: var(--ink); color: var(--paper); }
-.model-index { color: var(--muted); font-family: var(--font-mono); font-size: .72rem; }
-.tts-model-switcher small, .tts-model-switcher i { color: var(--muted); font-family: var(--font-mono); font-size: .64rem; font-style: normal; text-transform: uppercase; }
-.tts-model-switcher strong { display: block; font-size: 1.35rem; margin: .35rem 0; }
-.tts-model-switcher p { font-size: .86rem; line-height: 1.45; margin: 0; max-width: 32rem; }
-.tts-model-switcher .selected i { color: var(--signal); }
-.tts-workbench { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(21rem, .65fr); margin-top: 2rem; }
+.hero-copy > p:last-child { color: var(--muted); font-size: .82rem; line-height: 1.5; max-width: 42rem; }
+.tts-model-picker { align-content: center; display: flex; flex-direction: column; gap: .55rem; }
+.tts-model-picker article { align-items: center; background: #f7f5eb; border: 1px solid var(--line); display: grid; gap: .8rem; grid-template-columns: minmax(0, 1fr) minmax(10.5rem, .62fr); padding: .62rem .72rem; transition: border-color .2s, background .2s, transform .2s; }
+.tts-model-picker article:hover { border-color: var(--ink); transform: translateX(-3px); }
+.tts-model-picker article.selected { background: #c8ff4614; border-color: var(--ink); box-shadow: inset 3px 0 var(--signal); }
+.tts-model-picker article.unavailable { opacity: .62; }
+.model-identity { align-items: center; background: transparent; border: 0; color: var(--ink); cursor: pointer; display: grid; gap: .7rem; grid-template-columns: 2rem minmax(0, 1fr) .55rem; padding: 0; text-align: left; width: 100%; }
+.model-identity:disabled { cursor: not-allowed; }
+.model-identity > span:first-child { font-size: 1.35rem; text-align: center; }
+.model-identity > span:nth-child(2) { display: flex; flex-direction: column; min-width: 0; }
+.model-identity small, .model-controls span { color: var(--muted); font: .46rem var(--font-mono); text-transform: uppercase; }
+.model-identity strong { font-size: .9rem; line-height: 1.15; }
+.model-identity em { color: var(--muted); font-size: .58rem; font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-identity > i { background: #aaa; border-radius: 50%; height: .48rem; width: .48rem; }
+.tts-model-picker article.loaded .model-identity > i { background: var(--signal); box-shadow: 0 0 8px #8ebd22; }
+.model-controls { align-items: end; border-left: 1px solid var(--line); display: grid; gap: .5rem; grid-template-columns: minmax(5.5rem, 1fr) auto; padding-left: .72rem; }
+.model-controls label { display: flex; flex-direction: column; gap: .2rem; }
+.model-controls select { background: transparent; border: 0; color: var(--ink); font: 600 .55rem var(--font-mono); min-width: 0; outline: none; padding: 0; text-transform: uppercase; width: 100%; }
+.model-controls > button { background: var(--ink); border: 0; color: var(--paper); cursor: pointer; font: 700 .5rem var(--font-mono); min-width: 4.4rem; padding: .58rem .65rem; }
+.model-controls > button:hover { background: var(--signal); color: var(--ink); }
+.model-controls > button:disabled, .model-controls select:disabled { cursor: not-allowed; opacity: .4; }
+.tts-model-picker article > small { grid-column: 1 / -1; margin-top: -.35rem; }
+.lifecycle-success { color: #57951f; font: .52rem var(--font-mono); }
+.lifecycle-error { color: #cf3f27; font: .52rem var(--font-mono); }
+.tts-workbench { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(21rem, .65fr); margin-top: 1rem; }
 .script-panel, .voice-panel { border: 1px solid var(--ink); min-height: 33rem; padding: clamp(1.5rem, 3vw, 2.6rem); }
 .voice-panel { background: var(--ink); color: var(--paper); }
 .panel-heading { align-items: start; display: flex; justify-content: space-between; }
@@ -542,6 +725,10 @@ textarea { background: transparent; border: 0; border-bottom: 1px solid var(--li
 .reference-file { border: 1px dashed #5b5c55; cursor: pointer; padding: .75rem; }
 .reference-file input { height: 1px; opacity: 0; position: absolute; width: 1px; }
 .reference-file b { color: var(--signal); font-family: var(--font-mono); font-size: .65rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reference-actions { display: flex; gap: .6rem; }
+.reference-actions button { background: transparent; border: 1px solid #5b5c55; color: var(--signal); cursor: pointer; font: .62rem var(--font-mono); padding: .65rem .75rem; }
+.reference-actions button.recording { border-color: var(--orange); color: var(--orange); }
+.reference-actions button:disabled { cursor: not-allowed; opacity: .45; }
 .reference-player { height: 2.5rem; width: 100%; }
 .reference-transcript { background: #292a26; border: 1px solid #4a4b46; color: var(--paper); font-size: .8rem; height: 4.5rem; line-height: 1.4; padding: .65rem; resize: vertical; }
 .reference-controls > p { color: #999b92; font-size: .72rem; line-height: 1.45; margin: 0; }
@@ -552,11 +739,6 @@ textarea { background: transparent; border: 0; border-bottom: 1px solid var(--li
 .speed-control span { display: flex; justify-content: space-between; }
 .speed-control output { color: var(--signal); }
 .speed-control input { accent-color: var(--signal); width: 100%; }
-.model-state { align-items: center; border-top: 1px solid #44453f; display: flex; justify-content: space-between; padding: 1.4rem 0; }
-.model-state div { display: grid; gap: .3rem; }
-.model-state span, .model-state small { font-family: var(--font-mono); font-size: .64rem; }
-.model-state small { color: #999b92; }
-.model-state button { background: transparent; border: 1px solid var(--signal); color: var(--signal); cursor: pointer; font-family: var(--font-mono); font-size: .63rem; padding: .7rem; }
 .generate-button { align-items: center; background: var(--signal); border: 0; cursor: pointer; display: flex; font-family: var(--font-mono); font-size: .75rem; font-weight: 800; justify-content: space-between; min-height: 4.5rem; padding: 0 1.2rem; width: 100%; }
 .generate-button:disabled { cursor: not-allowed; opacity: .35; }
 .generate-button i { font-size: 1.25rem; font-style: normal; }
@@ -577,15 +759,13 @@ textarea { background: transparent; border: 0; border-bottom: 1px solid var(--li
 .result-meta button { background: none; border: 0; cursor: pointer; font-size: 1.2rem; }
 @media (max-width: 900px) {
   .tts-hero, .tts-workbench { grid-template-columns: 1fr; }
-  .sound-object { height: 12rem; }
-  .tts-model-switcher { grid-template-columns: 1fr; }
-  .tts-model-switcher button + button { border-left: 1px solid var(--line); border-top: 0; }
+  .tts-model-picker { width: 100%; }
   .audio-result { grid-template-columns: 1fr; }
   .result-meta { display: flex; justify-content: start; }
 }
 @media (max-width: 600px) {
-  .tts-hero { padding-top: 2rem; }
-  .tts-hero h1 { font-size: 4.4rem; }
+  .tts-hero { padding-top: .5rem; }
+  .tts-hero h1 { font-size: 3rem; white-space: normal; }
   .voice-controls { grid-template-columns: 1fr; }
   .sample-row { flex-wrap: wrap; }
   .sample-row > span { width: 100%; }

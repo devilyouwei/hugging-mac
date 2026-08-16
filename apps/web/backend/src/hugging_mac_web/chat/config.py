@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-CHAT_MODEL_ID = "mlx-community/qwen3.5-mlx"
-DEFAULT_CHAT_VARIANT = "9b-4bit"
+CHAT_MODEL_ID = "qwen/qwen3.5"
+DEFAULT_CHAT_VARIANT = "9b"
 
 
 @dataclass(frozen=True)
@@ -25,7 +25,7 @@ class ChatModelProfile:
 
 class ChatSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="HUGGING_MAC_APP_CHAT_",
+        env_prefix="APP_CHAT_",
         env_file=".env",
         extra="ignore",
     )

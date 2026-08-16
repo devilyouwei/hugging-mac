@@ -133,10 +133,10 @@ async def test_pytorch_engine_keeps_merged_model_view_until_close(
     loaded_paths: list[Path] = []
 
     class FakeModel:
-        def eval(self) -> "FakeModel":
+        def eval(self) -> FakeModel:
             return self
 
-        def to(self, device: str) -> "FakeModel":
+        def to(self, device: str) -> FakeModel:
             assert device == "cpu"
             return self
 

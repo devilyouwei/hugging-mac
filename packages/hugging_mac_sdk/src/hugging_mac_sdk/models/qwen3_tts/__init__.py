@@ -1,4 +1,4 @@
-"""Qwen3-TTS 0.6B Base 4-bit model pack."""
+"""Qwen3-TTS 0.6B Base model pack."""
 
 from .definition import (
     QWEN3_TTS_DEFINITION,

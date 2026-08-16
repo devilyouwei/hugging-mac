@@ -101,10 +101,10 @@ TinyDB 只保存文档元数据；二进制媒体和派生产物保存在 cache�
 默认使用 macOS 的用户数据与缓存目录。开发时可通过 `.env` 覆盖：
 
 ```dotenv
-HUGGING_MAC_WEB_DATA_DIR=./data/web
-HUGGING_MAC_WEB_CACHE_DIR=./data/cache
-HUGGING_MAC_WEB_DATABASE_PATH=./data/web/platform.json
-HUGGING_MAC_WEB_RUNTIME_PREFERENCE=coreml,pytorch-mps
+WEB_DATA_DIR=./data/web
+WEB_CACHE_DIR=./data/cache
+WEB_DATABASE_PATH=./data/web/platform.json
+WEB_RUNTIME_PREFERENCE=coreml,mlx,mps,onnx
 ```
 
 ## 启动与验证

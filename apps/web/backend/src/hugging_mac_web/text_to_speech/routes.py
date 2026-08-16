@@ -18,7 +18,7 @@ from hugging_mac_web.text_to_speech.schemas import (
 )
 from hugging_mac_web.text_to_speech.service import TextToSpeechService
 
-DEFAULT_MODEL_ID = "mlx-community/kokoro-82m-bf16"
+DEFAULT_MODEL_ID = "hexgrad/kokoro"
 
 
 def create_router(settings: TextToSpeechSettings) -> APIRouter:
@@ -40,24 +40,15 @@ def create_router(settings: TextToSpeechSettings) -> APIRouter:
         data = await TextToSpeechService(context, settings).resource_status(model_id)
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
-    @router.post("/resources/source/download", response_model=ApiResponse[TtsResourceView])
-    async def download_source(
-        context: ContextDependency,
-        model_id: str = Query(default=DEFAULT_MODEL_ID),
-        overwrite: bool = False,
-    ) -> ApiResponse[TtsResourceView]:
-        data = await TextToSpeechService(context, settings).download_source(
-            model_id,
-            overwrite=overwrite,
-        )
-        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
-
     @router.post("/models/load", response_model=ApiResponse[LoadedTtsModelView])
     async def load_model(
         request: LoadTtsModelRequest,
         context: ContextDependency,
     ) -> ApiResponse[LoadedTtsModelView]:
-        data = await TextToSpeechService(context, settings).load_model(request.model_id)
+        data = await TextToSpeechService(context, settings).load_model(
+            request.model_id,
+            runtime=request.runtime,
+        )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.post("/synthesize")

@@ -3,15 +3,18 @@ import BoundingBoxLayer from "./BoundingBoxLayer.vue"
 import type { DetectionResult } from "../types"
 
 defineProps<{
-  imageUrl: string
+  imageUrl?: string
   result: DetectionResult | null
 }>()
 
 </script>
 
 <template>
-  <div class="detection-stage">
-    <img :src="imageUrl" alt="待检测图片预览" />
+  <div
+    class="detection-stage"
+    :class="{ 'detection-stage--overlay': !imageUrl }"
+  >
+    <img v-if="imageUrl" :src="imageUrl" alt="待检测图片预览" />
     <BoundingBoxLayer :result="result" />
   </div>
 </template>
@@ -32,6 +35,12 @@ defineProps<{
   line-height: 0;
   overflow: hidden;
   position: relative;
+}
+
+.detection-stage--overlay {
+  background: none;
+  inset: 0;
+  position: absolute;
 }
 
 img {

@@ -21,7 +21,6 @@ from hugging_mac_web.chat.schemas import (
     ChatHistoryMessage,
     ChatModelView,
     ChatReplyView,
-    ChatResourceView,
     LoadChatModelRequest,
     LoadedChatModelView,
 )
@@ -44,23 +43,6 @@ def create_router(settings: ChatSettings) -> APIRouter:
         data = await ChatService(context, settings).list_models()
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
-    @router.post("/resources/source/download", response_model=ApiResponse[ChatResourceView])
-    async def download_source(
-        context: ContextDependency,
-        model_id: str = Query(),
-        overwrite: bool = False,
-    ) -> ApiResponse[ChatResourceView]:
-        data = await ChatService(context, settings).download_source(model_id, overwrite=overwrite)
-        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
-
-    @router.delete("/resources", response_model=ApiResponse[ChatResourceView])
-    async def delete_resources(
-        context: ContextDependency,
-        model_id: str = Query(),
-    ) -> ApiResponse[ChatResourceView]:
-        data = await ChatService(context, settings).delete_resources(model_id)
-        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
-
     @router.get("/model", response_model=ApiResponse[LoadedChatModelView | None])
     async def model(
         context: ContextDependency,
@@ -77,14 +59,6 @@ def create_router(settings: ChatSettings) -> APIRouter:
         data = await ChatService(context, settings).load_model(
             request.model_id if request is not None else settings.model_variant
         )
-        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
-
-    @router.delete("/model", response_model=ApiResponse[int])
-    async def unload_model(
-        context: ContextDependency,
-        model_id: str = Query(),
-    ) -> ApiResponse[int]:
-        data = await ChatService(context, settings).unload_model(model_id)
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.post("/messages", response_model=ApiResponse[ChatReplyView])

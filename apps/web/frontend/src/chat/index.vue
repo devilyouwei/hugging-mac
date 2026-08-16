@@ -1,15 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue"
 
-import {
-  deleteChatModel,
-  downloadChatModel,
-  fetchChatModels,
-  fetchLoadedChatModel,
-  loadChatModel,
-  streamChatMessage,
-  unloadChatModel,
-} from "./api"
+import { fetchChatModels, fetchLoadedChatModel, loadChatModel, streamChatMessage } from "./api"
+import { errorMessage, unloadModel } from "@/modelLifecycle"
 import type { ChatModel, ConversationMessage, LoadedChatModel } from "./types"
 
 const model = ref<LoadedChatModel | null>(null)
@@ -19,9 +12,9 @@ const messages = ref<ConversationMessage[]>([])
 const prompt = ref("")
 const images = ref<Array<{ file: File; url: string }>>([])
 const loadingModel = ref(false)
-const changingResources = ref(false)
 const sending = ref(false)
 const error = ref("")
+const lifecycleMessage = ref<{ type: "success" | "error"; text: string } | null>(null)
 const maxTokens = ref(512)
 const temperature = ref(0)
 const enableThinking = ref(false)
@@ -34,17 +27,16 @@ const ready = computed(() => model.value?.state === "ready")
 const selectedProfile = computed(() =>
   models.value.find((item) => item.profile_id === selectedModelId.value),
 )
-const resourcesAvailable = computed(() => {
-  const profile = selectedProfile.value
-  return Boolean(
-    profile?.resource.artifacts.find(
-      (item) => item.artifact_id === profile.required_artifact_id,
+const selectedResourceAvailable = computed(() =>
+  Boolean(
+    selectedProfile.value?.resource.artifacts.find(
+      (item) => item.artifact_id === selectedProfile.value?.required_artifact_id,
     )?.available,
-  )
-})
+  ),
+)
 const supportsImages = computed(() => selectedProfile.value?.supports_images ?? false)
 const canSend = computed(
-  () => ready.value && Boolean(prompt.value.trim()) && !sending.value,
+  () => Boolean(prompt.value.trim()) && !sending.value && !loadingModel.value,
 )
 
 async function refreshModel() {
@@ -61,21 +53,29 @@ async function refreshModel() {
   }
 }
 
-async function prepareModel() {
-  if (!selectedModelId.value) return
+async function ensureSelectedModelLoaded(): Promise<LoadedChatModel> {
+  if (ready.value && model.value) return model.value
+  if (!selectedModelId.value || !selectedResourceAvailable.value) {
+    throw new Error("模型资产不可用，请先在 Models 页面下载模型。")
+  }
   loadingModel.value = true
   error.value = ""
+  lifecycleMessage.value = null
   try {
     model.value = await loadChatModel(selectedModelId.value)
-    await refreshModel()
+    lifecycleMessage.value = { type: "success", text: "模型加载成功" }
+    return model.value
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "模型加载失败"
+    const message = errorMessage(caught, "模型加载失败")
+    lifecycleMessage.value = { type: "error", text: message }
+    throw caught
   } finally {
     loadingModel.value = false
   }
 }
 
 async function selectModel() {
+  lifecycleMessage.value = null
   resetConversation()
   images.value.forEach((item) => URL.revokeObjectURL(item.url))
   images.value = []
@@ -88,45 +88,20 @@ async function selectModel() {
   }
 }
 
-async function downloadSelectedModel() {
-  if (!selectedModelId.value) return
-  changingResources.value = true
-  error.value = ""
-  try {
-    await downloadChatModel(selectedModelId.value)
-    await refreshModel()
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "模型下载失败"
-  } finally {
-    changingResources.value = false
+async function toggleSelectedModel() {
+  if (loadingModel.value) return
+  if (!ready.value || !model.value) {
+    try { await ensureSelectedModelLoaded() } catch { /* inline feedback */ }
+    return
   }
-}
-
-async function deleteSelectedModel() {
-  if (!selectedModelId.value || !window.confirm("删除这个模型的本地权重？")) return
-  changingResources.value = true
-  error.value = ""
-  try {
-    await deleteChatModel(selectedModelId.value)
-    model.value = null
-    await refreshModel()
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "模型删除失败"
-  } finally {
-    changingResources.value = false
-  }
-}
-
-async function unloadSelectedModel() {
-  if (!selectedModelId.value) return
   loadingModel.value = true
-  error.value = ""
+  lifecycleMessage.value = null
   try {
-    await unloadChatModel(selectedModelId.value)
+    await unloadModel(model.value.instance_id)
     model.value = null
-    await refreshModel()
+    lifecycleMessage.value = { type: "success", text: "模型卸载成功" }
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "模型卸载失败"
+    lifecycleMessage.value = { type: "error", text: errorMessage(caught, "模型卸载失败") }
   } finally {
     loadingModel.value = false
   }
@@ -181,7 +156,13 @@ async function followLatestContent() {
 }
 
 async function submit() {
-  if (!canSend.value || !model.value) return
+  if (!canSend.value) return
+  try {
+    await ensureSelectedModelLoaded()
+  } catch {
+    return
+  }
+  if (!model.value) return
   const text = prompt.value.trim()
   const attachments = images.value.splice(0)
   const history = messages.value.map(({ role, content }) => ({ role, content }))
@@ -270,12 +251,18 @@ onBeforeUnmount(() => {
 
       <label class="chat-model-select">
         MODEL
-        <select v-model="selectedModelId" :disabled="sending || loadingModel" @change="selectModel">
-          <option v-for="item in models" :key="item.profile_id" :value="item.profile_id">
-            {{ item.display_name }}
-          </option>
-        </select>
+        <span class="chat-model-control">
+          <select v-model="selectedModelId" :disabled="sending || loadingModel" @change="selectModel">
+            <option v-for="item in models" :key="item.profile_id" :value="item.profile_id">
+              {{ item.display_name }}
+            </option>
+          </select>
+          <button type="button" :disabled="sending || loadingModel || (!ready && !selectedResourceAvailable)" @click="toggleSelectedModel">
+            {{ loadingModel ? "WAIT…" : ready ? "UNLOAD" : "LOAD" }}
+          </button>
+        </span>
       </label>
+      <small v-if="lifecycleMessage" :class="`lifecycle-${lifecycleMessage.type}`">{{ lifecycleMessage.text }}</small>
 
       <div class="chat-status" :class="{ ready }">
         <span></span>
@@ -284,18 +271,7 @@ onBeforeUnmount(() => {
           <small>{{ model ? `${model.variant} · ${model.device}` : `${((selectedProfile?.disk_size_bytes ?? 0) / 1e9).toFixed(1)} GB weights` }}</small>
         </div>
       </div>
-      <button v-if="resourcesAvailable && !ready" class="chat-primary" :disabled="loadingModel" @click="prepareModel">
-        {{ loadingModel ? "Loading into memory…" : "Load model" }}
-      </button>
-      <button v-if="!resourcesAvailable" class="chat-primary" :disabled="changingResources" @click="downloadSelectedModel">
-        {{ changingResources ? "Downloading…" : "Download weights" }}
-      </button>
-      <button v-if="resourcesAvailable && !ready" class="chat-delete" :disabled="changingResources" @click="deleteSelectedModel">
-        {{ changingResources ? "Working…" : "Delete local weights" }}
-      </button>
-      <button v-if="ready" class="chat-delete" :disabled="loadingModel || sending" @click="unloadSelectedModel">
-        Unload model
-      </button>
+      <p v-if="!ready && !selectedResourceAvailable" class="chat-error">模型不可用。请前往 Models 页面下载模型后重试。</p>
 
       <details class="chat-settings">
         <summary>Generation settings</summary>
@@ -354,11 +330,11 @@ onBeforeUnmount(() => {
           </figure>
         </div>
         <div class="chat-input-row">
-          <label v-if="supportsImages" class="chat-attach" :class="{ disabled: !ready || images.length >= 4 }">
-            <input type="file" accept="image/png,image/jpeg,image/webp" multiple :disabled="!ready || images.length >= 4" @change="selectImages" />
+          <label v-if="supportsImages" class="chat-attach" :class="{ disabled: sending || loadingModel || images.length >= 4 }">
+            <input type="file" accept="image/png,image/jpeg,image/webp" multiple :disabled="sending || loadingModel || images.length >= 4" @change="selectImages" />
             <span>＋</span><small>IMAGE</small>
           </label>
-          <textarea v-model="prompt" rows="1" maxlength="32000" :disabled="!ready" :placeholder="ready ? 'Message Qwen…' : 'Download and load the model to begin'" @keydown="handleKeydown"></textarea>
+          <textarea v-model="prompt" rows="1" maxlength="32000" :disabled="sending || loadingModel" placeholder="Message Qwen…（发送时会自动加载模型）" @keydown="handleKeydown"></textarea>
           <button class="chat-send" :disabled="!canSend" @click="submit">
             <span>{{ sending ? "···" : "↑" }}</span>
           </button>
@@ -386,6 +362,8 @@ onBeforeUnmount(() => {
 .chat-primary { background:var(--signal); border:0; color:#0d0e0d; cursor:pointer; font-weight:800; padding:.9rem; }.chat-primary:disabled { opacity:.5; }
 .chat-model-link { color:var(--signal); font-size:.6rem; text-align:center; }
 .chat-model-select { color:#85877f; display:flex; flex-direction:column; font:.56rem var(--font-mono); gap:.45rem; }.chat-model-select select { background:#191b18; border:1px solid #343630; color:#f4f2e9; font:inherit; padding:.7rem; width:100%; }
+.chat-model-control { display:flex; gap:.4rem; }.chat-model-control select { min-width:0; }.chat-model-control button { background:var(--signal); border:0; cursor:pointer; font:700 .52rem var(--font-mono); padding:0 .6rem; }.chat-model-control button:disabled { cursor:not-allowed; opacity:.4; }
+.lifecycle-success { color:#75c763; font: .55rem var(--font-mono); }.lifecycle-error { color:#ff8066; font: .55rem var(--font-mono); }
 .chat-delete { background:none; border:1px solid #5d3934; color:#e7a59d; cursor:pointer; font:.58rem var(--font-mono); padding:.7rem; }.chat-delete:disabled { opacity:.5; }
 .chat-settings { border-top:1px solid #343630; color:#aaa99f; font-size:.62rem; padding-top:1rem; }.chat-settings summary { cursor:pointer; margin-bottom:1rem; }.chat-settings label { display:flex; justify-content:space-between; margin-top:.7rem; }.chat-settings input[type=range] { accent-color:var(--signal); width:100%; }.chat-toggle { justify-content:flex-start!important; gap:.5rem; }
 .chat-clear { background:none; border:1px solid #343630; color:#f4f2e9; cursor:pointer; font-size:.62rem; margin-top:auto; padding:.8rem; }

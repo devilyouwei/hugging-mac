@@ -21,6 +21,8 @@ class SetupView(BaseModel):
     models: tuple[ModelStateView, ...]
     llm_variants: tuple["LlmVariantView", ...]
     selected_llm_variant: str
+    vad_instance_id: str | None = None
+    enhancement_instance_id: str | None = None
 
     @property
     def ready(self) -> bool:
@@ -33,6 +35,8 @@ class LoadedModelsView(BaseModel):
     asr_instance_id: str
     llm_instance_id: str
     tts_instance_id: str
+    vad_instance_id: str | None = None
+    enhancement_instance_id: str | None = None
 
 
 class LlmVariantView(BaseModel):
@@ -48,6 +52,11 @@ class TranscriptView(BaseModel):
 
     text: str
     inference_ms: float | None = None
+    source_duration_seconds: float | None = None
+    speech_duration_seconds: float | None = None
+    speech_segment_count: int = 0
+    vad_inference_ms: float | None = None
+    enhancement_inference_ms: float | None = None
 
 
 class ConversationMessage(BaseModel):

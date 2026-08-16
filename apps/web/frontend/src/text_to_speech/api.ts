@@ -4,37 +4,24 @@ import type {
   LoadedTtsModel,
   SynthesisOptions,
   TtsModel,
-  TtsResource,
 } from "./types"
 
 const PREFIX = "/api/v1/apps/text-to-speech"
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ""
 
-function modelQuery(modelId: string): string {
-  return `?model_id=${encodeURIComponent(modelId)}`
-}
-
 export async function fetchTtsModels(): Promise<TtsModel[]> {
   return (await request<TtsModel[]>(`${PREFIX}/models`)).data
 }
 
-export async function downloadTtsWeights(modelId: string): Promise<TtsResource> {
-  return (
-    await request<TtsResource>(
-      `${PREFIX}/resources/source/download${modelQuery(modelId)}`,
-      { method: "POST" },
-    )
-  ).data
-}
-
-export async function loadTtsModel(modelId: string): Promise<LoadedTtsModel> {
-  return (
-    await request<LoadedTtsModel>(`${PREFIX}/models/load`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model_id: modelId }),
-    })
-  ).data
+export async function loadTtsModel(
+  modelId: string,
+  runtime: string,
+): Promise<LoadedTtsModel> {
+  return (await request<LoadedTtsModel>(`${PREFIX}/models/load`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model_id: modelId, runtime }),
+  })).data
 }
 
 export async function synthesizeSpeech(

@@ -1,213 +1,216 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 
 import {
   convertModelResources,
-  deleteModelResources,
-  downloadModelResources,
-  fetchModelResources,
+  deleteModelArtifact,
+  downloadModelResource,
+  fetchModelInventory,
   fetchModels,
   loadModel,
   unloadModel,
 } from "@/api/catalog"
 import type {
-  ConversionTargetStatus,
+  ArtifactInventoryItem,
   InstanceSummary,
-  ModelResourceStatus,
+  ModelInventory,
   ModelSummary,
+  ResourceOption,
   RuntimeSummary,
-  VariantSummary,
 } from "@/api/types"
 import StatusPill from "@/components/StatusPill.vue"
 
+type Filter = "all" | "ready" | "setup" | "loaded"
+
 const models = ref<ModelSummary[]>([])
-const loading = ref(true)
-const error = ref("")
-const pending = ref<Record<string, boolean>>({})
-const resources = ref<Record<string, ModelResourceStatus>>({})
-const resourceErrors = ref<Record<string, string>>({})
+const inventories = ref<Record<string, ModelInventory>>({})
 const selectedVariants = ref<Record<string, string>>({})
+const pending = ref<Record<string, boolean>>({})
+const notices = ref<Record<string, { tone: "success" | "error"; text: string }>>({})
+const loading = ref(true)
+const pageError = ref("")
+const query = ref("")
+const filter = ref<Filter>("all")
 
-async function refreshModels(): Promise<void> {
-  models.value = await fetchModels()
-  for (const model of models.value) {
-    if (!selectedVariants.value[model.model_id]) {
-      selectedVariants.value[model.model_id] = model.default_variant
-    }
-  }
-  await Promise.all(
-    models.value.map(async (model) => {
-      try {
-        const variant = selectedVariant(model)
-        resources.value[resourceKey(model.model_id, variant)] =
-          await fetchModelResources(model.model_id, variant)
-        delete resourceErrors.value[resourceKey(model.model_id, variant)]
-      } catch (caught) {
-        resourceErrors.value[resourceKey(model.model_id, selectedVariant(model))] =
-          caught instanceof Error ? caught.message : "资源状态不可用"
-      }
-    }),
-  )
-}
-
-onMounted(async () => {
-  try {
-    await refreshModels()
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "模型目录加载失败"
-  } finally {
-    loading.value = false
-  }
+const visibleModels = computed(() => {
+  const term = query.value.trim().toLowerCase()
+  return models.value.filter((model) => {
+    const matchesSearch = !term || [
+      model.name,
+      model.model_id,
+      model.family,
+      ...model.capabilities,
+      ...model.tags,
+    ].some((value) => value.toLowerCase().includes(term))
+    if (!matchesSearch) return false
+    if (filter.value === "loaded") return model.instance_count > 0
+    const ready = selectedVariantHasReadyRuntime(model)
+    if (filter.value === "ready") return ready
+    if (filter.value === "setup") return !ready
+    return true
+  })
 })
 
-function operationKey(action: string, id: string): string {
-  return `${action}:${id}`
+const totalLocalBytes = computed(() => Object.values(inventories.value).reduce(
+  (total, inventory) => total + inventory.artifacts.reduce(
+    (sum, artifact) => sum + (artifact.size_bytes ?? 0),
+    0,
+  ),
+  0,
+))
+const readyModelCount = computed(() => models.value.filter(modelHasReadyRuntime).length)
+const loadedInstanceCount = computed(() => models.value.reduce(
+  (count, model) => count + model.instance_count,
+  0,
+))
+
+function operationKey(action: string, modelId: string, item = ""): string {
+  return `${action}:${modelId}:${item}`
 }
 
-function resourceKey(modelId: string, variant: string): string {
-  return `${modelId}:${variant}`
+function artifactKey(artifact: ArtifactInventoryItem): string {
+  return `${artifact.variant}:${artifact.runtime}:${artifact.artifact_id}`
+}
+
+function isPending(key: string): boolean {
+  return Boolean(pending.value[key])
 }
 
 function selectedVariant(model: ModelSummary): string {
   return selectedVariants.value[model.model_id] ?? model.default_variant
 }
 
-function selectedVariantSummary(model: ModelSummary): VariantSummary {
-  return (
-    model.variants.find((item) => item.name === selectedVariant(model)) ??
-    model.variants[0]
+function selectVariant(model: ModelSummary, variant: string): void {
+  selectedVariants.value[model.model_id] = variant
+  delete notices.value[model.model_id]
+}
+
+function variantResources(model: ModelSummary): ResourceOption[] {
+  return (inventories.value[model.model_id]?.resources ?? []).filter(
+    (resource) => resource.variant === selectedVariant(model),
   )
 }
 
-function modelResources(model: ModelSummary): ModelResourceStatus | undefined {
-  return resources.value[resourceKey(model.model_id, selectedVariant(model))]
+function variantArtifacts(model: ModelSummary): ArtifactInventoryItem[] {
+  return (inventories.value[model.model_id]?.artifacts ?? []).filter(
+    (artifact) => !artifact.shared && artifact.variant === selectedVariant(model),
+  )
 }
 
-async function selectVariant(model: ModelSummary): Promise<void> {
-  const variant = selectedVariant(model)
-  try {
-    resources.value[resourceKey(model.model_id, variant)] = await fetchModelResources(
-      model.model_id,
-      variant,
-    )
-    delete resourceErrors.value[resourceKey(model.model_id, variant)]
-  } catch (caught) {
-    resourceErrors.value[resourceKey(model.model_id, variant)] =
-      caught instanceof Error ? caught.message : "资源状态不可用"
-  }
+function sharedArtifacts(model: ModelSummary): ArtifactInventoryItem[] {
+  return (inventories.value[model.model_id]?.artifacts ?? []).filter(
+    (artifact) => artifact.shared,
+  )
 }
 
-function isPending(action: string, id: string): boolean {
-  return Boolean(pending.value[operationKey(action, id)])
+function resourceReady(model: ModelSummary, resource: ResourceOption): boolean {
+  return resource.available && sharedArtifacts(model).every((artifact) => artifact.available)
 }
 
-async function runOperation(key: string, operation: () => Promise<void>): Promise<void> {
-  pending.value[key] = true
-  error.value = ""
-  try {
-    await operation()
-    await refreshModels()
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "模型操作失败"
-  } finally {
-    pending.value[key] = false
-  }
+function conversionTargets(model: ModelSummary): ArtifactInventoryItem[] {
+  return variantArtifacts(model).filter((artifact) => artifact.convertible)
 }
 
-async function handleLoad(model: ModelSummary, runtime: RuntimeSummary): Promise<void> {
-  const variant = selectedVariant(model)
-  const key = operationKey("load", `${model.model_id}:${variant}:${runtime.name}`)
-  await runOperation(key, async () => {
-    await loadModel(model.model_id, runtime.name, { variant })
-  })
+function localArtifacts(model: ModelSummary): ArtifactInventoryItem[] {
+  return [...variantArtifacts(model), ...sharedArtifacts(model)].filter(
+    (artifact) => artifact.available,
+  )
 }
 
-async function handleUnload(instance: InstanceSummary): Promise<void> {
-  const key = operationKey("unload", instance.instance_id)
-  await runOperation(key, async () => {
-    await unloadModel(instance.instance_id)
-  })
-}
-
-async function handleDownload(model: ModelSummary): Promise<void> {
-  const variant = selectedVariant(model)
-  const key = operationKey("download", `${model.model_id}:${variant}`)
-  await runOperation(key, async () => {
-    resources.value[resourceKey(model.model_id, variant)] = await downloadModelResources(
-      model.model_id,
-      variant,
-    )
-  })
-}
-
-async function handleConvert(
+function runtimeArtifacts(
   model: ModelSummary,
-  target: ConversionTargetStatus,
-): Promise<void> {
-  const variant = selectedVariant(model)
-  const key = operationKey(
-    "convert",
-    `${model.model_id}:${variant}:${target.target_format}`,
-  )
-  await runOperation(key, async () => {
-    resources.value[resourceKey(model.model_id, variant)] = await convertModelResources(
-      model.model_id,
-      target.target_format,
-      variant,
-    )
-  })
-}
-
-async function handleDelete(model: ModelSummary): Promise<void> {
-  const variant = selectedVariant(model)
-  const confirmed = window.confirm(
-    `Delete local ${selectedVariantSummary(model).display_name} weights? You can download them again later.`,
-  )
-  if (!confirmed) return
-  const key = operationKey("delete", `${model.model_id}:${variant}`)
-  await runOperation(key, async () => {
-    resources.value[resourceKey(model.model_id, variant)] = await deleteModelResources(
-      model.model_id,
-      variant,
-    )
-  })
-}
-
-function runtimeSize(model: ModelSummary, runtime: string): number | null {
-  return (
-    modelResources(model)?.runtimes.find((item) => item.runtime === runtime)
-      ?.size_bytes ?? null
+  runtime: string,
+  variant = selectedVariant(model),
+): ArtifactInventoryItem[] {
+  return (inventories.value[model.model_id]?.artifacts ?? []).filter(
+    (artifact) => !artifact.shared
+      && artifact.variant === variant
+      && artifact.runtime === runtime,
   )
 }
 
-function downloadableResourcesAvailable(model: ModelSummary): boolean {
-  return Boolean(
-    modelResources(model)?.artifacts.some(
-      (artifact) => artifact.provisioning === "download" && artifact.available,
-    ),
+function runtimeReady(model: ModelSummary, runtime: string): boolean {
+  const artifacts = [...runtimeArtifacts(model, runtime), ...sharedArtifacts(model)]
+  return artifacts.length > 0 && artifacts.every((artifact) => artifact.available)
+}
+
+function runtimeRequiredArtifacts(model: ModelSummary, runtime: string): ArtifactInventoryItem[] {
+  return [...runtimeArtifacts(model, runtime), ...sharedArtifacts(model)]
+}
+
+function modelHasReadyRuntime(model: ModelSummary): boolean {
+  return model.variants.some((variant) => model.runtimes.some(
+    (runtime) => runtime.available
+      && runtimeArtifacts(model, runtime.name, variant.name).length > 0
+      && [...runtimeArtifacts(model, runtime.name, variant.name), ...sharedArtifacts(model)].every(
+        (artifact) => artifact.available,
+      ),
+  ))
+}
+
+function selectedVariantHasReadyRuntime(model: ModelSummary): boolean {
+  return model.runtimes.some(
+    (runtime) => runtime.available && runtimeReady(model, runtime.name),
   )
 }
 
-function formatPlatformName(format: string): string {
-  const names: Record<string, string> = {
-    coreml: "Core ML",
-    mlx: "MLX",
-    onnx: "ONNX",
-    openvino: "OpenVINO",
-    rknn: "RKNN",
-    tflite: "TensorFlow Lite",
-    torchscript: "TorchScript",
+function matchingInstances(model: ModelSummary, runtime: string): InstanceSummary[] {
+  return model.instances.filter(
+    (instance) => instance.variant === selectedVariant(model) && instance.runtime === runtime,
+  )
+}
+
+function variantHasInstances(model: ModelSummary): boolean {
+  return model.instances.some((instance) => instance.variant === selectedVariant(model))
+}
+
+function artifactHasInstances(model: ModelSummary, artifact: ArtifactInventoryItem): boolean {
+  if (artifact.shared) return model.instances.length > 0
+  return model.instances.some(
+    (instance) => instance.variant === artifact.variant && instance.runtime === artifact.runtime,
+  )
+}
+
+function sourceReady(model: ModelSummary): boolean {
+  return variantArtifacts(model).some(
+    (artifact) => artifact.available && !artifact.convertible,
+  )
+}
+
+function sourceLabel(resource: ResourceOption): string {
+  if (resource.source.kind === "composite") return "Bundled model resources"
+  if (resource.source.repo_id) {
+    return resource.source.filename
+      ? `${resource.source.repo_id} / ${resource.source.filename}`
+      : resource.source.repo_id
   }
-  return names[format] ?? format.toUpperCase()
+  return resource.source.url ?? resource.source.kind
 }
 
-function formatDuration(value: number): string {
-  return `${value.toFixed(value < 10 ? 2 : 1)} ms`
+function formatName(value: string): string {
+  const names: Record<string, string> = {
+    ane: "ANE",
+    cpu: "CPU",
+    coreml: "Core ML",
+    "coreml-int8": "Core ML INT8",
+    gpu: "GPU",
+    mlx: "MLX",
+    "mlx-4bit": "MLX 4-bit",
+    "mlx-bf16": "MLX BF16",
+    "mlx-optiq-4bit": "MLX OptiQ 4-bit",
+    mps: "MPS",
+    onnx: "ONNX",
+    pytorch: "PyTorch",
+    "pytorch-mps": "PyTorch MPS",
+    safetensors: "SafeTensors",
+    tokenizer: "Tokenizer",
+  }
+  return names[value] ?? value.replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function formatBytes(value: number | null): string {
-  if (value === null) return "unavailable"
-  const units = ["B", "KB", "MB", "GB"]
+  if (value === null) return "Not installed"
+  const units = ["B", "KB", "MB", "GB", "TB"]
   let amount = value
   let index = 0
   while (amount >= 1024 && index < units.length - 1) {
@@ -216,198 +219,326 @@ function formatBytes(value: number | null): string {
   }
   return `${amount.toFixed(index < 2 ? 0 : 1)} ${units[index]}`
 }
+
+function localVariantBytes(model: ModelSummary): number {
+  return [...variantArtifacts(model), ...sharedArtifacts(model)].reduce(
+    (total, artifact) => total + (artifact.size_bytes ?? 0),
+    0,
+  )
+}
+
+function variantLabel(model: ModelSummary): string {
+  return model.variants.find((variant) => variant.name === selectedVariant(model))
+    ?.display_name ?? selectedVariant(model)
+}
+
+function runtimeBlockReason(model: ModelSummary, runtime: RuntimeSummary): string | null {
+  if (!runtime.available) return runtime.unavailable_reason ?? "Runtime unavailable on this system"
+  if (!runtimeReady(model, runtime.name)) return "Install the required files first"
+  if (matchingInstances(model, runtime.name).length) return "An instance is already loaded"
+  return null
+}
+
+async function refresh(): Promise<void> {
+  models.value = await fetchModels()
+  for (const model of models.value) {
+    selectedVariants.value[model.model_id] ||= model.default_variant
+  }
+  const entries = await Promise.all(models.value.map(async (model) => [
+    model.model_id,
+    await fetchModelInventory(model.model_id),
+  ] as const))
+  inventories.value = Object.fromEntries(entries)
+}
+
+async function runOperation(
+  model: ModelSummary,
+  key: string,
+  success: string,
+  action: () => Promise<void>,
+): Promise<void> {
+  pending.value[key] = true
+  delete notices.value[model.model_id]
+  try {
+    await action()
+    await refresh()
+    notices.value[model.model_id] = { tone: "success", text: success }
+  } catch (caught) {
+    notices.value[model.model_id] = {
+      tone: "error",
+      text: caught instanceof Error ? caught.message : "The operation could not be completed.",
+    }
+  } finally {
+    pending.value[key] = false
+  }
+}
+
+async function handleDownload(model: ModelSummary, resource: ResourceOption): Promise<void> {
+  const key = operationKey("download", model.model_id, resource.resource_id)
+  await runOperation(model, key, "Resource installed.", async () => {
+    inventories.value[model.model_id] = await downloadModelResource(model.model_id, resource)
+  })
+}
+
+async function handleConvert(model: ModelSummary, artifact: ArtifactInventoryItem): Promise<void> {
+  const key = operationKey("convert", model.model_id, artifactKey(artifact))
+  await runOperation(model, key, `${formatName(artifact.format)} build completed.`, async () => {
+    await convertModelResources(model.model_id, artifact.format, artifact.variant)
+  })
+}
+
+async function handleDelete(model: ModelSummary, artifact: ArtifactInventoryItem): Promise<void> {
+  const confirmed = window.confirm(
+    `Remove ${variantLabel(model)} / ${formatName(artifact.artifact_id)} from local storage?`,
+  )
+  if (!confirmed) return
+  const key = operationKey("delete", model.model_id, artifactKey(artifact))
+  await runOperation(model, key, "Local artifact removed.", async () => {
+    inventories.value[model.model_id] = await deleteModelArtifact(model.model_id, artifact)
+  })
+}
+
+async function handleLoad(model: ModelSummary, runtime: RuntimeSummary): Promise<void> {
+  const item = `${selectedVariant(model)}:${runtime.name}`
+  const key = operationKey("load", model.model_id, item)
+  await runOperation(model, key, `${formatName(runtime.name)} instance loaded.`, async () => {
+    await loadModel(model.model_id, runtime.name, { variant: selectedVariant(model) })
+  })
+}
+
+async function handleUnload(model: ModelSummary, instance: InstanceSummary): Promise<void> {
+  if (instance.reference_count > 0 && !window.confirm(
+    `This instance is used by ${instance.reference_count} active ${instance.reference_count === 1 ? "session" : "sessions"}. Unload it anyway?`,
+  )) return
+  const key = operationKey("unload", model.model_id, instance.instance_id)
+  await runOperation(model, key, "Instance unloaded.", async () => {
+    await unloadModel(instance.instance_id, instance.reference_count > 0)
+  })
+}
+
+onMounted(async () => {
+  try {
+    await refresh()
+  } catch (caught) {
+    pageError.value = caught instanceof Error ? caught.message : "The model catalog could not be loaded."
+  } finally {
+    loading.value = false
+  }
+})
 </script>
 
 <template>
   <div class="page inner-page models-directory-page">
-    <header class="page-title">
-      <RouterLink class="back-link" to="/">← Studio</RouterLink>
-      <p class="kicker">NEURAL MODEL REGISTRY / LIVE INSTANCES</p>
-      <h1>Neural Models</h1>
-      <p>神经模型定义与当前进程中的实例快照。浏览目录不会触发下载、转换或加载。</p>
+    <header class="models-hero">
+      <div>
+        <RouterLink class="back-link" to="/">← Studio</RouterLink>
+        <p class="kicker">MODEL LIBRARY</p>
+        <h1>Models</h1>
+        <p>Install model files, build optimized artifacts, and manage local runtime instances.</p>
+      </div>
+      <div class="models-summary" aria-label="Model library summary">
+        <div><strong>{{ readyModelCount }}</strong><span>Models ready</span></div>
+        <div><strong>{{ loadedInstanceCount }}</strong><span>Instances loaded</span></div>
+        <div><strong>{{ formatBytes(totalLocalBytes) }}</strong><span>Local storage</span></div>
+      </div>
     </header>
 
-    <div v-if="error" class="error-banner" role="alert">{{ error }}</div>
-    <div v-if="loading" class="model-row skeleton-card"></div>
+    <section class="models-toolbar" aria-label="Model filters">
+      <label class="model-search">
+        <span>Search</span>
+        <input v-model="query" type="search" placeholder="Model, family, or capability" />
+      </label>
+      <div class="filter-tabs" role="group" aria-label="Filter models">
+        <button
+          v-for="option in ([['all', 'All'], ['ready', 'Ready'], ['setup', 'Needs setup'], ['loaded', 'Loaded']] as const)"
+          :key="option[0]"
+          :class="{ active: filter === option[0] }"
+          type="button"
+          @click="filter = option[0]"
+        >
+          {{ option[1] }}
+        </button>
+      </div>
+    </section>
 
-    <section v-for="model in models" :key="model.model_id" class="model-row">
-      <div class="model-row__identity">
-        <span class="eyebrow">{{ model.family }}</span>
-        <h2>{{ model.name }}</h2>
-        <code>{{ model.model_id }}</code>
-        <p>{{ model.description }}</p>
-        <div class="model-config-grid">
-          <label class="variant-picker">
-            <span>WEIGHT VARIANT</span>
-            <select
-              v-model="selectedVariants[model.model_id]"
-              @change="selectVariant(model)"
-            >
-              <option v-for="variant in model.variants" :key="variant.name" :value="variant.name">
-                {{ variant.display_name }}{{ variant.default ? " · default" : "" }}
-              </option>
-            </select>
-            <small>{{ selectedVariantSummary(model).description }}</small>
-          </label>
-          <div class="model-resource-summary">
-            <span>
-              {{ selectedVariantSummary(model).display_name }} · local size
-              <strong>{{ formatBytes(modelResources(model)?.total_size_bytes ?? 0) }}</strong>
+    <div v-if="pageError" class="error-banner" role="alert">{{ pageError }}</div>
+    <div v-if="loading" class="model-workspace skeleton-card"></div>
+    <p v-else-if="!visibleModels.length" class="models-empty">No models match this filter.</p>
+
+    <article v-for="model in visibleModels" :key="model.model_id" class="model-workspace">
+      <header class="model-workspace__header">
+        <div class="model-identity">
+          <div class="model-identity__topline">
+            <span class="eyebrow">{{ model.family }}</span>
+            <StatusPill
+              :label="model.instance_count ? `${model.instance_count} loaded` : modelHasReadyRuntime(model) ? 'Ready' : 'Needs setup'"
+              :tone="model.instance_count || modelHasReadyRuntime(model) ? 'ready' : 'warning'"
+            />
+          </div>
+          <h2>{{ model.name }}</h2>
+          <code>{{ model.model_id }}</code>
+          <div class="model-tags">
+            <span v-for="capability in model.capabilities" :key="capability">
+              {{ formatName(capability) }}
             </span>
-            <div class="model-resource-actions">
-              <button
-                class="button button--compact"
-                :disabled="
-                  selectedVariantSummary(model).instance_count > 0 ||
-                  isPending('download', `${model.model_id}:${selectedVariant(model)}`)
-                "
-                type="button"
-                @click="handleDownload(model)"
-              >
-                {{
-                  isPending("download", `${model.model_id}:${selectedVariant(model)}`)
-                    ? "Downloading…"
-                    : downloadableResourcesAvailable(model)
-                      ? "Re-download"
-                      : "Download"
-                }}
-              </button>
-              <button
-                v-for="target in modelResources(model)?.conversion_targets ?? []"
-                :key="target.target_format"
-                class="button button--compact"
-                :disabled="
-                  selectedVariantSummary(model).instance_count > 0 ||
-                  !downloadableResourcesAvailable(model) ||
-                  isPending(
-                    'convert',
-                    `${model.model_id}:${selectedVariant(model)}:${target.target_format}`,
-                  )
-                "
-                type="button"
-                @click="handleConvert(model, target)"
-              >
-                {{
-                  isPending(
-                    "convert",
-                    `${model.model_id}:${selectedVariant(model)}:${target.target_format}`,
-                  )
-                    ? `Converting to ${formatPlatformName(target.target_format)}…`
-                    : target.available
-                      ? `Re-convert to ${formatPlatformName(target.target_format)}`
-                      : `Convert to ${formatPlatformName(target.target_format)}`
-                }}
-              </button>
-              <button
-                class="button button--compact button--danger"
-                :disabled="
-                  selectedVariantSummary(model).instance_count > 0 ||
-                  !modelResources(model)?.total_size_bytes ||
-                  isPending('delete', `${model.model_id}:${selectedVariant(model)}`)
-                "
-                type="button"
-                @click="handleDelete(model)"
-              >
-                {{
-                  isPending("delete", `${model.model_id}:${selectedVariant(model)}`)
-                    ? "Deleting…"
-                    : "Delete weights"
-                }}
-              </button>
-            </div>
-            <small v-if="selectedVariantSummary(model).instance_count > 0">
-              Unload this variant's instances before changing its weights.
-            </small>
-            <small v-if="resourceErrors[resourceKey(model.model_id, selectedVariant(model))]">
-              {{ resourceErrors[resourceKey(model.model_id, selectedVariant(model))] }}
-            </small>
           </div>
         </div>
+        <div class="variant-control">
+          <span class="column-label">VARIANT</span>
+          <div class="variant-tabs" role="group" :aria-label="`${model.name} variants`">
+            <button
+              v-for="variant in model.variants"
+              :key="variant.name"
+              :class="{ active: selectedVariant(model) === variant.name }"
+              type="button"
+              @click="selectVariant(model, variant.name)"
+            >
+              {{ variant.display_name }}
+              <i v-if="variant.default">Default</i>
+            </button>
+          </div>
+          <small>{{ formatBytes(localVariantBytes(model)) }} installed for this variant</small>
+        </div>
+      </header>
+
+      <div
+        v-if="notices[model.model_id]"
+        class="model-notice"
+        :class="`model-notice--${notices[model.model_id].tone}`"
+        role="status"
+      >
+        {{ notices[model.model_id].text }}
       </div>
-      <div class="model-row__operations">
-        <div class="model-row__runtime">
-          <p class="column-label">RUNTIMES</p>
-          <div class="runtime-grid">
-            <div v-for="runtime in model.runtimes" :key="runtime.name" class="runtime-row">
-              <StatusPill
-                :label="runtime.available ? runtime.name : `${runtime.name} unavailable`"
-                :tone="runtime.available ? 'ready' : 'warning'"
-              />
-              <span>{{ runtime.devices.join(" · ") }}</span>
-              <span>
-                Local files · {{ formatBytes(runtimeSize(model, runtime.name)) }}
-              </span>
+
+      <div class="model-workspace__body">
+        <section class="workflow-panel">
+          <div class="workflow-panel__heading">
+            <span class="step-number">01</span>
+            <div><h3>Source files</h3><p>Install each ready-to-use artifact and its required files.</p></div>
+          </div>
+          <div class="workflow-list">
+            <div v-for="resource in variantResources(model)" :key="resource.resource_id" class="workflow-item">
+              <div class="workflow-item__icon">↓</div>
+              <div class="workflow-item__content">
+                <strong>{{ formatName(resource.artifact_id) }}</strong>
+                <small :title="sourceLabel(resource)">{{ sourceLabel(resource) }}</small>
+              </div>
+              <div class="workflow-item__meta">
+                <span>{{ formatBytes(resource.size_bytes) }}</span>
+                <StatusPill
+                  :label="resourceReady(model, resource) ? 'Installed' : resource.available ? 'Shared files missing' : 'Required'"
+                  :tone="resourceReady(model, resource) ? 'ready' : 'warning'"
+                />
+              </div>
               <button
                 class="button button--compact"
-                :disabled="
-                  !runtime.available ||
-                  isPending('load', `${model.model_id}:${selectedVariant(model)}:${runtime.name}`)
-                "
+                :disabled="isPending(operationKey('download', model.model_id, resource.resource_id))"
+                type="button"
+                @click="handleDownload(model, resource)"
+              >
+                {{ isPending(operationKey('download', model.model_id, resource.resource_id)) ? 'Installing…' : resourceReady(model, resource) ? 'Reinstall' : resource.available ? 'Install shared files' : 'Install' }}
+              </button>
+            </div>
+            <p v-if="!variantResources(model).length" class="workflow-empty">No downloadable resources are declared.</p>
+          </div>
+        </section>
+
+        <section class="workflow-panel">
+          <div class="workflow-panel__heading">
+            <span class="step-number">02</span>
+            <div><h3>Optimized builds</h3><p>Create artifacts declared by the model package.</p></div>
+          </div>
+          <div class="workflow-list">
+            <div v-for="artifact in conversionTargets(model)" :key="artifactKey(artifact)" class="workflow-item">
+              <div class="workflow-item__icon">◇</div>
+              <div class="workflow-item__content">
+                <strong>{{ formatName(artifact.format) }}</strong>
+                <small>{{ formatName(artifact.runtime) }} runtime</small>
+              </div>
+              <div class="workflow-item__meta">
+                <span>{{ formatBytes(artifact.size_bytes) }}</span>
+                <StatusPill :label="artifact.available ? 'Built' : sourceReady(model) ? 'Available' : 'Source required'" :tone="artifact.available ? 'ready' : sourceReady(model) ? 'idle' : 'warning'" />
+              </div>
+              <button
+                class="button button--compact"
+                :disabled="variantHasInstances(model) || !sourceReady(model) || isPending(operationKey('convert', model.model_id, artifactKey(artifact)))"
+                type="button"
+                @click="handleConvert(model, artifact)"
+              >
+                {{ isPending(operationKey('convert', model.model_id, artifactKey(artifact))) ? 'Building…' : artifact.available ? 'Rebuild' : 'Build' }}
+              </button>
+            </div>
+            <p v-if="!conversionTargets(model).length" class="workflow-empty">This model ships ready-to-use artifacts. No build step is required.</p>
+          </div>
+        </section>
+
+        <section class="workflow-panel workflow-panel--runtime">
+          <div class="workflow-panel__heading">
+            <span class="step-number">03</span>
+            <div><h3>Runtime</h3><p>Load only when every required artifact is installed.</p></div>
+          </div>
+          <div class="runtime-options">
+            <div v-for="runtime in model.runtimes" :key="runtime.name" class="runtime-option">
+              <div class="runtime-option__header">
+                <div><strong>{{ formatName(runtime.name) }}</strong><small>{{ runtime.devices.map(formatName).join(' · ') }}</small></div>
+                <StatusPill
+                  :label="matchingInstances(model, runtime.name).length ? 'Loaded' : runtimeReady(model, runtime.name) ? 'Ready' : 'Files missing'"
+                  :tone="matchingInstances(model, runtime.name).length || runtimeReady(model, runtime.name) ? 'ready' : 'warning'"
+                />
+              </div>
+              <div class="runtime-requirements">
+                <span v-for="artifact in runtimeRequiredArtifacts(model, runtime.name)" :key="artifactKey(artifact)" :class="{ ready: artifact.available }">
+                  {{ artifact.available ? '✓' : '○' }} {{ formatName(artifact.artifact_id) }}{{ artifact.shared ? ' · shared' : '' }}
+                </span>
+              </div>
+              <button
+                class="button button--compact runtime-load-button"
+                :title="runtimeBlockReason(model, runtime) ?? 'Load a local instance'"
+                :disabled="Boolean(runtimeBlockReason(model, runtime)) || isPending(operationKey('load', model.model_id, `${selectedVariant(model)}:${runtime.name}`))"
                 type="button"
                 @click="handleLoad(model, runtime)"
               >
-                {{
-                  isPending(
-                    "load",
-                    `${model.model_id}:${selectedVariant(model)}:${runtime.name}`,
-                  )
-                    ? "Loading…"
-                    : "Load instance"
-                }}
+                {{ isPending(operationKey('load', model.model_id, `${selectedVariant(model)}:${runtime.name}`)) ? 'Loading…' : matchingInstances(model, runtime.name).length ? 'Loaded' : 'Load instance' }}
               </button>
-            </div>
-          </div>
-        </div>
-        <div class="model-row__instances">
-          <p class="column-label">INSTANCES</p>
-          <div class="instance-count">
-            <strong>{{ model.instance_count }}</strong>
-            <div>
-              <span>{{ model.ready_count }} ready</span>
-              <small v-if="!model.instances.length">Not instantiated</small>
-            </div>
-          </div>
-          <template v-if="model.instances.length">
-            <div class="instance-list">
-              <article
-                v-for="instance in model.instances"
-                :key="instance.instance_id"
-                class="instance-panel"
-              >
-                <div class="instance-panel__header">
-                  <StatusPill :label="instance.state" tone="ready" />
-                  <code>{{ instance.variant }} · {{ instance.runtime }}</code>
-                </div>
-                <small>{{ instance.instance_id.slice(0, 8) }} · refs {{ instance.reference_count }}</small>
-                <div v-if="instance.load_metrics" class="lifecycle-metric">
-                  <span>Load {{ formatDuration(instance.load_metrics.duration_ms) }}</span>
-                  <span>
-                    RSS allocated {{ formatBytes(instance.load_metrics.memory_allocated_bytes) }}
-                  </span>
-                  <span>
-                    Process RSS {{ formatBytes(instance.load_metrics.process_rss_after_bytes) }}
-                  </span>
-                </div>
+              <div v-for="instance in matchingInstances(model, runtime.name)" :key="instance.instance_id" class="loaded-instance">
+                <code>{{ instance.instance_id.slice(0, 8) }}</code>
+                <span>{{ instance.reference_count }} references</span>
                 <button
-                  class="button button--compact button--danger"
-                  :disabled="
-                    instance.reference_count > 0 ||
-                    isPending('unload', instance.instance_id)
-                  "
+                  class="text-action text-action--danger"
+                  :disabled="isPending(operationKey('unload', model.model_id, instance.instance_id))"
                   type="button"
-                  @click="handleUnload(instance)"
+                  @click="handleUnload(model, instance)"
                 >
-                  {{ isPending("unload", instance.instance_id) ? "Unloading…" : "Unload" }}
+                  {{ isPending(operationKey('unload', model.model_id, instance.instance_id)) ? 'Unloading…' : 'Unload' }}
                 </button>
-              </article>
+              </div>
             </div>
-          </template>
-        </div>
+          </div>
+        </section>
       </div>
-    </section>
-    <p class="measurement-note">
-      Memory values are process RSS observations around each operation. Concurrent work,
-      allocator caches, memory mapping, and GPU/ANE allocations can affect the delta.
-    </p>
+
+      <footer class="local-files">
+        <div class="local-files__title">
+          <span>LOCAL FILES</span>
+          <small>{{ localArtifacts(model).length }} installed · {{ formatBytes(localVariantBytes(model)) }}</small>
+        </div>
+        <div v-if="localArtifacts(model).length" class="local-file-list">
+          <div v-for="artifact in localArtifacts(model)" :key="artifactKey(artifact)" class="local-file">
+            <div><strong>{{ formatName(artifact.artifact_id) }}</strong><small>{{ formatName(artifact.format) }} · {{ formatName(artifact.runtime) }}</small></div>
+            <span>{{ formatBytes(artifact.size_bytes) }}</span>
+            <button
+              class="text-action text-action--danger"
+              :disabled="artifactHasInstances(model, artifact) || isPending(operationKey('delete', model.model_id, artifactKey(artifact)))"
+              :title="artifactHasInstances(model, artifact) ? 'Unload this runtime before removing its files' : 'Remove from local storage'"
+              type="button"
+              @click="handleDelete(model, artifact)"
+            >
+              {{ isPending(operationKey('delete', model.model_id, artifactKey(artifact))) ? 'Removing…' : 'Remove' }}
+            </button>
+          </div>
+        </div>
+        <p v-else>No files installed for this variant.</p>
+      </footer>
+    </article>
   </div>
 </template>

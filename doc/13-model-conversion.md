@@ -69,7 +69,7 @@ Ultralytics Python 包。三个 YOLO resource provider 均把 Core ML 与 ONNX �
 
 | 字段 | 值 |
 |---|---|
-| Model ID | `audio8/audio8-asr-0.1b` |
+| Model ID | `audio8/audio8-asr` |
 | Variant | `base` |
 | 源格式 | safetensors 目录 |
 | 目标格式 | Core ML 混合 artifact |
@@ -84,6 +84,13 @@ Ultralytics Python 包。三个 YOLO resource provider 均把 Core ML 与 ONNX �
 ML Program、复制 tokenizer/processor 配置，并保存 projector 与 decoder 权重。runtime 根据输入长度
 选择最小固定 bucket。Qwen2 decoder 当前不宣称运行在 Core ML/ANE 上；未来的 stateful Core ML decoder
 应作为新的明确实现接入，而不是用无缓存的全序列重算替换现有生成逻辑。
+
+## Kokoro-82M Core ML 产物
+
+Kokoro 不再提供本地 Core ML 转换入口。Model SDK 从固定 revision 的
+`aufklarer/Kokoro-82M-CoreML` 直接下载预编译端到端模型、G2P 模型、词表和 voice embeddings。
+主模型支持最多 128 个 phoneme、单段最多 5 秒，并以固定长度分段处理长文本。该 artifact 要求
+Apple Silicon 和 macOS 15+，默认允许 Core ML 在 ANE、GPU 与 CPU 间调度。
 
 ## 安全与复现
 

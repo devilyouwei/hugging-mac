@@ -21,6 +21,15 @@ class TtsArtifactView(BaseModel):
     size_bytes: int | None
 
 
+class TtsRuntimeResourceView(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    runtime: str
+    available: bool
+    size_bytes: int
+    artifact_ids: tuple[str, ...]
+
+
 class TtsResourceView(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -28,6 +37,7 @@ class TtsResourceView(BaseModel):
     revision: str
     variant: str
     artifacts: tuple[TtsArtifactView, ...]
+    runtimes: tuple[TtsRuntimeResourceView, ...]
 
     @classmethod
     def from_sdk(cls, status: ModelResourceStatus) -> TtsResourceView:
@@ -45,7 +55,23 @@ class TtsResourceView(BaseModel):
                 )
                 for item in status.artifacts
             ),
+            runtimes=tuple(
+                TtsRuntimeResourceView(
+                    runtime=item.runtime,
+                    available=item.available,
+                    size_bytes=item.size_bytes,
+                    artifact_ids=item.artifact_ids,
+                )
+                for item in status.runtimes
+            ),
         )
+
+
+class ReadyTtsInstanceView(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    instance_id: str
+    runtime: str
 
 
 class TtsModelView(BaseModel):
@@ -65,6 +91,7 @@ class TtsModelView(BaseModel):
     max_new_tokens: int
     resource: TtsResourceView
     ready_instance_id: str | None = None
+    ready_instances: tuple[ReadyTtsInstanceView, ...] = ()
 
     @classmethod
     def from_profile(
@@ -73,11 +100,13 @@ class TtsModelView(BaseModel):
         resource: TtsResourceView,
         *,
         ready_instance_id: str | None,
+        ready_instances: tuple[ReadyTtsInstanceView, ...] = (),
     ) -> TtsModelView:
         return cls(
             **asdict(profile),
             resource=resource,
             ready_instance_id=ready_instance_id,
+            ready_instances=ready_instances,
         )
 
 
@@ -85,6 +114,7 @@ class LoadTtsModelRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     model_id: str
+    runtime: str | None = None
 
 
 class LoadedTtsModelView(BaseModel):

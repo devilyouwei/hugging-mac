@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 from collections.abc import AsyncIterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -15,9 +16,6 @@ from hugging_mac_sdk import (
     ModelDefinition,
 )
 from hugging_mac_sdk.errors import InferenceError
-from hugging_mac_sdk.models.qwen3_5_4b_optiq_4bit.config import (
-    QWEN3_5_4B_OPTIQ_4BIT_REQUIRED_FILES,
-)
 from hugging_mac_sdk.models.yolov8.config import YOLOV8_SHA256
 from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
 from hugging_mac_sdk.models.yolov8.instance import YoloV8Instance
@@ -38,16 +36,31 @@ from hugging_mac_sdk.schemas.segmentation import (
 )
 from hugging_mac_web.chat.schemas import ChatReplyView, ChatStreamEventView
 from hugging_mac_web.config import WebSettings
+from hugging_mac_web.context import create_context
+from hugging_mac_web.digital_human_clone.config import DigitalHumanSettings
+from hugging_mac_web.digital_human_clone.service import DigitalHumanService
 from hugging_mac_web.live_transcription.config import (
     AUDIO8_PROFILE,
+    NEMOTRON_3_5_ASR_PROFILE,
+    QWEN3_ASR_PROFILE,
     SENSEVOICE_PROFILE,
+    LiveTranscriptionSettings,
 )
 from hugging_mac_web.live_transcription.manifest import LIVE_TRANSCRIPTION_MANIFEST
-from hugging_mac_web.live_transcription.schemas import TranscriptionResultView
+from hugging_mac_web.live_transcription.schemas import (
+    ArtifactResourceView,
+    LoadedModelView,
+    ResourceStatusView,
+    RuntimeResourceView,
+    StreamingSessionView,
+    StreamingTranscriptionView,
+    TranscriptionResultView,
+    VadDetectionView,
+)
+from hugging_mac_web.live_transcription.service import LiveTranscriptionService
 from hugging_mac_web.main import create_app
 from hugging_mac_web.text_to_speech.audio import float32le_to_wav
 from hugging_mac_web.text_to_speech.config import (
-    AUDIO8_TTS_MLX_BF16_PROFILE,
     AUDIO8_TTS_PROFILE,
     KOKORO_82M_PROFILE,
     QWEN3_TTS_0_6B_BASE_4BIT_PROFILE,
@@ -56,6 +69,18 @@ from hugging_mac_web.text_to_speech.manifest import TEXT_TO_SPEECH_MANIFEST
 from PIL import Image
 
 YOLOV8_N_SHA256 = YOLOV8_SHA256["n"]
+
+
+def test_live_transcription_stability_override_does_not_change_audio8(tmp_path: Path) -> None:
+    context = SimpleNamespace(settings=SimpleNamespace(model_home=tmp_path))
+    service = LiveTranscriptionService(  # type: ignore[arg-type]
+        context,
+        LiveTranscriptionSettings(coreml_compute_units="cpu-only"),
+    )
+
+    assert service._model_options_for(AUDIO8_PROFILE.model_id) == {"model_home": tmp_path}
+    assert service._model_options_for(SENSEVOICE_PROFILE.model_id)["compute_units"] == "cpu-only"
+    assert service._model_options_for(QWEN3_ASR_PROFILE.model_id)["device"] == "cpu-only"
 
 
 class PlatformDummyInstance(BaseModelInstance):
@@ -76,6 +101,14 @@ def _settings(tmp_path: Path) -> WebSettings:
     )
 
 
+def test_default_runtime_preference_is_env_configurable(monkeypatch: Any) -> None:
+    monkeypatch.setenv("WEB_RUNTIME_PREFERENCE", "onnx,mps,mlx,coreml")
+
+    settings = WebSettings(_env_file=None)
+
+    assert settings.runtime_preferences == ("onnx", "mps", "mlx", "coreml")
+
+
 def _png() -> bytes:
     output = io.BytesIO()
     Image.new("RGB", (8, 6), color=(20, 40, 60)).save(output, format="PNG")
@@ -90,6 +123,11 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         health = client.get("/api/v1/system/health")
         info = client.get("/api/v1/system/info")
         models = client.get("/api/v1/catalog/models")
+        deepfilternet_resources = client.get(
+            "/api/v1/catalog/models/deepfilternet/deepfilternet3/resources"
+        )
+        qwen3_asr_resources = client.get("/api/v1/catalog/models/qwen/qwen3-asr/resources")
+        qwen3_asr_inventory = client.get("/api/v1/catalog/models/qwen/qwen3-asr/inventory")
         apps = client.get("/api/v1/catalog/apps")
         games = client.get("/api/v1/catalog/games")
         asr_models = client.get("/api/v1/apps/live-transcription/models")
@@ -127,22 +165,39 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert all(item["status"] == "available" for item in app_summaries.values())
     assert {item["model_id"] for item in asr_models.json()["data"]} == {
         AUDIO8_PROFILE.model_id,
+        NEMOTRON_3_5_ASR_PROFILE.model_id,
         SENSEVOICE_PROFILE.model_id,
+        "qwen/qwen3-asr",
     }
     assert all(item["ready_instance_id"] is None for item in asr_models.json()["data"])
+    asr_model_views = {item["model_id"]: item for item in asr_models.json()["data"]}
+    assert asr_model_views[AUDIO8_PROFILE.model_id]["runtime"] == "coreml"
+    assert asr_model_views[SENSEVOICE_PROFILE.model_id]["runtime"] == "coreml"
+    assert asr_model_views[NEMOTRON_3_5_ASR_PROFILE.model_id]["streaming"]
+    assert asr_model_views[NEMOTRON_3_5_ASR_PROFILE.model_id][
+        "streaming_chunk_seconds"
+    ] == 2.24
     assert {item["model_id"] for item in tts_models.json()["data"]} == {
-        "audio8/audio8-tts-preview-0.6b",
-            "mlx-community/audio8-tts-preview-0.6b-bf16",
-            "mlx-community/kokoro-82m-bf16",
-            "mlx-community/qwen3-tts-12hz-0.6b-base-4bit",
-        }
-    chat_model_views = {item["model_id"]: item for item in chat_models.json()["data"]}
-    assert set(chat_model_views) == {
-        "mlx-community/qwen3.5-9b-mlx-4bit",
-        "mlx-community/qwen3.5-4b-optiq-4bit",
+        "audio8/audio8-tts-preview",
+        "hexgrad/kokoro",
+        "qwen/qwen3-tts-12hz",
     }
-    assert chat_model_views["mlx-community/qwen3.5-9b-mlx-4bit"]["supports_images"]
-    assert chat_model_views["mlx-community/qwen3.5-4b-optiq-4bit"]["supports_images"]
+    qwen3_tts_view = next(
+        item for item in tts_models.json()["data"] if item["model_id"] == "qwen/qwen3-tts-12hz"
+    )
+    assert qwen3_tts_view["display_name"] == "Qwen3-TTS"
+    assert {item["runtime"] for item in qwen3_tts_view["resource"]["runtimes"]} == {
+        "mlx",
+        "coreml",
+    }
+    chat_model_views = {item["model_id"]: item for item in chat_models.json()["data"]}
+    assert set(chat_model_views) == {"qwen/qwen3.5"}
+    assert {item["variant"] for item in chat_models.json()["data"]} == {
+        "9b",
+        "4b",
+        "2b",
+    }
+    assert all(item["supports_images"] for item in chat_models.json()["data"])
     assert games.status_code == 200
     game_summaries = {item["manifest"]["app_id"]: item for item in games.json()["data"]}
     assert set(game_summaries) == {"digital-human", "yolo-pose-follow"}
@@ -151,7 +206,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     digital_human_models = {
         item["model_id"] for item in game_summaries["digital-human"]["manifest"]["required_models"]
     }
-    assert "mlx-community/kokoro-82m-bf16" in digital_human_models
+    assert "hexgrad/kokoro" in digital_human_models
     assert "mlx-community/audio8-tts-preview-0.6b-bf16" not in digital_human_models
     assert game_summaries["yolo-pose-follow"]["manifest"]["category"] == "game"
     assert game_summaries["yolo-pose-follow"]["status"] == "available"
@@ -161,29 +216,54 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert "/api/v1/apps/instance-segmentation/segment" in openapi.json()["paths"]
     assert "/api/v1/apps/live-transcription/transcribe" in openapi.json()["paths"]
     assert "/api/v1/apps/live-transcription/models/load" in openapi.json()["paths"]
+    assert "/api/v1/apps/live-transcription/stream/start" in openapi.json()["paths"]
+    assert "/api/v1/apps/live-transcription/stream/chunk" in openapi.json()["paths"]
+    assert "/api/v1/apps/live-transcription/stream/finish" in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/synthesize" in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/synthesize/reference" in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/models/load" in openapi.json()["paths"]
     assert "/api/v1/apps/chat/messages" in openapi.json()["paths"]
     assert "/api/v1/apps/chat/messages/stream" in openapi.json()["paths"]
     assert "/api/v1/apps/chat/model/load" in openapi.json()["paths"]
-    assert "/api/v1/apps/chat/resources/source/download" in openapi.json()["paths"]
-    assert "/api/v1/apps/chat/resources" in openapi.json()["paths"]
+    assert "/api/v1/apps/chat/resources/source/download" not in openapi.json()["paths"]
+    assert "/api/v1/apps/chat/resources" not in openapi.json()["paths"]
+    assert "/api/v1/apps/object-detection/resources/source/download" not in openapi.json()["paths"]
+    assert "/api/v1/apps/object-detection/resources/coreml/convert" not in openapi.json()["paths"]
+    assert "/api/v1/apps/pose-estimation/resources/source/download" not in openapi.json()["paths"]
+    assert "/api/v1/apps/pose-estimation/resources/coreml/convert" not in openapi.json()["paths"]
+    assert (
+        "/api/v1/apps/instance-segmentation/resources/source/download"
+        not in openapi.json()["paths"]
+    )
+    assert (
+        "/api/v1/apps/instance-segmentation/resources/coreml/convert" not in openapi.json()["paths"]
+    )
     assert "/api/v1/games/yolo-pose-follow/templates" in openapi.json()["paths"]
     assert "/api/v1/games/yolo-pose-follow/match" in openapi.json()["paths"]
     assert "/api/v1/games/digital-human/setup" in openapi.json()["paths"]
+    assert "/api/v1/games/digital-human/setup/load" in openapi.json()["paths"]
+    assert "/api/v1/games/digital-human/setup/prepare" not in openapi.json()["paths"]
     assert "/api/v1/games/digital-human/voice/register" not in openapi.json()["paths"]
     assert "/api/v1/games/digital-human/chat/stream" in openapi.json()["paths"]
     assert "/api/v1/games/digital-human/synthesize" in openapi.json()["paths"]
     model = next(item for item in models.json()["data"] if item["model_id"] == "ultralytics/yolov8")
+    silero = next(
+        item for item in models.json()["data"] if item["model_id"] == "snakers4/silero-vad"
+    )
+    deepfilternet = next(
+        item for item in models.json()["data"] if item["model_id"] == "deepfilternet/deepfilternet3"
+    )
+    qwen3_asr = next(item for item in models.json()["data"] if item["model_id"] == "qwen/qwen3-asr")
     assert {item["model_id"] for item in models.json()["data"]} >= {
-        "audio8/audio8-asr-0.1b",
-        "audio8/audio8-tts-preview-0.6b",
-        "mlx-community/audio8-tts-preview-0.6b-bf16",
-        "mlx-community/kokoro-82m-bf16",
-        "funaudiollm/sensevoice-small",
-        "mlx-community/qwen3.5-9b-mlx-4bit",
-        "mlx-community/qwen3.5-4b-optiq-4bit",
+        "audio8/audio8-asr",
+        "audio8/audio8-tts-preview",
+        "hexgrad/kokoro",
+        "deepfilternet/deepfilternet3",
+        "funaudiollm/sensevoice",
+        "qwen/qwen3.5",
+        "qwen/qwen3-asr",
+        NEMOTRON_3_5_ASR_PROFILE.model_id,
+        "snakers4/silero-vad",
         "ultralytics/yolov8",
         "ultralytics/yolov8-pose",
         "ultralytics/yolov8-seg",
@@ -199,6 +279,38 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         "onnx",
         "pytorch-mps",
     }
+    assert silero["default_runtime"] == "coreml"
+    assert {runtime["name"] for runtime in silero["runtimes"]} == {"coreml", "onnx"}
+    assert deepfilternet["default_runtime"] == "coreml"
+    assert [variant["name"] for variant in deepfilternet["variants"]] == ["default"]
+    assert {runtime["name"] for runtime in deepfilternet["runtimes"]} == {"coreml"}
+    assert qwen3_asr["default_runtime"] == "coreml"
+    assert [variant["name"] for variant in qwen3_asr["variants"]] == ["0.6b"]
+    assert {runtime["name"] for runtime in qwen3_asr["runtimes"]} == {"coreml"}
+    assert deepfilternet_resources.status_code == 200
+    assert deepfilternet_resources.json()["data"]["artifacts"][0] == {
+        "artifact_id": "coreml-int8",
+        "format": "coreml",
+        "runtime": "coreml",
+        "available": False,
+        "size_bytes": None,
+        "provisioning": "download",
+    }
+    assert qwen3_asr_resources.status_code == 200
+    assert [item["artifact_id"] for item in qwen3_asr_resources.json()["data"]["artifacts"]] == [
+        "coreml-int8",
+        "tokenizer",
+    ]
+    assert qwen3_asr_inventory.status_code == 200
+    assert [item["artifact_id"] for item in qwen3_asr_inventory.json()["data"]["resources"]] == [
+        "coreml-int8"
+    ]
+    assert qwen3_asr_inventory.json()["data"]["resources"][0]["source"]["kind"] == ("huggingface")
+    assert [item["artifact_id"] for item in qwen3_asr_inventory.json()["data"]["artifacts"]] == [
+        "coreml-int8",
+        "tokenizer",
+    ]
+    assert qwen3_asr_inventory.json()["data"]["artifacts"][1]["shared"]
     assert preflight.status_code == 200
     assert preflight.headers["access-control-allow-origin"] == "http://localhost:5173"
 
@@ -238,42 +350,6 @@ def test_chat_accepts_text_and_image(
     assert response.status_code == 200
     assert response.json()["data"]["content"] == "图中是一块深色背景。"
     assert not list((tmp_path / "cache" / "chat-uploads").iterdir())
-
-
-def test_chat_downloads_and_deletes_optiq_model(
-    tmp_path: Path,
-    monkeypatch: Any,
-) -> None:
-    async def fake_download(
-        _: ResourceDownloader,
-        source: Any,
-        destination: Path,
-        **__: object,
-    ) -> ResolvedResource:
-        for filename in QWEN3_5_4B_OPTIQ_4BIT_REQUIRED_FILES:
-            path = destination / filename
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(b"optiq")
-        return ResolvedResource(path=destination, source=source, size_bytes=1)
-
-    monkeypatch.setattr(ResourceDownloader, "download", fake_download)
-    model_id = "mlx-community/qwen3.5-4b-optiq-4bit"
-    app = create_app(_settings(tmp_path))
-
-    with TestClient(app) as client:
-        downloaded = client.post(
-            "/api/v1/apps/chat/resources/source/download",
-            params={"model_id": model_id},
-        )
-        deleted = client.delete(
-            "/api/v1/apps/chat/resources",
-            params={"model_id": model_id},
-        )
-
-    assert downloaded.status_code == 200
-    assert downloaded.json()["data"]["artifacts"][0]["available"]
-    assert deleted.status_code == 200
-    assert not deleted.json()["data"]["artifacts"][0]["available"]
 
 
 def test_chat_streams_deltas_and_cleans_up_images(
@@ -346,10 +422,12 @@ def test_live_transcription_accepts_vad_wave_segments(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
-    async def fake_transcribe(*_: object, **__: object) -> TranscriptionResultView:
+    async def fake_transcribe(*_: object, **kwargs: object) -> TranscriptionResultView:
+        assert kwargs["vad_instance_id"] == "silero-instance"
+        assert kwargs["vad_threshold"] == 0.425
         return TranscriptionResultView(
             text="你好 Hugging Mac",
-            model_id="audio8/audio8-asr-0.1b",
+            model_id="audio8/audio8-asr",
             instance_id="test-instance",
             runtime="coreml",
             device="cpu-and-neural-engine",
@@ -372,6 +450,8 @@ def test_live_transcription_accepts_vad_wave_segments(
             data={
                 "model_id": AUDIO8_PROFILE.model_id,
                 "instance_id": "test-instance",
+                "vad_instance_id": "silero-instance",
+                "vad_threshold": "0.425",
             },
         )
 
@@ -380,16 +460,257 @@ def test_live_transcription_accepts_vad_wave_segments(
     assert response.json()["data"]["duration_seconds"] == 1.25
 
 
-def test_live_transcription_declares_both_asr_models() -> None:
+def test_live_transcription_load_forwards_selected_runtime(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_load_model(
+        self: object,
+        model_id: str,
+        *,
+        runtime: str | None = None,
+    ) -> LoadedModelView:
+        del self
+        assert model_id == AUDIO8_PROFILE.model_id
+        assert runtime == "pytorch-mps"
+        return LoadedModelView(
+            instance_id="audio8-mps",
+            model_id=model_id,
+            variant="0.1b",
+            runtime=runtime,
+            device="mps",
+            state="ready",
+        )
+
+    monkeypatch.setattr(
+        "hugging_mac_web.live_transcription.service.LiveTranscriptionService.load_model",
+        fake_load_model,
+    )
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/apps/live-transcription/models/load",
+            json={"model_id": AUDIO8_PROFILE.model_id, "runtime": "pytorch-mps"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["runtime"] == "pytorch-mps"
+
+
+def test_live_transcription_uses_silero_vad_endpoint(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_detect(*_: object, **__: object) -> VadDetectionView:
+        return VadDetectionView(
+            voiced=True,
+            speech_seconds=0.16,
+            duration_seconds=0.18,
+            inference_ms=0.7,
+        )
+
+    monkeypatch.setattr(
+        "hugging_mac_web.live_transcription.service.LiveTranscriptionService.detect_voice_activity",
+        fake_detect,
+    )
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/apps/live-transcription/vad/detect",
+            files={"file": ("window.wav", b"RIFF-test-wave", "audio/wav")},
+            data={"instance_id": "silero-instance", "threshold": "0.5"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "voiced": True,
+        "speech_seconds": 0.16,
+        "duration_seconds": 0.18,
+        "inference_ms": 0.7,
+    }
+
+
+def test_live_transcription_reports_optional_pipeline_components(tmp_path: Path) -> None:
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/apps/live-transcription/pipeline/components")
+
+    assert response.status_code == 200
+    components = {item["component_id"]: item for item in response.json()["data"]}
+    assert set(components) == {"vad", "enhancement"}
+    assert components["vad"]["model_id"] == "snakers4/silero-vad"
+    assert components["vad"]["state"] == "not-downloaded"
+    assert not components["vad"]["downloaded"]
+    assert components["enhancement"]["state"] == "not-downloaded"
+    assert components["enhancement"]["loaded_model"] is None
+
+
+def test_models_catalog_exposes_all_nemotron_download_variants(tmp_path: Path) -> None:
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        inventory = client.get(
+            "/api/v1/catalog/models/"
+            "nvidia/nemotron-3.5-asr-streaming-0.6b/inventory"
+        )
+
+    assert inventory.status_code == 200
+    resources = inventory.json()["data"]["resources"]
+    assert len(resources) == 8
+    assert {item["variant"] for item in resources} == {
+        f"{script}-{chunk_ms}ms"
+        for script in ("latin", "multilingual")
+        for chunk_ms in (560, 1120, 2240, 4480)
+    }
+    assert all(item["runtime"] == "coreml" for item in resources)
+
+
+def test_live_transcription_exposes_stateful_streaming_routes(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_start(*_: object, **kwargs: object) -> StreamingSessionView:
+        assert kwargs["model_id"] == NEMOTRON_3_5_ASR_PROFILE.model_id
+        assert kwargs["instance_id"] == "nemotron-instance"
+        return StreamingSessionView(
+            session_id="stream-1",
+            model_id=NEMOTRON_3_5_ASR_PROFILE.model_id,
+            instance_id="nemotron-instance",
+            runtime="coreml",
+            device="cpu-and-neural-engine",
+            sample_rate=16000,
+        )
+
+    async def fake_chunk(
+        _: object, audio: bytes, **kwargs: object
+    ) -> StreamingTranscriptionView:
+        assert audio == b"RIFF-stream"
+        assert kwargs["session_id"] == "stream-1"
+        assert "enhancement_instance_id" not in kwargs
+        return _streaming_view(is_final=False, delta=" world")
+
+    async def fake_finish(*_: object, **__: object) -> StreamingTranscriptionView:
+        return _streaming_view(is_final=True, delta="")
+
+    monkeypatch.setattr(LiveTranscriptionService, "start_stream", fake_start)
+    monkeypatch.setattr(LiveTranscriptionService, "transcribe_stream_chunk", fake_chunk)
+    monkeypatch.setattr(LiveTranscriptionService, "finish_stream", fake_finish)
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        started = client.post(
+            "/api/v1/apps/live-transcription/stream/start",
+            json={
+                "model_id": NEMOTRON_3_5_ASR_PROFILE.model_id,
+                "instance_id": "nemotron-instance",
+            },
+        )
+        chunk = client.post(
+            "/api/v1/apps/live-transcription/stream/chunk",
+            files={"file": ("chunk.wav", b"RIFF-stream", "audio/wav")},
+            data={
+                "model_id": NEMOTRON_3_5_ASR_PROFILE.model_id,
+                "instance_id": "nemotron-instance",
+                "session_id": "stream-1",
+                # Legacy clients may still submit this field. Nemotron streaming
+                # must ignore it and send the original audio directly to ASR.
+                "enhancement_instance_id": "deepfilter-instance",
+            },
+        )
+        finished = client.post(
+            "/api/v1/apps/live-transcription/stream/finish",
+            json={
+                "model_id": NEMOTRON_3_5_ASR_PROFILE.model_id,
+                "instance_id": "nemotron-instance",
+                "session_id": "stream-1",
+            },
+        )
+
+    assert started.status_code == 200
+    assert chunk.json()["data"]["delta"] == " world"
+    assert finished.json()["data"]["is_final"]
+
+
+def _streaming_view(*, is_final: bool, delta: str) -> StreamingTranscriptionView:
+    return StreamingTranscriptionView(
+        session_id="stream-1",
+        model_id=NEMOTRON_3_5_ASR_PROFILE.model_id,
+        instance_id="nemotron-instance",
+        runtime="coreml",
+        device="cpu-and-neural-engine",
+        text="hello world",
+        delta=delta,
+        sample_rate=16000,
+        audio_seconds=2.24,
+        generated_tokens=2,
+        detected_language="en-US",
+        is_final=is_final,
+        preprocess_ms=None if is_final else 1.0,
+        inference_ms=12.0 if is_final else 50.0,
+    )
+
+
+def test_live_transcription_declares_inference_ready_asr_models() -> None:
     requirements = {
         requirement.model_id: requirement
         for requirement in LIVE_TRANSCRIPTION_MANIFEST.required_models
     }
 
     assert AUDIO8_PROFILE.runtime == "coreml"
-    assert SENSEVOICE_PROFILE.runtime == "pytorch-mps"
+    assert SENSEVOICE_PROFILE.runtime == "coreml"
     assert requirements[AUDIO8_PROFILE.model_id].preferred_runtime == "coreml"
-    assert requirements[SENSEVOICE_PROFILE.model_id].preferred_runtime == "pytorch-mps"
+    assert requirements[SENSEVOICE_PROFILE.model_id].preferred_runtime == "coreml"
+    assert requirements["qwen/qwen3-asr"].preferred_runtime == "coreml"
+    assert requirements[NEMOTRON_3_5_ASR_PROFILE.model_id].preferred_runtime == "coreml"
+    assert NEMOTRON_3_5_ASR_PROFILE.streaming
+    assert requirements["snakers4/silero-vad"].preferred_runtime == "coreml"
+    assert requirements["snakers4/silero-vad"].capabilities == ("voice-activity-detection",)
+
+
+def test_live_transcription_prefers_available_coreml_artifact() -> None:
+    resource = ResourceStatusView(
+        model_id=SENSEVOICE_PROFILE.model_id,
+        revision="revision",
+        variant="small",
+        artifacts=(
+            ArtifactResourceView(
+                artifact_id="source",
+                format="pytorch",
+                runtime="pytorch-mps",
+                available=True,
+                size_bytes=1,
+            ),
+            ArtifactResourceView(
+                artifact_id="coreml",
+                format="coreml",
+                runtime="coreml",
+                available=True,
+                size_bytes=1,
+            ),
+        ),
+        runtimes=(
+            RuntimeResourceView(
+                runtime="pytorch-mps",
+                available=True,
+                size_bytes=1,
+                artifact_ids=("source",),
+            ),
+            RuntimeResourceView(
+                runtime="coreml",
+                available=True,
+                size_bytes=1,
+                artifact_ids=("coreml",),
+            ),
+        ),
+    )
+
+    selected = LiveTranscriptionService._select_runtime(SENSEVOICE_PROFILE, resource)
+
+    assert selected.runtime == "coreml"
+    assert selected.required_artifact_id == "coreml"
 
 
 def test_text_to_speech_returns_playable_wave(
@@ -400,9 +721,9 @@ def test_text_to_speech_returns_playable_wave(
         return (
             float32le_to_wav(np.zeros(2400, dtype=np.float32).tobytes(), 24000),
             {
-                "x-model-id": "mlx-community/kokoro-82m-bf16",
-                "x-runtime": "mlx",
-                "x-device": "gpu",
+                "x-model-id": "hexgrad/kokoro",
+                "x-runtime": "pytorch-mps",
+                "x-device": "mps",
                 "x-duration-seconds": "0.1",
                 "x-inference-ms": "12.0",
             },
@@ -418,7 +739,7 @@ def test_text_to_speech_returns_playable_wave(
         response = client.post(
             "/api/v1/apps/text-to-speech/synthesize",
             json={
-                "model_id": "mlx-community/kokoro-82m-bf16",
+                "model_id": "hexgrad/kokoro",
                 "instance_id": "test-instance",
                 "text": "Hello from Kokoro.",
                 "voice": "af_heart",
@@ -429,8 +750,22 @@ def test_text_to_speech_returns_playable_wave(
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "audio/wav"
-    assert response.headers["x-runtime"] == "mlx"
+    assert response.headers["x-runtime"] == "pytorch-mps"
     assert response.content.startswith(b"RIFF")
+
+
+def test_digital_human_uses_runtime_preference_and_declared_kokoro_variant(
+    tmp_path: Path,
+) -> None:
+    context = create_context(_settings(tmp_path))
+    specs = DigitalHumanService(context, DigitalHumanSettings())._model_specs("4b")
+
+    assert specs[2] == (
+        "tts",
+        "hexgrad/kokoro",
+        "v1.0",
+        "coreml",
+    )
 
 
 def test_text_to_speech_returns_actionable_inference_reason(
@@ -453,7 +788,7 @@ def test_text_to_speech_returns_actionable_inference_reason(
         response = client.post(
             "/api/v1/apps/text-to-speech/synthesize",
             json={
-                "model_id": AUDIO8_TTS_MLX_BF16_PROFILE.model_id,
+                "model_id": AUDIO8_TTS_PROFILE.model_id,
                 "instance_id": "mlx-instance",
                 "text": "你好。",
                 "voice": "speaker_a",
@@ -467,26 +802,24 @@ def test_text_to_speech_returns_actionable_inference_reason(
     )
 
 
-def test_kokoro_tts_uses_mlx_bf16() -> None:
-    assert KOKORO_82M_PROFILE.runtime == "mlx"
-    assert KOKORO_82M_PROFILE.variant == "bf16"
-    assert KOKORO_82M_PROFILE.required_artifact_id == "model"
+def test_kokoro_tts_uses_downloaded_coreml_artifact() -> None:
+    assert KOKORO_82M_PROFILE.runtime == "coreml"
+    assert KOKORO_82M_PROFILE.variant == "v1.0"
+    assert KOKORO_82M_PROFILE.required_artifact_id == "coreml"
 
 
-def test_audio8_mlx_tts_uses_direct_download_without_conversion() -> None:
+def test_audio8_tts_uses_one_canonical_model_requirement() -> None:
     requirements = {
         requirement.model_id: requirement for requirement in TEXT_TO_SPEECH_MANIFEST.required_models
     }
 
     assert AUDIO8_TTS_PROFILE.runtime == "pytorch"
     assert requirements[AUDIO8_TTS_PROFILE.model_id].preferred_runtime == "pytorch"
-    assert AUDIO8_TTS_MLX_BF16_PROFILE.runtime == "mlx"
-    assert AUDIO8_TTS_MLX_BF16_PROFILE.required_artifact_id == "model"
-    assert AUDIO8_TTS_MLX_BF16_PROFILE.requires_reference_voice
-    assert requirements[AUDIO8_TTS_MLX_BF16_PROFILE.model_id].preferred_runtime == "mlx"
     assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.runtime == "mlx"
-    assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.variant == "4bit"
+    assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.variant == "0.6b-base"
     assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.requires_reference_audio
+    assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.display_name == "Qwen3-TTS"
+    assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.short_name == "Qwen3-TTS"
     assert requirements[QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.model_id].preferred_runtime == "mlx"
 
 
@@ -509,7 +842,7 @@ def test_text_to_speech_accepts_reference_voice_upload(
         return (
             float32le_to_wav(np.zeros(4410, dtype=np.float32).tobytes(), 44100),
             {
-                "x-model-id": AUDIO8_TTS_MLX_BF16_PROFILE.model_id,
+                "x-model-id": AUDIO8_TTS_PROFILE.model_id,
                 "x-runtime": "mlx",
                 "x-device": "gpu",
                 "x-duration-seconds": "0.1",
@@ -528,7 +861,7 @@ def test_text_to_speech_accepts_reference_voice_upload(
             "/api/v1/apps/text-to-speech/synthesize/reference",
             files={"file": ("reference.wav", b"RIFF-reference", "audio/wav")},
             data={
-                "model_id": AUDIO8_TTS_MLX_BF16_PROFILE.model_id,
+                "model_id": AUDIO8_TTS_PROFILE.model_id,
                 "instance_id": "mlx-instance",
                 "text": "你好。",
                 "voice": "speaker_a",
@@ -620,9 +953,13 @@ def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path)
 
         loaded = client.post(
             "/api/v1/catalog/models/ultralytics/yolov8/instances",
-            json={"runtime": "coreml", "variant": "s", "warmup": False},
+            json={"runtime": "coreml", "variant": "s", "warmup": False, "shared": True},
         )
         instance_id = loaded.json()["data"]["instance_id"]
+        reused = client.post(
+            "/api/v1/catalog/models/ultralytics/yolov8/instances",
+            json={"runtime": "coreml", "variant": "s", "shared": True},
+        )
         catalog = client.get("/api/v1/catalog/models")
         blocked_delete = client.delete(
             "/api/v1/catalog/models/ultralytics/yolov8/resources?variant=s"
@@ -641,6 +978,7 @@ def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path)
     assert loaded.json()["data"]["variant"] == "s"
     assert loaded.json()["data"]["load_metrics"]["operation"] == "load"
     assert loaded.json()["data"]["load_metrics"]["duration_ms"] >= 0
+    assert reused.json()["data"]["instance_id"] == instance_id
     loaded_model = next(
         item for item in catalog.json()["data"] if item["model_id"] == "ultralytics/yolov8"
     )

@@ -42,7 +42,7 @@ Runtime 作为可移植路径，自动优先 Core ML Execution Provider 并回�
 `DetectionRequest`：
 
 - `ImageInput(path=...)` 或 `ImageInput(data=...)`，必须且只能提供一个；
-- confidence，默认 `0.25`；
+- confidence，默认 `0.5`；
 - IoU threshold，默认 `0.7`；
 - max detections，默认 `300`；
 - 可选 class ID 过滤。

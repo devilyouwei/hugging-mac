@@ -27,6 +27,7 @@ const video = ref<HTMLVideoElement | null>(null)
 const canvas = document.createElement("canvas")
 const stream = ref<MediaStream | null>(null)
 const cameraReady = ref(false)
+const cameraAspectRatio = ref("16 / 9")
 const detecting = ref(false)
 type AnalysisRate = "max" | "1" | "2" | "5"
 
@@ -57,6 +58,7 @@ async function startCamera() {
     stream.value = mediaStream
     video.value.srcObject = mediaStream
     await video.value.play()
+    cameraAspectRatio.value = `${video.value.videoWidth} / ${video.value.videoHeight}`
     cameraReady.value = true
   } catch (caught) {
     stopCamera()
@@ -152,7 +154,11 @@ onBeforeUnmount(stopCamera)
       </label>
     </div>
 
-    <div class="media-stage" :class="{ 'media-stage--empty': !cameraReady }">
+    <div
+      class="media-stage camera-stage"
+      :class="{ 'media-stage--empty': !cameraReady, 'camera-stage--ready': cameraReady }"
+      :style="cameraReady ? { aspectRatio: cameraAspectRatio } : undefined"
+    >
       <video ref="video" autoplay muted playsinline></video>
       <component :is="overlay" :result="cameraReady ? result : null" />
       <div v-if="detecting" class="live-indicator">
@@ -194,3 +200,18 @@ onBeforeUnmount(stopCamera)
     <component :is="results" v-if="result" :result="result" />
   </div>
 </template>
+
+<style scoped>
+.camera-stage--ready {
+  min-height: 0;
+}
+
+.camera-stage--ready video {
+  height: 100%;
+  inset: 0;
+  max-height: none;
+  object-fit: fill;
+  position: absolute;
+  width: 100%;
+}
+</style>

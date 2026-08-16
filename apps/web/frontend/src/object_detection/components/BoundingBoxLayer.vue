@@ -6,6 +6,11 @@ defineProps<{
 }>()
 
 const colors = ["#c8ff46", "#ff7148", "#7de2ff", "#f6bf4f", "#cb9cff"]
+
+function percentage(value: number, size: number): string {
+  if (!Number.isFinite(value) || !Number.isFinite(size) || size <= 0) return "0%"
+  return `${Math.min(100, Math.max(0, (value / size) * 100))}%`
+}
 </script>
 
 <template>
@@ -15,10 +20,16 @@ const colors = ["#c8ff46", "#ff7148", "#7de2ff", "#f6bf4f", "#cb9cff"]
       :key="`${detection.label}-${index}`"
       class="detection-box"
       :style="{
-        left: `${(detection.box.x1 / result.image_size.width) * 100}%`,
-        top: `${(detection.box.y1 / result.image_size.height) * 100}%`,
-        width: `${((detection.box.x2 - detection.box.x1) / result.image_size.width) * 100}%`,
-        height: `${((detection.box.y2 - detection.box.y1) / result.image_size.height) * 100}%`,
+        left: percentage(detection.box.x1, result.image_size.width),
+        top: percentage(detection.box.y1, result.image_size.height),
+        width: percentage(
+          Math.max(0, Math.min(result.image_size.width, detection.box.x2) - Math.max(0, detection.box.x1)),
+          result.image_size.width,
+        ),
+        height: percentage(
+          Math.max(0, Math.min(result.image_size.height, detection.box.y2) - Math.max(0, detection.box.y1)),
+          result.image_size.height,
+        ),
         borderColor: colors[index % colors.length],
       }"
     >

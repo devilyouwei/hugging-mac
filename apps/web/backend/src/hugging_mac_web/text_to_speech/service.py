@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
 from hugging_mac_sdk import ReusePolicy
 from hugging_mac_sdk.capabilities import SpeechSynthesis
 from hugging_mac_sdk.core.instance import ModelState
 from hugging_mac_sdk.errors import ResourceNotFoundError
+from hugging_mac_sdk.schemas.conversion import ArtifactFormat
 from hugging_mac_sdk.schemas.speech_synthesis import SpeechSynthesisRequest
 from hugging_mac_sdk.schemas.transcription import AudioInput
 
@@ -20,6 +22,7 @@ from hugging_mac_web.text_to_speech.config import (
 )
 from hugging_mac_web.text_to_speech.schemas import (
     LoadedTtsModelView,
+    ReadyTtsInstanceView,
     SynthesizeSpeechRequest,
     TtsModelView,
     TtsResourceView,
@@ -41,12 +44,18 @@ class TextToSpeechService:
         )
 
     async def model_view(self, model_id: str) -> TtsModelView:
-        profile = self._profile(model_id)
+        configured = self._profile(model_id)
         resource = await self.resource_status(model_id)
+        profile = self._select_runtime(configured, resource)
+        ready_instances = await self._ready_instances(profile)
         return TtsModelView.from_profile(
             profile,
             resource,
-            ready_instance_id=await self._ready_instance_id(profile),
+            ready_instance_id=next(
+                (item.instance_id for item in ready_instances if item.runtime == profile.runtime),
+                None,
+            ),
+            ready_instances=ready_instances,
         )
 
     async def resource_status(self, model_id: str) -> TtsResourceView:
@@ -58,23 +67,30 @@ class TextToSpeechService:
         )
         return TtsResourceView.from_sdk(status)
 
-    async def download_source(
-        self,
-        model_id: str,
-        *,
-        overwrite: bool = False,
-    ) -> TtsResourceView:
-        profile = self._profile(model_id)
-        await self._context.models.resources.download_source(
-            profile.model_id,
-            variant=profile.variant,
-            options=self._model_options(profile),
-            overwrite=overwrite,
-        )
-        return await self.resource_status(model_id)
-
-    async def load_model(self, model_id: str) -> LoadedTtsModelView:
-        profile = self._profile(model_id)
+    async def load_model(self, model_id: str, *, runtime: str | None = None) -> LoadedTtsModelView:
+        configured = self._profile(model_id)
+        resource = await self.resource_status(model_id)
+        profile = self._select_runtime(configured, resource)
+        if runtime is not None:
+            selected = next(
+                (item for item in resource.runtimes if item.runtime == runtime),
+                None,
+            )
+            if selected is None:
+                raise ResourceNotFoundError(
+                    f"Runtime {runtime} is not supported by {model_id}",
+                    details={"model_id": model_id, "runtime": runtime},
+                )
+            if not selected.available:
+                raise ResourceNotFoundError(
+                    f"Runtime {runtime} assets are not available for {model_id}",
+                    details={"model_id": model_id, "runtime": runtime},
+                )
+            profile = replace(
+                profile,
+                runtime=runtime,
+                required_artifact_id=self._resource_artifact_id(resource, runtime),
+            )
         handle = await self._context.models.load(
             profile.model_id,
             variant=profile.variant,
@@ -100,11 +116,6 @@ class TextToSpeechService:
                 "Audio8 MLX requires a voice profile name",
                 details={"model_id": profile.model_id},
             )
-        if profile.requires_reference_audio and (reference_audio is None or reference_text is None):
-            raise ResourceNotFoundError(
-                "Qwen3-TTS Base requires reference audio and its transcript",
-                details={"model_id": profile.model_id},
-            )
         if (reference_audio is None) != (reference_text is None):
             raise ValueError("reference_audio and reference_text must be provided together")
         instance = await self._context.models.instances.require(request.instance_id)
@@ -113,6 +124,15 @@ class TextToSpeechService:
             raise ResourceNotFoundError(
                 "The selected TTS instance is not ready for this model",
                 details={"instance_id": request.instance_id},
+            )
+        if (
+            profile.requires_reference_audio
+            and info.runtime != "coreml"
+            and (reference_audio is None or reference_text is None)
+        ):
+            raise ResourceNotFoundError(
+                "Qwen3-TTS MLX requires reference audio and its transcript",
+                details={"model_id": profile.model_id, "runtime": info.runtime},
             )
         synthesizer = instance.require(SpeechSynthesis)  # type: ignore[type-abstract]
         response = await synthesizer.synthesize(
@@ -137,31 +157,89 @@ class TextToSpeechService:
             "x-inference-ms": f"{response.timings.inference_ms or 0:.3f}",
         }
 
-    async def _ready_instance_id(self, profile: TtsModelProfile) -> str | None:
-        for snapshot in await self._context.models.instances.snapshots():
-            if (
-                snapshot.model_id == profile.model_id
-                and snapshot.variant == profile.variant
-                and snapshot.runtime == profile.runtime
-                and snapshot.state is ModelState.READY
-            ):
-                return snapshot.instance_id
-        return None
+    async def _ready_instances(self, profile: TtsModelProfile) -> tuple[ReadyTtsInstanceView, ...]:
+        return tuple(
+            ReadyTtsInstanceView(instance_id=snapshot.instance_id, runtime=snapshot.runtime)
+            for snapshot in await self._context.models.instances.snapshots()
+            if snapshot.model_id == profile.model_id
+            and snapshot.variant == profile.variant
+            and snapshot.state is ModelState.READY
+        )
 
     @staticmethod
-    def _profile(model_id: str) -> TtsModelProfile:
+    def _select_runtime(
+        profile: TtsModelProfile,
+        resource: TtsResourceView,
+    ) -> TtsModelProfile:
+        available = {runtime.runtime: runtime for runtime in resource.runtimes if runtime.available}
+        selected = available.get(profile.runtime)
+        if selected is None and available:
+            selected = next(iter(available.values()))
+        if selected is None:
+            return profile
+        return replace(
+            profile,
+            runtime=selected.runtime,
+            required_artifact_id=TextToSpeechService._resource_artifact_id(
+                resource, selected.runtime
+            ),
+        )
+
+    @staticmethod
+    def _resource_artifact_id(resource: TtsResourceView, runtime: str) -> str:
+        matching = tuple(
+            artifact.artifact_id
+            for artifact in resource.artifacts
+            if artifact.runtime == runtime and artifact.format != ArtifactFormat.TOKENIZER.value
+        )
+        if len(matching) != 1:
+            raise ResourceNotFoundError(
+                "Text to Speech runtime artifact is not uniquely declared",
+                details={"model_id": resource.model_id, "runtime": runtime},
+            )
+        return matching[0]
+
+    def _profile(self, model_id: str) -> TtsModelProfile:
         profile = TTS_MODEL_PROFILES.get(model_id)
         if profile is None:
             raise ResourceNotFoundError(
                 f"Text to Speech does not support model: {model_id}",
                 details={"supported_models": list(TTS_MODEL_PROFILES)},
             )
-        return profile
+        definition = self._context.models.registry.get(profile.model_id)
+        manifest = definition.manifest
+        runtime = (
+            profile.runtime
+            if profile.runtime in {item.name for item in manifest.runtimes}
+            else manifest.default_runtime
+        )
+        if runtime is None:
+            raise ResourceNotFoundError(
+                "Text to Speech model has no usable runtime",
+                details={"model_id": profile.model_id},
+            )
+        return replace(
+            profile,
+            variant=manifest.default_variant,
+            runtime=runtime,
+            required_artifact_id=self._runtime_artifact_id(
+                profile.model_id, manifest.default_variant, runtime
+            ),
+        )
+
+    def _runtime_artifact_id(self, model_id: str, variant: str, runtime: str) -> str:
+        definition = self._context.models.registry.get(model_id)
+        matching = tuple(
+            artifact
+            for artifact in definition.get_artifacts(runtime, variant=variant)
+            if artifact.format is not ArtifactFormat.TOKENIZER
+        )
+        if len(matching) != 1:
+            raise ResourceNotFoundError(
+                "Text to Speech runtime artifact is not uniquely declared",
+                details={"model_id": model_id, "runtime": runtime},
+            )
+        return matching[0].artifact_id
 
     def _model_options(self, profile: TtsModelProfile) -> dict[str, object]:
-        options: dict[str, object] = {"model_home": self._context.settings.model_home}
-        if profile.model_id == "mlx-community/audio8-tts-preview-0.6b-bf16":
-            options["voice_home"] = (
-                self._context.settings.data_dir / "voices" / "audio8-tts-mlx-bf16"
-            )
-        return options
+        return {"model_home": self._context.settings.model_home}

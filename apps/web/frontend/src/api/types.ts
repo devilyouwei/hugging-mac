@@ -88,6 +88,29 @@ export interface ModelResourceStatus {
   total_size_bytes: number
 }
 
+export interface ArtifactInventoryItem {
+  variant: string
+  runtime: string
+  artifact_id: string
+  format: string
+  convertible: boolean
+  shared: boolean
+  available: boolean
+  size_bytes: number | null
+}
+
+export interface ResourceOption extends Omit<ArtifactInventoryItem, "convertible"> {
+  resource_id: string
+  source: { kind: string; repo_id?: string; filename?: string; url?: string }
+}
+
+export interface ModelInventory {
+  model_id: string
+  revision: string
+  resources: ResourceOption[]
+  artifacts: ArtifactInventoryItem[]
+}
+
 export interface ModelSummary {
   model_id: string
   revision: string

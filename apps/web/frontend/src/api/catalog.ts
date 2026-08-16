@@ -4,6 +4,9 @@ import type {
   InstanceSummary,
   ModelResourceStatus,
   ModelSummary,
+  ModelInventory,
+  ArtifactInventoryItem,
+  ResourceOption,
   SystemInfo,
   UnloadResult,
 } from "./types"
@@ -23,6 +26,28 @@ export async function fetchCatalog(): Promise<{
     apps: apps.data,
     games: games.data,
   }
+}
+
+function modelPath(modelId: string): string {
+  return modelId.split("/").map(encodeURIComponent).join("/")
+}
+
+export async function fetchModelInventory(modelId: string): Promise<ModelInventory> {
+  return (await request<ModelInventory>(`/api/v1/catalog/models/${modelPath(modelId)}/inventory`)).data
+}
+
+export async function downloadModelResource(modelId: string, resource: ResourceOption): Promise<ModelInventory> {
+  return (await request<ModelInventory>(`/api/v1/catalog/models/${modelPath(modelId)}/resources/download-one`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(resource),
+  })).data
+}
+
+export async function deleteModelArtifact(modelId: string, artifact: ArtifactInventoryItem): Promise<ModelInventory> {
+  return (await request<ModelInventory>(`/api/v1/catalog/models/${modelPath(modelId)}/artifacts`, {
+    method: "DELETE", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(artifact),
+  })).data
 }
 
 export async function fetchModels(): Promise<ModelSummary[]> {
@@ -61,10 +86,11 @@ export async function loadModel(
   ).data
 }
 
-export async function unloadModel(instanceId: string): Promise<UnloadResult> {
+export async function unloadModel(instanceId: string, force = false): Promise<UnloadResult> {
+  const query = force ? "?force=true" : ""
   return (
     await request<UnloadResult>(
-      `/api/v1/catalog/instances/${encodeURIComponent(instanceId)}`,
+      `/api/v1/catalog/instances/${encodeURIComponent(instanceId)}${query}`,
       { method: "DELETE" },
     )
   ).data

@@ -24,24 +24,6 @@ export function createVisionApi<Result extends VisionResultBase>(
       ).data
     },
 
-    async downloadSource(variant: string): Promise<ResourceStatus> {
-      return (
-        await request<ResourceStatus>(
-          `${apiPrefix}/resources/source/download${variantQuery(variant)}`,
-          { method: "POST" },
-        )
-      ).data
-    },
-
-    async convertCoreMl(variant: string): Promise<ResourceStatus> {
-      return (
-        await request<ResourceStatus>(
-          `${apiPrefix}/resources/coreml/convert${variantQuery(variant)}`,
-          { method: "POST" },
-        )
-      ).data
-    },
-
     infer: (async (
       file: File,
       options: VisionOptions,

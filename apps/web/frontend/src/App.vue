@@ -10,7 +10,7 @@ const isChatPage = computed(() => route.name === "chat")
 <template>
   <div class="app-shell" :class="{ 'app-shell--fixed': isChatPage }">
     <header class="site-header">
-      <RouterLink class="brand" to="/" aria-label="hugging-mac 首页">
+      <RouterLink class="brand" to="/" aria-label="Hugging Mac home">
         <img
           class="brand-mark"
           src="/hugging-mac-icon.png"

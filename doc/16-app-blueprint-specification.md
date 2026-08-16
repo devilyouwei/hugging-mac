@@ -168,16 +168,16 @@ MANIFEST = AppManifest(
 )
 ```
 
-运行配置使用 App 自己的 typed settings：
+业务运行配置使用 App 自己的 typed settings；模型选择与推理默认值由 Model SDK 的 manifest 和 schema 管理：
 
 ```text
 内置默认值
 < app config file
-< HUGGING_MAC_APP_OBJECT_DETECTION_*
+< APP_<APP_NAME>_*
 < 测试或启动时显式覆盖
 ```
 
-密钥不进入 manifest。App config 只能配置自己的业务参数和模型选择，不能直接传入任意本地模型路径绕过 SDK manifest。
+密钥不进入 manifest。App config 只能配置自己的业务参数，不能覆盖模型内部参数，也不能直接传入任意本地模型路径绕过 SDK manifest。
 
 ## App 使用模型
 

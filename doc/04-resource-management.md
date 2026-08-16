@@ -46,6 +46,41 @@ staging 路径 → 下载/解压 → digest 校验 → 原子替换目标；失�
 单文件和归档支持来源文件 SHA-256，Hugging Face snapshot 可校验确定性的目录摘要。通用 URL 不具备
 远端目录枚举协议，因此多文件 URL 模型必须提供 ZIP/TAR，或在 manifest 中声明多个单文件资源。
 
+## 共享 artifact
+
+不同 variant、runtime 或量化版本共用的 tokenizer、processor、词表等资源，可以在模型 YAML 的
+artifact 上声明 `shared: true`：
+
+```yaml
+artifacts:
+  - artifact_id: tokenizer
+    variant: 0.6b       # 仅作为目录清单元数据，不限制共享范围
+    runtime: coreml     # 仅作为目录清单元数据，不限制共享范围
+    format: tokenizer
+    path: qwen/qwen3-asr/shared/tokenizer/<tokenizer-revision>
+    kind: directory
+    shared: true
+    source:
+      kind: huggingface
+      repo_id: Qwen/Qwen3-ASR-0.6B
+      revision: <pinned-revision>
+      allow_patterns: [vocab.json, merges.txt, tokenizer_config.json]
+```
+
+共享 artifact 的作用域是整个 `model_id@revision`，不会被声明中的 variant/runtime 限制。它必须具有
+可直接下载的 `source`，不能是 conversion target。下载任意 scoped artifact 或执行 conversion 之前，
+`ModelResourceService` 都会先检查全部共享 artifact，只下载缺失项。共享项会参与每个 runtime 的 Ready
+判定，但本地空间只统计一次；删除单个 runtime/variant 不会自动删除共享项。模型实例加载仍然坚持
+“只解析本地资源、不隐式联网下载”的原则。
+
+若第三方 loader 强制要求权重与 tokenizer 位于同一目录，runtime 会在加载期间建立只含符号链接的临时
+合并视图；视图退出后立即清理，不会把共享文件复制回每个 variant。当前 Qwen3-ASR、Qwen3.5、
+Audio8-ASR、Audio8-TTS 与 SenseVoice 已使用模型级共享 tokenizer artifact。Qwen3-TTS 的 tokenizer
+是 MLX-scoped artifact；Core ML bundle 自带独立 `vocab.json` 和 `merges.txt`。processor、
+chat template、generation config 和 speech/model 权重只有在远端固定版本逐文件一致时才允许共享。
+旧版 scoped artifact 若仍含同名 tokenizer，临时视图会让 shared 文件优先，但不会改写或删除旧目录，
+因此已下载的大模型权重可以原地继续使用。
+
 ## 租约与清理
 
 后续加载中的实例将持有 lease。清理器应只删除：

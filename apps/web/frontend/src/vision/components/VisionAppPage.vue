@@ -2,7 +2,7 @@
 import type { Component } from "vue"
 import { computed, onMounted, ref } from "vue"
 
-import ResourceSetup from "@/object_detection/components/ResourceSetup.vue"
+import { errorMessage, loadSharedModel, unloadModel } from "@/modelLifecycle"
 import type {
   ResourceStatus,
   RuntimeChoice,
@@ -29,19 +29,19 @@ const props = defineProps<{
   results: Component
   infer: VisionInference
   fetchStatus: (variant?: string) => Promise<ResourceStatus>
-  downloadSource: (variant: string) => Promise<ResourceStatus>
-  convertCoreMl: (variant: string) => Promise<ResourceStatus>
 }>()
 
 const activeMode = ref<InputMode>("camera")
 const runtime = ref<RuntimeChoice>("auto")
-const confidence = ref(0.25)
+const confidence = ref(0.5)
 const iouThreshold = ref(0.7)
 const maxDetections = ref(100)
 const selectedVariant = ref("")
 const error = ref("")
 const resourceStatus = ref<ResourceStatus | null>(null)
-const resourceBusy = ref<"" | "download" | "convert">("")
+const loadedInstances = ref<Record<string, string>>({})
+const lifecycleBusy = ref(false)
+const lifecycleMessage = ref<{ type: "success" | "error"; text: string } | null>(null)
 const inferenceOptions = computed<VisionOptions>(() => ({
   runtime: runtime.value,
   variant: selectedVariant.value || resourceStatus.value?.variant || "n",
@@ -60,29 +60,64 @@ const runtimeArtifactReady = computed(() => {
     (artifact) => artifact.runtime === selected && artifact.available,
   )
 })
+const modelKey = computed(() => `${selectedVariant.value}:${effectiveRuntime.value ?? "auto"}`)
+const loadedInstanceId = computed(() => loadedInstances.value[modelKey.value] ?? null)
+
+async function ensureModelLoaded(): Promise<string> {
+  if (loadedInstanceId.value) return loadedInstanceId.value
+  const status = resourceStatus.value
+  const selectedRuntime = effectiveRuntime.value
+  if (!status || !selectedRuntime || !runtimeArtifactReady.value) {
+    throw new Error("当前模型资产不可用，请先在 Models 页面下载或转换。")
+  }
+  lifecycleBusy.value = true
+  lifecycleMessage.value = null
+  try {
+    const loaded = await loadSharedModel(status.model_id, selectedVariant.value, selectedRuntime)
+    loadedInstances.value[modelKey.value] = loaded.instance_id
+    lifecycleMessage.value = { type: "success", text: "模型加载成功" }
+    return loaded.instance_id
+  } catch (caught) {
+    const message = errorMessage(caught, "模型加载失败")
+    lifecycleMessage.value = { type: "error", text: message }
+    throw caught
+  } finally {
+    lifecycleBusy.value = false
+  }
+}
+
+async function toggleModel() {
+  if (lifecycleBusy.value) return
+  const instanceId = loadedInstanceId.value
+  if (!instanceId) {
+    try { await ensureModelLoaded() } catch { /* feedback is displayed inline */ }
+    return
+  }
+  lifecycleBusy.value = true
+  lifecycleMessage.value = null
+  try {
+    await unloadModel(instanceId)
+    delete loadedInstances.value[modelKey.value]
+    lifecycleMessage.value = { type: "success", text: "模型卸载成功" }
+  } catch (caught) {
+    lifecycleMessage.value = { type: "error", text: errorMessage(caught, "模型卸载失败") }
+  } finally {
+    lifecycleBusy.value = false
+  }
+}
+
+const managedInfer: VisionInference = async (file, options, requestOptions) => {
+  await ensureModelLoaded()
+  return props.infer(file, options, requestOptions)
+}
 
 async function refreshResources() {
+  lifecycleMessage.value = null
   try {
     resourceStatus.value = await props.fetchStatus(selectedVariant.value || undefined)
     if (!selectedVariant.value) selectedVariant.value = resourceStatus.value.variant
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "模型资源状态读取失败"
-  }
-}
-
-async function prepareResource(action: "download" | "convert") {
-  if (resourceBusy.value) return
-  resourceBusy.value = action
-  error.value = ""
-  try {
-    resourceStatus.value =
-      action === "download"
-        ? await props.downloadSource(inferenceOptions.value.variant)
-        : await props.convertCoreMl(inferenceOptions.value.variant)
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "模型资源操作失败"
-  } finally {
-    resourceBusy.value = ""
   }
 }
 
@@ -95,7 +130,7 @@ onMounted(refreshResources)
       <div>
         <RouterLink class="back-link" to="/apps">← Apps</RouterLink>
         <p class="kicker">APP {{ appNumber }} / {{ kicker }}</p>
-        <h1>{{ titleTop }}<br />{{ titleBottom }}</h1>
+        <h1>{{ titleTop }} {{ titleBottom }}</h1>
       </div>
       <p>{{ description }}</p>
     </header>
@@ -106,25 +141,24 @@ onMounted(refreshResources)
           <span>INPUT / CONFIG</span>
           <span>01—04</span>
         </div>
-        <label class="field">
+        <label class="field model-field">
           <span>{{ modelLabel }} variant</span>
-          <select v-model="selectedVariant" @change="refreshResources">
-            <option
-              v-for="variant in resourceStatus?.variants ?? []"
-              :key="variant.name"
-              :value="variant.name"
-            >
-              {{ variant.display_name }} · {{ variant.description }}
-            </option>
-          </select>
+          <div class="model-field__control">
+            <select v-model="selectedVariant" :disabled="lifecycleBusy" @change="refreshResources">
+              <option
+                v-for="variant in resourceStatus?.variants ?? []"
+                :key="variant.name"
+                :value="variant.name"
+              >
+                {{ variant.display_name }} · {{ variant.description }}
+              </option>
+            </select>
+            <button type="button" :disabled="lifecycleBusy || (!loadedInstanceId && !runtimeArtifactReady)" @click="toggleModel">
+              {{ lifecycleBusy ? "WAIT…" : loadedInstanceId ? "UNLOAD" : "LOAD" }}
+            </button>
+          </div>
+          <small v-if="lifecycleMessage" :class="`lifecycle-${lifecycleMessage.type}`">{{ lifecycleMessage.text }}</small>
         </label>
-        <ResourceSetup
-          :status="resourceStatus"
-          :busy="resourceBusy"
-          @download="prepareResource('download')"
-          @convert="prepareResource('convert')"
-          @refresh="refreshResources"
-        />
 
         <label class="field">
           <span>Runtime</span>
@@ -157,7 +191,7 @@ onMounted(refreshResources)
         </label>
 
         <p v-if="!runtimeArtifactReady" class="resource-note">
-          当前 runtime 的模型资产尚未准备。请先执行上方显式下载或转换操作。
+          当前 runtime 的模型资产尚未准备。请前往 Models 页面下载、转换并加载模型。
         </p>
         <p class="local-note">
           推理不会自动下载或转换模型；图片与视频帧也不会上传到第三方。
@@ -201,7 +235,7 @@ onMounted(refreshResources)
 
         <div v-if="error" class="error-banner detection-error" role="alert">
           <div>
-            <strong>Resource operation failed</strong>
+            <strong>Inference unavailable</strong>
             <span>{{ error }}</span>
           </div>
         </div>
@@ -210,7 +244,7 @@ onMounted(refreshResources)
           v-if="activeMode === 'image'"
           :options="inferenceOptions"
           :enabled="runtimeArtifactReady"
-          :infer="infer"
+          :infer="managedInfer"
           :overlay="overlay"
           :results="results"
           :action-label="actionLabel"
@@ -220,7 +254,7 @@ onMounted(refreshResources)
           v-else-if="activeMode === 'camera'"
           :options="inferenceOptions"
           :enabled="runtimeArtifactReady"
-          :infer="infer"
+          :infer="managedInfer"
           :overlay="overlay"
           :results="results"
           :action-noun="actionNoun"
@@ -229,7 +263,7 @@ onMounted(refreshResources)
           v-else
           :options="inferenceOptions"
           :enabled="runtimeArtifactReady"
-          :infer="infer"
+          :infer="managedInfer"
           :overlay="overlay"
           :results="results"
         />
@@ -237,3 +271,13 @@ onMounted(refreshResources)
     </div>
   </div>
 </template>
+
+<style scoped>
+.model-field__control { display:flex; gap:.4rem; }
+.model-field__control select { min-width:0; }
+.model-field__control button { background:var(--ink); border:0; color:var(--paper); cursor:pointer; flex:0 0 auto; font:.55rem var(--font-mono); padding:0 .65rem; }
+.model-field__control button:disabled { cursor:not-allowed; opacity:.4; }
+.model-field small { font:.52rem var(--font-mono); }
+.lifecycle-success { color:#3c8b2f; }
+.lifecycle-error { color:#cf3f27; }
+</style>

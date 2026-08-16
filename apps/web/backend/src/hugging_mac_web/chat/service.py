@@ -11,6 +11,7 @@ from hugging_mac_sdk import ReusePolicy
 from hugging_mac_sdk.capabilities import Chat
 from hugging_mac_sdk.core.instance import ModelState
 from hugging_mac_sdk.errors import ResourceNotFoundError, UnsupportedCapabilityError
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.chat import ChatImage, ChatMessage, ChatRequest
 
 from hugging_mac_web.chat.config import CHAT_MODEL_ID, ChatModelProfile, ChatSettings
@@ -54,26 +55,18 @@ class ChatService:
         )
         return ChatResourceView.from_sdk(status)
 
-    async def download_source(self, model_id: str, *, overwrite: bool = False) -> ChatResourceView:
+    async def ready_model(self, model_id: str) -> LoadedChatModelView | None:
         profile = self._profile(model_id)
-        await self._ensure_resources_mutable(profile)
-        await self._context.models.resources.download_source(
-            profile.model_id,
-            variant=profile.variant,
-            options=self._model_options(),
-            overwrite=overwrite,
-        )
-        return await self.resource_status(model_id)
-
-    async def delete_resources(self, model_id: str) -> ChatResourceView:
-        profile = self._profile(model_id)
-        await self._ensure_resources_mutable(profile)
-        await self._context.models.resources.delete(
-            profile.model_id,
-            variant=profile.variant,
-            options=self._model_options(),
-        )
-        return await self.resource_status(model_id)
+        for snapshot in await self._context.models.instances.snapshots():
+            if (
+                snapshot.model_id == profile.model_id
+                and snapshot.variant == profile.variant
+                and snapshot.runtime == profile.runtime
+                and snapshot.state is ModelState.READY
+            ):
+                instance = await self._context.models.instances.require(snapshot.instance_id)
+                return LoadedChatModelView.from_sdk(instance.info())
+        return None
 
     async def load_model(self, model_id: str) -> LoadedChatModelView:
         profile = self._profile(model_id)
@@ -88,30 +81,6 @@ class ChatService:
             return LoadedChatModelView.from_sdk(handle.info())
         finally:
             await handle.close()
-
-    async def ready_model(self, model_id: str) -> LoadedChatModelView | None:
-        profile = self._profile(model_id)
-        for snapshot in await self._context.models.instances.snapshots():
-            if (
-                snapshot.model_id == profile.model_id
-                and snapshot.variant == profile.variant
-                and snapshot.runtime == profile.runtime
-                and snapshot.state is ModelState.READY
-            ):
-                instance = await self._context.models.instances.require(snapshot.instance_id)
-                return LoadedChatModelView.from_sdk(instance.info())
-        return None
-
-    async def unload_model(self, model_id: str) -> int:
-        profile = self._profile(model_id)
-        matching = tuple(
-            snapshot
-            for snapshot in await self._context.models.instances.snapshots()
-            if snapshot.model_id == profile.model_id and snapshot.variant == profile.variant
-        )
-        for snapshot in matching:
-            await self._context.models.instances.unload(snapshot.instance_id)
-        return len(matching)
 
     async def chat(
         self,
@@ -248,12 +217,34 @@ class ChatService:
                 description=variant.description or manifest.description,
                 variant=variant.name,
                 runtime=manifest.default_runtime or "mlx",
-                required_artifact_id="model",
+                required_artifact_id=self._artifact_id(
+                    definition.artifacts,
+                    variant=variant.name,
+                    runtime=manifest.default_runtime or "mlx",
+                ),
                 disk_size_bytes=int(variant.metadata.get("disk_size_bytes", 0)),
                 supports_images="vision-language-generation" in manifest.capabilities,
             )
             for variant in manifest.variants
         )
+
+    @staticmethod
+    def _artifact_id(
+        artifacts: tuple[ModelArtifact, ...], *, variant: str, runtime: str
+    ) -> str:
+        matching = [
+            artifact.artifact_id
+            for artifact in artifacts
+            if not artifact.shared
+            and artifact.variant == variant
+            and artifact.runtime == runtime
+        ]
+        if len(matching) != 1:
+            raise ResourceNotFoundError(
+                "Chat model runtime artifact is not uniquely declared",
+                details={"variant": variant, "runtime": runtime},
+            )
+        return matching[0]
 
     def _model_options(self) -> dict[str, object]:
         return {"model_home": self._context.settings.model_home}
@@ -268,15 +259,3 @@ class ChatService:
             ):
                 return snapshot.instance_id
         return None
-
-    async def _ensure_resources_mutable(self, profile: ChatModelProfile) -> None:
-        active = tuple(
-            snapshot
-            for snapshot in await self._context.models.instances.snapshots()
-            if snapshot.model_id == profile.model_id and snapshot.variant == profile.variant
-        )
-        if active:
-            raise UnsupportedCapabilityError(
-                "Unload the chat model before changing its files",
-                details={"model_id": profile.model_id, "instance_count": len(active)},
-            )

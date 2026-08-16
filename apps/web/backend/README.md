@@ -9,5 +9,5 @@ uv sync --all-packages
 uv run hugging-mac-web
 ```
 
-配置项使用 `HUGGING_MAC_WEB_*` 环境变量，完整说明见
+配置项使用 `WEB_*` 环境变量，完整说明见
 [`doc/17-platform-backend.md`](../../../doc/17-platform-backend.md)。

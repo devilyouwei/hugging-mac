@@ -12,22 +12,17 @@ TEXT_TO_SPEECH_MANIFEST = AppManifest(
     api_prefix="/api/v1/apps/text-to-speech",
     required_models=(
         AppModelRequirement(
-            model_id="audio8/audio8-tts-preview-0.6b",
+            model_id="audio8/audio8-tts-preview",
             capabilities=("speech-synthesis",),
             preferred_runtime="pytorch",
         ),
         AppModelRequirement(
-            model_id="mlx-community/audio8-tts-preview-0.6b-bf16",
+            model_id="hexgrad/kokoro",
             capabilities=("speech-synthesis",),
-            preferred_runtime="mlx",
+            preferred_runtime="coreml",
         ),
         AppModelRequirement(
-            model_id="mlx-community/kokoro-82m-bf16",
-            capabilities=("speech-synthesis",),
-            preferred_runtime="mlx",
-        ),
-        AppModelRequirement(
-            model_id="mlx-community/qwen3-tts-12hz-0.6b-base-4bit",
+            model_id="qwen/qwen3-tts-12hz",
             capabilities=("speech-synthesis",),
             preferred_runtime="mlx",
         ),

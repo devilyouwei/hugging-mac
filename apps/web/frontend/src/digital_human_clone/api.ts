@@ -16,10 +16,19 @@ export async function fetchSetup(llmVariant?: string): Promise<Setup> {
   return (await request<Setup>(`${PREFIX}/setup${query}`)).data
 }
 
-export async function prepareModels(llmVariant: string): Promise<LoadedModels> {
+export async function loadModels(llmVariant: string): Promise<LoadedModels> {
   return (
     await request<LoadedModels>(
-      `${PREFIX}/setup/prepare?llm_variant=${encodeURIComponent(llmVariant)}`,
+      `${PREFIX}/setup/load?llm_variant=${encodeURIComponent(llmVariant)}`,
+      { method: "POST" },
+    )
+  ).data
+}
+
+export async function loadModel(role: "asr" | "llm" | "tts", llmVariant: string): Promise<string> {
+  return (
+    await request<string>(
+      `${PREFIX}/setup/models/${role}/load?llm_variant=${encodeURIComponent(llmVariant)}`,
       { method: "POST" },
     )
   ).data
@@ -28,12 +37,16 @@ export async function prepareModels(llmVariant: string): Promise<LoadedModels> {
 export async function transcribe(
   audio: Blob,
   instanceId: string,
+  vadInstanceId?: string | null,
+  enhancementInstanceId?: string | null,
   signal?: AbortSignal,
 ): Promise<Transcript> {
   const form = new FormData()
   const extension = audio.type.includes("mp4") ? "m4a" : audio.type.includes("webm") ? "webm" : "wav"
   form.append("file", audio, `utterance.${extension}`)
   form.append("instance_id", instanceId)
+  if (vadInstanceId) form.append("vad_instance_id", vadInstanceId)
+  if (enhancementInstanceId) form.append("enhancement_instance_id", enhancementInstanceId)
   return (
     await request<Transcript>(`${PREFIX}/transcribe`, { method: "POST", body: form, signal })
   ).data

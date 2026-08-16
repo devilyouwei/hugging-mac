@@ -1,11 +1,6 @@
 <script setup lang="ts">
 import VisionAppPage from "@/vision/components/VisionAppPage.vue"
-import {
-  convertCoreMl,
-  downloadSource,
-  fetchResourceStatus,
-  segmentInstances,
-} from "./api"
+import { fetchResourceStatus, segmentInstances } from "./api"
 import SegmentationMaskLayer from "./components/SegmentationMaskLayer.vue"
 import SegmentationResultsPanel from "./components/SegmentationResultsPanel.vue"
 </script>
@@ -25,7 +20,5 @@ import SegmentationResultsPanel from "./components/SegmentationResultsPanel.vue"
     :results="SegmentationResultsPanel"
     :infer="segmentInstances"
     :fetch-status="fetchResourceStatus"
-    :download-source="downloadSource"
-    :convert-core-ml="convertCoreMl"
   />
 </template>

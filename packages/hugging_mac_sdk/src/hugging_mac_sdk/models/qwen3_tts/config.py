@@ -1,4 +1,4 @@
-"""Configuration for Qwen3-TTS 0.6B Base MLX 4-bit."""
+"""Configuration for Qwen3-TTS 0.6B Base runtimes."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field
 QWEN3_TTS_MODEL_ID: Final = "qwen/qwen3-tts-12hz"
 QWEN3_TTS_REPO_ID: Final = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit"
 QWEN3_TTS_REVISION: Final = "0d6bb6f"
-QWEN3_TTS_COREML_REPO_ID: Final = "FluidInference/qwen3-tts-coreml"
-QWEN3_TTS_COREML_REVISION: Final = "7bb6c4e5c425ddecc0aa2339f125398623d2da36"
+QWEN3_TTS_COREML_REPO_ID: Final = "aufklarer/Qwen3-TTS-CoreML"
+QWEN3_TTS_COREML_REVISION: Final = "66ca03b95a684d45e020b1d2d5c3ab34a48356f9"
 QWEN3_TTS_VARIANT: Final = "0.6b-base"
 QWEN3_TTS_SAMPLE_RATE: Final = 24_000
 QWEN3_TTS_REQUIRED_FILES: Final[tuple[str, ...]] = (
@@ -49,7 +49,11 @@ QWEN3_TTS_COREML_REQUIRED_FILES: Final[tuple[str, ...]] = (
             f"{graph}.mlmodelc/weights/weight.bin",
         )
     ),
-    "speaker_embedding_official.npy",
+    "config.json",
+    "speaker_embedding.npy",
+    "tts_pad_embed.npy",
+    "tts_bos_embed.npy",
+    "tts_eos_embed.npy",
 )
 
 

@@ -12,19 +12,19 @@ DIGITAL_HUMAN_MANIFEST = AppManifest(
     api_prefix="/api/v1/games/digital-human",
     required_models=(
         AppModelRequirement(
-            model_id="audio8/audio8-asr-0.1b",
+            model_id="audio8/audio8-asr",
             capabilities=("speech-transcription",),
             preferred_runtime="coreml",
         ),
         AppModelRequirement(
-            model_id="mlx-community/qwen3.5-mlx",
+            model_id="qwen/qwen3.5",
             capabilities=("chat", "vision-language-generation"),
             preferred_runtime="mlx",
         ),
         AppModelRequirement(
-            model_id="mlx-community/kokoro-82m-bf16",
+            model_id="hexgrad/kokoro",
             capabilities=("speech-synthesis",),
-            preferred_runtime="mlx",
+            preferred_runtime="coreml",
         ),
     ),
 )

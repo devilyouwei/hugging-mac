@@ -26,7 +26,7 @@
 ## 模型包结构
 
 ```text
-models/sensevoice_small/
+models/sensevoice/
 ├── __init__.py
 ├── config.py
 ├── definition.py
@@ -94,14 +94,14 @@ uv sync --extra asr
 from pathlib import Path
 
 from hugging_mac_sdk import ModelSdk
-from hugging_mac_sdk.models.sensevoice_small import register_sensevoice_small
+from hugging_mac_sdk.models.sensevoice import register_sensevoice
 
 sdk = ModelSdk()
-register_sensevoice_small(sdk.registry)
+register_sensevoice(sdk.registry)
 options = {"model_home": Path("models")}
 
 await sdk.resources.download_source(
-    "funaudiollm/sensevoice-small",
+    "funaudiollm/sensevoice",
     variant="small",
     options=options,
 )
@@ -114,7 +114,7 @@ from hugging_mac_sdk import AudioInput, TranscriptionRequest
 from hugging_mac_sdk.capabilities import SpeechTranscription
 
 handle = await sdk.load(
-    "funaudiollm/sensevoice-small",
+    "funaudiollm/sensevoice",
     variant="small",
     runtime="pytorch-mps",
     options=options,
@@ -134,7 +134,7 @@ from hugging_mac_sdk import AudioInput, SpeechUnderstandingRequest
 from hugging_mac_sdk.capabilities import SpeechUnderstanding
 
 handle = await sdk.load(
-    "funaudiollm/sensevoice-small",
+    "funaudiollm/sensevoice",
     runtime="pytorch-mps",
     options=options,
 )

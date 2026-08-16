@@ -18,8 +18,8 @@
 | Whisper | `SpeechTranscription`、`SpeechTranslation` | PyTorch MPS / Core ML | 验证音频、时间戳与长任务 |
 | Audio8-ASR | `SpeechTranscription` | PyTorch MPS | 验证短音频、自回归 ASR 与多文件资源 |
 | Audio8-TTS | `SpeechSynthesis` | PyTorch CPU FP32 | 验证多语言、自回归语音生成与参考音频克隆 |
-| Kokoro-82M | `SpeechSynthesis` | MLX BF16 | 验证轻量本地语音合成与 safetensors voice 资源 |
-| Qwen3-TTS 0.6B Base | `SpeechSynthesis` | MLX 4-bit | 验证量化多语言 TTS 与参考音频声音克隆 |
+| Kokoro-82M | `SpeechSynthesis` | Core ML / PyTorch MPS | 验证轻量端到端 ANE 语音合成 |
+| Qwen3-TTS 0.6B Base | `SpeechSynthesis` | MLX 4-bit / Core ML ANE | 验证声音克隆与预编译多图 ANE 合成 |
 | 小型 LLM | `TextCompletion`、`Chat`、`StreamingGeneration` | MLX | 验证流式生成与量化 |
 | 小型 VLM | `VisionLanguageChat`、`ImageUnderstanding` | MLX / PyTorch MPS | 验证多模态和较大资源压力 |
 
@@ -101,11 +101,11 @@ runtime 的 `auto` 选择不在 registry 内，而在 `RuntimePolicy` / `Instanc
 当前内置定义包括：
 
 - `ultralytics/yolov8` 及 Pose/Seg 模型包，详见 [YOLOv8 SDK](14-yolov8-sdk.md)；
-- `audio8/audio8-asr-0.1b`，以 `base` variant 和 `SpeechTranscription` 接入，详见
+- `audio8/audio8-asr`，以 `0.1b` variant 和 `SpeechTranscription` 接入，详见
   [Audio8-ASR SDK](20-audio8-asr-sdk.md)。
-- `audio8/audio8-tts-preview-0.6b`，以 `preview` variant 和 `SpeechSynthesis` 接入；
-- `mlx-community/audio8-tts-preview-0.6b-bf16`，以独立 `bf16` variant、MLX GPU runtime 和
-  `SpeechSynthesis` 接入；
-- `mlx-community/kokoro-82m-bf16`，以 `bf16` variant、MLX runtime 和 `SpeechSynthesis` 接入；
-- `mlx-community/qwen3-tts-12hz-0.6b-base-4bit`，以 `4bit` variant、MLX runtime 和
-  `SpeechSynthesis` 接入；上述 TTS 模型详见 [TTS SDK 与应用](22-text-to-speech-sdk.md)。
+- `audio8/audio8-tts-preview`，以 `0.6b-preview` variant 接入 `SpeechSynthesis`，
+  并在同一模型定义中提供 PyTorch 和 MLX runtime；
+- `hexgrad/kokoro`，提供官方 `v1.0` PyTorch runtime，以及固定 revision 的可下载端到端 Core ML runtime；
+- `qwen/qwen3-tts-12hz`，以 `0.6b-base` variant 接入 `SpeechSynthesis`，提供 MLX 4-bit
+  声音克隆与固定 revision 的 aufklarer Core ML runtime；上述 TTS 模型详见
+  [TTS SDK 与应用](22-text-to-speech-sdk.md)。

@@ -2,16 +2,24 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
 
 import {
-  convertAsrCoreMl,
-  downloadAsrWeights,
+  cancelTranscriptionStream,
+  detectVoiceActivity,
   fetchAsrModels,
+  fetchPipelineComponents,
   loadAsrModel,
+  loadEnhancementModel,
+  loadVadModel,
+  finishTranscriptionStream,
+  startTranscriptionStream,
+  transcribeStreamChunk,
   transcribeUtterance,
 } from "./api"
+import { errorMessage, unloadModel } from "@/modelLifecycle"
 import type {
   AsrModel,
-  AsrResourceStatus,
   LoadedAsrModel,
+  PipelineComponent,
+  StreamingSession,
   TranscriptSegment,
 } from "./types"
 import { encodeWave } from "./wav"
@@ -20,12 +28,19 @@ const SILENCE_SECONDS = 0.65
 const MIN_UTTERANCE_SECONDS = 0.35
 const MAX_UTTERANCE_SECONDS = 25
 const PRE_ROLL_SECONDS = 0.18
+const VAD_WINDOW_SECONDS = 0.18
+const ENERGY_THRESHOLD_MIN = 0.006
+const ENERGY_THRESHOLD_MAX = 0.035
 
 const models = ref<AsrModel[]>([])
 const selectedModelId = ref("")
-const loadedModel = ref<LoadedAsrModel | null>(null)
-const resourceBusy = ref(false)
-const loadBusy = ref(false)
+const selectedRuntimeByModel = ref<Record<string, string>>({})
+const loadedModels = ref<Record<string, LoadedAsrModel>>({})
+const loadedVadModel = ref<LoadedAsrModel | null>(null)
+const loadedEnhancementModel = ref<LoadedAsrModel | null>(null)
+const pipelineComponents = ref<PipelineComponent[]>([])
+const componentIssues = ref<Record<string, string>>({})
+const loadingModel = ref(false)
 const listening = ref(false)
 const speaking = ref(false)
 const inputLevel = ref(0)
@@ -34,7 +49,18 @@ const elapsedSeconds = ref(0)
 const segments = ref<TranscriptSegment[]>([])
 const pendingCount = ref(0)
 const error = ref("")
+const lifecycleMessage = ref<{ type: "success" | "error"; text: string } | null>(null)
 const transcriptEnd = ref<HTMLElement | null>(null)
+const streamSession = ref<StreamingSession | null>(null)
+const streamingText = ref("")
+const streamingCommittedText = ref("")
+const streamingStatus = ref<"idle" | "streaming" | "processing" | "complete" | "error">("idle")
+const streamingInferenceMs = ref<number | null>(null)
+const streamingAudioSeconds = ref(0)
+const streamingCommittedAudioSeconds = ref(0)
+const streamingLanguage = ref<string | null>(null)
+const streamingTokens = ref(0)
+const streamingCommittedTokens = ref(0)
 
 let mediaStream: MediaStream | null = null
 let audioContext: AudioContext | null = null
@@ -46,121 +72,258 @@ let currentSamples = 0
 let silenceSamples = 0
 let preRoll: Float32Array[] = []
 let preRollSamples = 0
+let vadChunks: Float32Array[] = []
+let vadSamples = 0
 let sessionStartedAt = 0
 let elapsedTimer: number | null = null
 let segmentSequence = 0
 let recognitionQueue = Promise.resolve()
+let vadQueue = Promise.resolve()
+let vadGeneration = 0
+let streamChunks: Float32Array[] = []
+let streamSamples = 0
+let streamQueue = Promise.resolve()
+let streamGeneration = 0
 const requests = new Set<AbortController>()
 
 const selectedModel = computed(() =>
   models.value.find((model) => model.model_id === selectedModelId.value) ?? null,
 )
-const resource = computed(() => selectedModel.value?.resource ?? null)
-const sourceArtifact = computed(() =>
-  resource.value?.artifacts.find((artifact) => artifact.artifact_id === "source"),
+const runtimeKey = (modelId: string, runtime: string) => `${modelId}::${runtime}`
+const runtimeForModel = (model: AsrModel) =>
+  selectedRuntimeByModel.value[model.model_id]
+  ?? (model.resource.runtimes.some((item) => item.runtime === "coreml") ? "coreml" : model.runtime)
+const runtimeAvailable = (model: AsrModel, runtime = runtimeForModel(model)) =>
+  Boolean(model.resource.runtimes.find((item) => item.runtime === runtime)?.available)
+const loadedInstanceFor = (model: AsrModel) =>
+  loadedModels.value[runtimeKey(model.model_id, runtimeForModel(model))] ?? null
+const modelIsReady = (model: AsrModel) => loadedInstanceFor(model)?.state === "ready"
+const runtimeOptions = (model: AsrModel) => [...model.resource.runtimes].sort((left, right) =>
+  left.runtime === "coreml" ? -1 : right.runtime === "coreml" ? 1 : 0,
 )
-const coremlArtifact = computed(() =>
-  resource.value?.artifacts.find((artifact) => artifact.artifact_id === "coreml"),
-)
-const sourceReady = computed(() => Boolean(sourceArtifact.value?.available))
-const coremlReady = computed(() => Boolean(coremlArtifact.value?.available))
-const requiredArtifactReady = computed(() =>
-  Boolean(
-    resource.value?.artifacts.find(
-      (artifact) => artifact.artifact_id === selectedModel.value?.required_artifact_id,
-    )?.available,
-  ),
+const runtimeLabel = (runtime: string) => runtime === "pytorch-mps"
+  ? "Torch MPS"
+  : runtime === "coreml" ? "Core ML" : runtime
+const selectedLoadedModel = computed(() =>
+  selectedModel.value ? loadedInstanceFor(selectedModel.value) : null,
 )
 const modelReady = computed(() =>
   Boolean(
-    loadedModel.value
-      && loadedModel.value.model_id === selectedModelId.value
-      && loadedModel.value.state === "ready",
+    selectedLoadedModel.value
+      && selectedLoadedModel.value.model_id === selectedModelId.value
+      && selectedLoadedModel.value.state === "ready",
   ),
 )
-const threshold = computed(() => 0.036 - sensitivity.value * 0.026)
+const streamingMode = computed(() => Boolean(selectedModel.value?.streaming))
+const selectedArtifactAvailable = computed(() => {
+  const model = selectedModel.value
+  if (!model) return false
+  return runtimeAvailable(model)
+})
+const threshold = computed(() => 0.75 - sensitivity.value * 0.5)
+const energyThreshold = computed(() =>
+  ENERGY_THRESHOLD_MAX
+  - sensitivity.value * (ENERGY_THRESHOLD_MAX - ENERGY_THRESHOLD_MIN),
+)
+const vadComponent = computed(() =>
+  pipelineComponents.value.find((component) => component.component_id === "vad") ?? null,
+)
+const enhancementComponent = computed(() =>
+  pipelineComponents.value.find((component) => component.component_id === "enhancement") ?? null,
+)
+const componentState = (component: PipelineComponent) => {
+  if (component.component_id === "vad" && loadedVadModel.value?.state === "ready") return "loaded"
+  if (component.component_id === "enhancement" && loadedEnhancementModel.value?.state === "ready") return "loaded"
+  return component.downloaded ? "not-loaded" : "not-downloaded"
+}
+const componentStateLabel = (component: PipelineComponent) =>
+  componentState(component).replace("-", " ").toUpperCase()
 const transcriptText = computed(() =>
-  segments.value
+  streamingMode.value
+    ? streamingText.value
+    : segments.value
     .filter((segment) => segment.status === "complete" && segment.text)
     .map((segment) => segment.text)
     .join(" "),
 )
 
-function formatBytes(value: number | null | undefined): string {
-  if (value == null) return "not downloaded"
-  return `${(value / 1024 ** 2).toFixed(0)} MB`
-}
-
 async function loadModels() {
   try {
     models.value = await fetchAsrModels()
+    for (const model of models.value) {
+      selectedRuntimeByModel.value[model.model_id] = runtimeForModel(model)
+      for (const ready of model.ready_instances ?? []) {
+        loadedModels.value[runtimeKey(model.model_id, ready.runtime)] = {
+          instance_id: ready.instance_id,
+          model_id: model.model_id,
+          variant: model.variant,
+          runtime: ready.runtime,
+          device: ready.runtime,
+          state: "ready",
+        }
+      }
+    }
     selectedModelId.value ||= models.value[0]?.model_id ?? ""
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "ASR 模型列表读取失败"
+    error.value = caught instanceof Error ? caught.message : "Failed to load the ASR model list"
+  }
+  await refreshPipelineComponents()
+}
+
+async function refreshPipelineComponents() {
+  try {
+    pipelineComponents.value = await fetchPipelineComponents()
+    const vad = pipelineComponents.value.find((component) => component.component_id === "vad")
+    const enhancement = pipelineComponents.value.find(
+      (component) => component.component_id === "enhancement",
+    )
+    loadedVadModel.value = vad?.loaded_model ?? null
+    loadedEnhancementModel.value = enhancement?.loaded_model ?? null
+    delete componentIssues.value.status
+  } catch (caught) {
+    componentIssues.value.status = errorMessage(caught, "Component status is unavailable")
   }
 }
 
-async function downloadModel() {
-  if (!selectedModel.value) return
-  resourceBusy.value = true
+async function ensureSelectedModelLoaded(): Promise<LoadedAsrModel> {
+  if (modelReady.value && selectedLoadedModel.value) return selectedLoadedModel.value
+  if (!selectedModel.value) throw new Error("Select an ASR model first")
+  if (!selectedArtifactAvailable.value) {
+    throw new Error("Model assets are unavailable. Download or convert them on the Models page.")
+  }
   error.value = ""
+  loadingModel.value = true
+  lifecycleMessage.value = null
   try {
-    selectedModel.value.resource = await downloadAsrWeights(selectedModel.value.model_id)
+    const runtime = runtimeForModel(selectedModel.value)
+    const loaded = await loadAsrModel(selectedModel.value.model_id, runtime)
+    loadedModels.value[runtimeKey(selectedModel.value.model_id, runtime)] = loaded
+    return loaded
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "ASR 模型下载失败"
+    const message = errorMessage(caught, "Failed to load the ASR model")
+    lifecycleMessage.value = { type: "error", text: message }
+    throw caught
   } finally {
-    resourceBusy.value = false
+    loadingModel.value = false
   }
 }
 
-async function convertModel() {
-  if (!selectedModel.value) return
-  resourceBusy.value = true
-  error.value = ""
+async function ensureVadModelLoaded(): Promise<LoadedAsrModel | null> {
+  if (loadedVadModel.value?.state === "ready") return loadedVadModel.value
+  if (!vadComponent.value?.downloaded) return null
   try {
-    selectedModel.value.resource = await convertAsrCoreMl(selectedModel.value.model_id)
+    loadedVadModel.value = await loadVadModel()
+    vadComponent.value.loaded_model = loadedVadModel.value
+    delete componentIssues.value.vad
+    return loadedVadModel.value
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "Audio8-ASR Core ML 转换失败"
-  } finally {
-    resourceBusy.value = false
+    componentIssues.value.vad = errorMessage(
+      caught,
+      "Silero VAD could not be loaded; using the browser energy gate",
+    )
+    return null
   }
+}
+
+async function ensureEnhancementModelLoaded(): Promise<LoadedAsrModel | null> {
+  if (loadedEnhancementModel.value?.state === "ready") return loadedEnhancementModel.value
+  if (!enhancementComponent.value?.downloaded) return null
+  try {
+    loadedEnhancementModel.value = await loadEnhancementModel()
+    enhancementComponent.value.loaded_model = loadedEnhancementModel.value
+    delete componentIssues.value.enhancement
+    return loadedEnhancementModel.value
+  } catch (caught) {
+    componentIssues.value.enhancement = errorMessage(
+      caught,
+      "DeepFilterNet3 could not be loaded; sending raw audio to ASR",
+    )
+    return null
+  }
+}
+
+async function toggleSelectedModel() {
+  if (loadingModel.value) return
+  if (!modelReady.value || !selectedLoadedModel.value) {
+    try { await ensureSelectedModelLoaded() } catch { /* inline feedback */ }
+    return
+  }
+  loadingModel.value = true
+  lifecycleMessage.value = null
+  try {
+    const instance = selectedLoadedModel.value
+    await unloadModel(instance.instance_id)
+    delete loadedModels.value[runtimeKey(instance.model_id, instance.runtime)]
+    lifecycleMessage.value = { type: "success", text: "Model unloaded" }
+  } catch (caught) {
+    lifecycleMessage.value = { type: "error", text: errorMessage(caught, "Failed to unload model") }
+  } finally {
+    loadingModel.value = false
+  }
+}
+
+async function toggleModel(model: AsrModel) {
+  selectModel(model.model_id)
+  await toggleSelectedModel()
+}
+
+function selectRuntime(model: AsrModel, runtime: string) {
+  if (listening.value || pendingCount.value || loadingModel.value) return
+  selectedRuntimeByModel.value[model.model_id] = runtime
+  if (selectedModelId.value === model.model_id) lifecycleMessage.value = null
+}
+
+function onRuntimeChange(model: AsrModel, event: Event) {
+  selectRuntime(model, (event.target as HTMLSelectElement).value)
 }
 
 function selectModel(modelId: string) {
   if (listening.value || pendingCount.value) return
   stopAudioGraph()
   selectedModelId.value = modelId
-  loadedModel.value = null
+  lifecycleMessage.value = null
   error.value = ""
-}
-
-async function prepareModel() {
-  if (!selectedModel.value || !requiredArtifactReady.value) return
-  loadBusy.value = true
-  error.value = ""
-  try {
-    loadedModel.value = await loadAsrModel(selectedModel.value.model_id)
-  } catch (caught) {
-    loadedModel.value = null
-    error.value = caught instanceof Error ? caught.message : "ASR 模型加载失败"
-  } finally {
-    loadBusy.value = false
-  }
 }
 
 async function startListening() {
   if (listening.value) return
-  if (!modelReady.value) {
-    error.value = "请先加载当前选择的 ASR 模型"
+  try {
+    await ensureSelectedModelLoaded()
+  } catch (caught) {
+    error.value = errorMessage(caught, "Failed to load the ASR model")
     return
+  }
+  if (streamingMode.value) {
+    await ensureVadModelLoaded()
+  } else {
+    await ensureVadModelLoaded()
+    await ensureEnhancementModelLoaded()
   }
   error.value = ""
   try {
+    if (streamingMode.value) {
+      streamGeneration += 1
+      streamSession.value = null
+      streamingText.value = ""
+      streamingCommittedText.value = ""
+      streamingInferenceMs.value = null
+      streamingAudioSeconds.value = 0
+      streamingCommittedAudioSeconds.value = 0
+      streamingLanguage.value = null
+      streamingTokens.value = 0
+      streamingCommittedTokens.value = 0
+      streamingStatus.value = "streaming"
+      streamChunks = []
+      streamSamples = 0
+      streamQueue = Promise.resolve()
+    }
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         autoGainControl: true,
         echoCancellation: true,
-        noiseSuppression: true,
+        // Audio preprocessing is explicit in the app pipeline. Nemotron receives
+        // raw audio, while utterance-based ASR may use DeepFilterNet3.
+        noiseSuppression: false,
         channelCount: 1,
       },
       video: false,
@@ -174,6 +337,7 @@ async function startListening() {
     sourceNode.connect(processorNode)
     processorNode.connect(silentGain)
     silentGain.connect(audioContext.destination)
+    vadGeneration += 1
     listening.value = true
     sessionStartedAt = performance.now()
     elapsedTimer = window.setInterval(() => {
@@ -181,9 +345,10 @@ async function startListening() {
     }, 250)
   } catch (caught) {
     stopAudioGraph()
+    await cancelActiveStream()
     error.value = caught instanceof DOMException && caught.name === "NotAllowedError"
-      ? "麦克风权限被拒绝，请在浏览器站点设置中允许访问"
-      : caught instanceof Error ? caught.message : "麦克风启动失败"
+      ? "Microphone permission was denied. Allow access in the browser site settings."
+      : caught instanceof Error ? caught.message : "Failed to start the microphone"
   }
 }
 
@@ -195,34 +360,156 @@ function handleAudio(event: AudioProcessingEvent) {
   for (const sample of chunk) energy += sample * sample
   const rms = Math.sqrt(energy / chunk.length)
   inputLevel.value = Math.min(1, rms / 0.12)
-  const voiced = rms >= threshold.value
+  if (streamingMode.value) {
+    streamChunks.push(chunk)
+    streamSamples += chunk.length
+    if (!speaking.value) {
+      const preRollLimit = audioContext.sampleRate * PRE_ROLL_SECONDS
+      while (streamSamples > preRollLimit && streamChunks.length > 1) {
+        streamSamples -= streamChunks.shift()!.length
+      }
+    } else if (
+      streamSamples / audioContext.sampleRate
+      >= (selectedModel.value?.streaming_chunk_seconds ?? 2.24)
+    ) {
+      flushStreamingAudio(audioContext.sampleRate)
+    }
 
-  if (!speaking.value) {
+    if (loadedVadModel.value) {
+      vadChunks.push(chunk)
+      vadSamples += chunk.length
+      if (vadSamples / audioContext.sampleRate >= VAD_WINDOW_SECONDS) {
+        const analysisChunks = vadChunks
+        const analysisSamples = vadSamples
+        const sampleRate = audioContext.sampleRate
+        vadChunks = []
+        vadSamples = 0
+        enqueueVadAnalysis(analysisChunks, analysisSamples, sampleRate)
+      }
+    } else {
+      applyVadResult(rms >= energyThreshold.value, chunk.length, audioContext.sampleRate)
+    }
+    return
+  }
+  if (speaking.value) {
+    currentChunks.push(chunk)
+    currentSamples += chunk.length
+  } else {
     preRoll.push(chunk)
     preRollSamples += chunk.length
     const preRollLimit = audioContext.sampleRate * PRE_ROLL_SECONDS
     while (preRollSamples > preRollLimit && preRoll.length > 1) {
       preRollSamples -= preRoll.shift()!.length
     }
-    if (!voiced) return
-    speaking.value = true
-    currentChunks = preRoll
-    currentSamples = preRollSamples
-    preRoll = []
-    preRollSamples = 0
-    silenceSamples = 0
   }
 
-  currentChunks.push(chunk)
-  currentSamples += chunk.length
-  silenceSamples = voiced ? 0 : silenceSamples + chunk.length
+  if (loadedVadModel.value) {
+    vadChunks.push(chunk)
+    vadSamples += chunk.length
+    if (vadSamples / audioContext.sampleRate >= VAD_WINDOW_SECONDS) {
+      const analysisChunks = vadChunks
+      const analysisSamples = vadSamples
+      const sampleRate = audioContext.sampleRate
+      vadChunks = []
+      vadSamples = 0
+      enqueueVadAnalysis(analysisChunks, analysisSamples, sampleRate)
+    }
+  } else {
+    applyVadResult(rms >= energyThreshold.value, chunk.length, audioContext.sampleRate)
+  }
+
   const duration = currentSamples / audioContext.sampleRate
-  if (
-    silenceSamples / audioContext.sampleRate >= SILENCE_SECONDS ||
-    duration >= MAX_UTTERANCE_SECONDS
-  ) {
+  if (speaking.value && duration >= MAX_UTTERANCE_SECONDS) {
     finishUtterance(audioContext.sampleRate)
   }
+}
+
+function enqueueVadAnalysis(
+  chunks: Float32Array[],
+  analyzedSamples: number,
+  sampleRate: number,
+) {
+  const instance = loadedVadModel.value
+  if (!instance) return
+  const generation = vadGeneration
+  const audio = encodeWave(chunks, sampleRate)
+  vadQueue = vadQueue.then(async () => {
+    if (!listening.value || generation !== vadGeneration) return
+    const controller = new AbortController()
+    requests.add(controller)
+    try {
+      const result = await detectVoiceActivity(
+        audio,
+        instance.instance_id,
+        threshold.value,
+        controller.signal,
+      )
+      if (generation === vadGeneration) {
+        applyVadResult(result.voiced, analyzedSamples, sampleRate)
+      }
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return
+      componentIssues.value.vad = errorMessage(
+        caught,
+        "Silero VAD inference failed; switched to the browser energy gate",
+      )
+      loadedVadModel.value = null
+    } finally {
+      requests.delete(controller)
+    }
+  })
+}
+
+function applyVadResult(voiced: boolean, analyzedSamples: number, sampleRate: number) {
+  if (!listening.value) return
+  if (streamingMode.value) {
+    applyStreamingVadResult(voiced, analyzedSamples, sampleRate)
+    return
+  }
+  if (voiced) {
+    silenceSamples = 0
+    if (!speaking.value) {
+      speaking.value = true
+      currentChunks = preRoll
+      currentSamples = preRollSamples
+      preRoll = []
+      preRollSamples = 0
+    }
+    return
+  }
+  if (!speaking.value) return
+  silenceSamples += analyzedSamples
+  if (silenceSamples / sampleRate >= SILENCE_SECONDS) finishUtterance(sampleRate)
+}
+
+function applyStreamingVadResult(voiced: boolean, analyzedSamples: number, sampleRate: number) {
+  if (voiced) {
+    silenceSamples = 0
+    if (!speaking.value) {
+      speaking.value = true
+      beginStreamingUtterance()
+    }
+    return
+  }
+  if (!speaking.value) return
+  silenceSamples += analyzedSamples
+  if (silenceSamples / sampleRate < SILENCE_SECONDS) return
+  silenceSamples = 0
+  speaking.value = false
+  finishStreamingUtterance(sampleRate)
+}
+
+function beginStreamingUtterance() {
+  const model = selectedModel.value
+  const instance = selectedLoadedModel.value
+  if (!model || !instance) return
+  const generation = streamGeneration
+  streamingStatus.value = "processing"
+  streamQueue = streamQueue.then(async () => {
+    if (!listening.value || generation !== streamGeneration || streamSession.value) return
+    streamSession.value = await startTranscriptionStream(model.model_id, instance.instance_id)
+    streamingStatus.value = "streaming"
+  }).catch(handleStreamingFailure)
 }
 
 function finishUtterance(sampleRate: number) {
@@ -237,9 +524,81 @@ function finishUtterance(sampleRate: number) {
   enqueueRecognition(audio, duration)
 }
 
+function flushStreamingAudio(sampleRate: number) {
+  if (!streamChunks.length) return
+  const chunks = streamChunks
+  streamChunks = []
+  streamSamples = 0
+  enqueueStreamingAudio(encodeWave(chunks, sampleRate))
+}
+
+function enqueueStreamingAudio(audio: Blob) {
+  const generation = streamGeneration
+  streamingStatus.value = "processing"
+  streamQueue = streamQueue.then(async () => {
+    const session = streamSession.value
+    if (generation !== streamGeneration || !session) return
+    const controller = new AbortController()
+    requests.add(controller)
+    try {
+      const response = await transcribeStreamChunk(
+        audio,
+        session,
+        controller.signal,
+      )
+      streamingText.value = joinStreamingText(streamingCommittedText.value, response.text)
+      streamingInferenceMs.value = response.inference_ms
+      streamingAudioSeconds.value = streamingCommittedAudioSeconds.value + response.audio_seconds
+      streamingLanguage.value = response.detected_language
+      streamingTokens.value = streamingCommittedTokens.value + response.generated_tokens
+      streamingStatus.value = listening.value ? "streaming" : "processing"
+      void nextTick(() => transcriptEnd.value?.scrollIntoView({ behavior: "smooth" }))
+    } finally {
+      requests.delete(controller)
+    }
+  }).catch(handleStreamingFailure)
+}
+
+function finishStreamingUtterance(sampleRate: number) {
+  if (streamChunks.length) flushStreamingAudio(sampleRate)
+  const generation = streamGeneration
+  streamQueue = streamQueue.then(async () => {
+    const session = streamSession.value
+    if (generation !== streamGeneration || !session) return
+    streamingStatus.value = "processing"
+    const response = await finishTranscriptionStream(session)
+    commitStreamingResponse(response)
+    streamSession.value = null
+    streamingStatus.value = listening.value ? "streaming" : "complete"
+  }).catch(handleStreamingFailure)
+}
+
+function joinStreamingText(committed: string, current: string) {
+  return [committed.trim(), current.trim()].filter(Boolean).join("\n")
+}
+
+function commitStreamingResponse(response: Awaited<ReturnType<typeof finishTranscriptionStream>>) {
+  streamingCommittedText.value = joinStreamingText(streamingCommittedText.value, response.text)
+  streamingText.value = streamingCommittedText.value
+  streamingInferenceMs.value = response.inference_ms
+  streamingCommittedAudioSeconds.value += response.audio_seconds
+  streamingAudioSeconds.value = streamingCommittedAudioSeconds.value
+  streamingLanguage.value = response.detected_language ?? streamingLanguage.value
+  streamingCommittedTokens.value += response.generated_tokens
+  streamingTokens.value = streamingCommittedTokens.value
+}
+
+async function handleStreamingFailure(caught: unknown) {
+  if (caught instanceof DOMException && caught.name === "AbortError") return
+  streamingStatus.value = "error"
+  error.value = errorMessage(caught, "Streaming transcription failed")
+  stopAudioGraph()
+  await cancelActiveStream()
+}
+
 function enqueueRecognition(audio: Blob, durationSeconds: number) {
   const model = selectedModel.value
-  const instance = loadedModel.value
+  const instance = selectedLoadedModel.value
   if (!model || !instance) return
   const segment: TranscriptSegment = {
     id: ++segmentSequence,
@@ -252,6 +611,9 @@ function enqueueRecognition(audio: Blob, durationSeconds: number) {
     languages: [],
     emotion: null,
     events: [],
+    speechDurationSeconds: null,
+    vadInferenceMs: null,
+    enhancementInferenceMs: null,
   }
   segments.value.push(segment)
   pendingCount.value += 1
@@ -264,21 +626,27 @@ function enqueueRecognition(audio: Blob, durationSeconds: number) {
         audio,
         model.model_id,
         instance.instance_id,
+        loadedVadModel.value?.instance_id ?? "",
+        loadedEnhancementModel.value?.instance_id ?? "",
+        threshold.value,
         controller.signal,
       )
       const liveSegment = segments.value.find((item) => item.id === segment.id)
       if (!liveSegment) return
-      liveSegment.text = response.text || "（未识别到清晰语音）"
+      liveSegment.text = response.text || "No clear speech recognized"
       liveSegment.inferenceMs = response.inference_ms
       liveSegment.languages = response.languages
       liveSegment.emotion = response.emotion
       liveSegment.events = response.events
+      liveSegment.speechDurationSeconds = response.speech_duration_seconds
+      liveSegment.vadInferenceMs = response.vad_inference_ms
+      liveSegment.enhancementInferenceMs = response.enhancement_inference_ms
       liveSegment.status = "complete"
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return
       const liveSegment = segments.value.find((item) => item.id === segment.id)
       if (liveSegment) {
-        liveSegment.text = caught instanceof Error ? caught.message : "识别失败"
+        liveSegment.text = caught instanceof Error ? caught.message : "Recognition failed"
         liveSegment.status = "error"
       }
     } finally {
@@ -289,14 +657,51 @@ function enqueueRecognition(audio: Blob, durationSeconds: number) {
   })
 }
 
-function stopListening() {
+async function stopListening() {
+  if (streamingMode.value) {
+    const sampleRate = audioContext?.sampleRate
+    if (sampleRate && speaking.value && streamChunks.length) flushStreamingAudio(sampleRate)
+    stopAudioGraph()
+    await streamQueue
+    const session = streamSession.value
+    if (streamingStatus.value === "error") return
+    if (!session) {
+      streamingStatus.value = streamingText.value ? "complete" : "idle"
+      return
+    }
+    try {
+      const response = await finishTranscriptionStream(session)
+      commitStreamingResponse(response)
+      streamingStatus.value = "complete"
+    } catch (caught) {
+      streamingStatus.value = "error"
+      error.value = errorMessage(caught, "Failed to finish the transcription stream")
+      try { await cancelTranscriptionStream(session) } catch { /* best-effort cleanup */ }
+    } finally {
+      streamSession.value = null
+    }
+    return
+  }
   if (audioContext && currentSamples / audioContext.sampleRate >= MIN_UTTERANCE_SECONDS) {
     finishUtterance(audioContext.sampleRate)
   }
   stopAudioGraph()
 }
 
+async function cancelActiveStream() {
+  const session = streamSession.value
+  if (!session) return
+  streamGeneration += 1
+  streamSession.value = null
+  try {
+    await cancelTranscriptionStream(session)
+  } catch {
+    // The backend also clears all sessions when the model instance unloads.
+  }
+}
+
 function stopAudioGraph() {
+  vadGeneration += 1
   listening.value = false
   speaking.value = false
   inputLevel.value = 0
@@ -318,6 +723,8 @@ function stopAudioGraph() {
   silenceSamples = 0
   preRoll = []
   preRollSamples = 0
+  vadChunks = []
+  vadSamples = 0
 }
 
 async function copyTranscript() {
@@ -325,12 +732,25 @@ async function copyTranscript() {
 }
 
 function clearTranscript() {
-  segments.value = []
+  if (streamingMode.value) {
+    streamingText.value = ""
+    streamingStatus.value = "idle"
+    streamingInferenceMs.value = null
+    streamingAudioSeconds.value = 0
+    streamingCommittedAudioSeconds.value = 0
+    streamingLanguage.value = null
+    streamingTokens.value = 0
+    streamingCommittedTokens.value = 0
+    streamingCommittedText.value = ""
+  } else {
+    segments.value = []
+  }
 }
 
 onMounted(loadModels)
 onBeforeUnmount(() => {
   stopAudioGraph()
+  void cancelActiveStream()
   requests.forEach((request) => request.abort())
 })
 </script>
@@ -338,53 +758,69 @@ onBeforeUnmount(() => {
 <template>
   <div class="page inner-page transcription-page">
     <header class="transcription-hero">
-      <div>
+      <div class="hero-copy">
         <RouterLink class="back-link" to="/apps">← Neural Apps</RouterLink>
-        <p class="kicker">MULTI-MODEL ASR · VAD-DRIVEN LIVE TRANSCRIPTION</p>
-        <h1><span aria-hidden="true">🎙️</span> Voice,<br /><em>made visible.</em></h1>
-        <p>选择模型、在本机加载，然后开始聆听。VAD 自动感知说话与停顿，每次停顿都会形成一句新的识别文本。</p>
+        <p class="kicker">MULTI-MODEL ASR · OPTIONAL VAD AND SPEECH ENHANCEMENT</p>
+        <h1><span aria-hidden="true">🎙️</span> Voice, <em>made visible.</em></h1>
+        <p>Select and load an ASR model, then start listening. Utterance-based ASR uses optional Silero VAD and DeepFilterNet3; Nemotron uses VAD boundaries with raw audio.</p>
       </div>
-      <aside class="asr-model-card">
-        <div class="asr-model-card__top"><span>SELECTED MODEL</span><i :class="{ ready: modelReady }"></i></div>
-        <strong>{{ selectedModel?.short_name ?? "Loading…" }}</strong>
-        <span>{{ selectedModel?.variant.toUpperCase() }} · {{ selectedModel?.runtime.toUpperCase() }}</span>
-        <div class="model-download">
-          <div>
-            <b>{{ modelReady ? "LOADED" : requiredArtifactReady ? "READY TO LOAD" : sourceReady && selectedModel?.supports_coreml_conversion ? "CORE ML REQUIRED" : "WEIGHTS REQUIRED" }}</b>
-            <small v-if="modelReady">{{ loadedModel?.device }} · instance ready</small>
-            <small v-else>{{ requiredArtifactReady ? "assets prepared" : formatBytes(sourceArtifact?.size_bytes) }}</small>
-          </div>
-          <button v-if="!sourceReady" type="button" :disabled="resourceBusy || !resource" @click="downloadModel">
-            {{ resourceBusy ? "DOWNLOADING…" : "DOWNLOAD" }}
-          </button>
-          <button v-else-if="selectedModel?.supports_coreml_conversion && !coremlReady" type="button" :disabled="resourceBusy" @click="convertModel">
-            {{ resourceBusy ? "CONVERTING…" : "CONVERT" }}
-          </button>
-          <button v-else-if="!modelReady" type="button" :disabled="loadBusy || !requiredArtifactReady" @click="prepareModel">
-            {{ loadBusy ? "LOADING…" : "LOAD MODEL" }}
-          </button>
-        </div>
-      </aside>
-    </header>
-
-    <section class="asr-model-picker" aria-label="选择语音识别模型">
-      <button
+      <section class="asr-model-picker" aria-label="Select a speech recognition model">
+        <article
         v-for="model in models"
         :key="model.model_id"
-        type="button"
-        :class="{ selected: selectedModelId === model.model_id }"
-        :disabled="listening || pendingCount > 0 || loadBusy"
-        @click="selectModel(model.model_id)"
-      >
-        <span>{{ model.rich_understanding ? "🧠" : "⚡" }}</span>
-        <div>
-          <small>{{ model.runtime }} · {{ model.variant }}</small>
-          <strong>{{ model.display_name }}</strong>
-          <p>{{ model.description }}</p>
-        </div>
-        <i>{{ selectedModelId === model.model_id ? "SELECTED" : "SELECT →" }}</i>
-      </button>
-    </section>
+          :class="{
+            selected: selectedModelId === model.model_id,
+            loaded: modelIsReady(model),
+            unavailable: !runtimeAvailable(model),
+          }"
+        >
+          <button
+            class="model-identity"
+            type="button"
+            :disabled="listening || pendingCount > 0"
+            @click="selectModel(model.model_id)"
+          >
+            <span>{{ model.rich_understanding ? "🧠" : "⚡" }}</span>
+            <span>
+              <small>{{ model.variant }} · {{ modelIsReady(model) ? "LOADED" : model.streaming ? "STREAMING ASR" : "ASR MODEL" }}</small>
+              <strong>{{ model.display_name }}</strong>
+              <em>{{ model.description }}</em>
+            </span>
+            <i aria-hidden="true"></i>
+          </button>
+          <div class="model-controls">
+            <label>
+              <span>RUNTIME</span>
+              <select
+                :value="runtimeForModel(model)"
+                :disabled="listening || pendingCount > 0 || loadingModel"
+                @change="onRuntimeChange(model, $event)"
+              >
+                <option
+                  v-for="runtime in runtimeOptions(model)"
+                  :key="runtime.runtime"
+                  :value="runtime.runtime"
+                  :disabled="!runtime.available"
+                >
+                  {{ runtimeLabel(runtime.runtime) }}{{ runtime.available ? "" : " · unavailable" }}
+                </option>
+              </select>
+            </label>
+            <button
+              type="button"
+              :disabled="(!modelIsReady(model) && !runtimeAvailable(model)) || loadingModel || listening || pendingCount > 0"
+              @click="toggleModel(model)"
+            >
+              {{ loadingModel && selectedModelId === model.model_id ? "WAIT…" : modelIsReady(model) ? "UNLOAD" : "LOAD" }}
+            </button>
+          </div>
+          <small
+            v-if="selectedModelId === model.model_id && lifecycleMessage"
+            :class="`lifecycle-${lifecycleMessage.type}`"
+          >{{ lifecycleMessage.text }}</small>
+        </article>
+      </section>
+    </header>
 
     <div v-if="error" class="error-banner" role="alert">{{ error }}</div>
 
@@ -394,11 +830,11 @@ onBeforeUnmount(() => {
           <div class="mic-orbit" :class="{ listening, speaking }">
             <span>🎙️</span><i></i><i></i><i></i>
           </div>
-          <p class="kicker">{{ listening ? (speaking ? "VOICE DETECTED" : "LISTENING FOR SPEECH") : "MICROPHONE IDLE" }}</p>
+          <p class="kicker">{{ listening ? (streamingMode ? "STREAMING AUDIO" : speaking ? "VOICE DETECTED" : "LISTENING FOR SPEECH") : "MICROPHONE IDLE" }}</p>
           <strong>{{ listening ? elapsedSeconds.toFixed(1) : "0.0" }}<small> SEC</small></strong>
         </div>
 
-        <div class="level-meter" aria-label="麦克风输入音量">
+        <div class="level-meter" aria-label="Microphone input level">
           <span
             v-for="bar in 24"
             :key="bar"
@@ -407,40 +843,103 @@ onBeforeUnmount(() => {
         </div>
 
         <label class="vad-sensitivity">
-          <span><b>VAD SENSITIVITY</b><small>语音触发灵敏度</small></span>
+          <span>
+            <b>SPEECH SENSITIVITY</b>
+            <small>{{ loadedVadModel ? "Silero neural VAD" : "Browser energy gate" }}</small>
+          </span>
           <input v-model.number="sensitivity" type="range" min="0" max="1" step="0.05" />
           <output>{{ Math.round(sensitivity * 100) }}%</output>
         </label>
+
+        <div class="pipeline-components" aria-label="Optional audio components">
+          <article v-for="component in pipelineComponents" :key="component.component_id">
+            <div>
+              <strong>{{ component.display_name }}</strong>
+              <small>{{ component.description }}</small>
+            </div>
+            <span :class="`component-${componentState(component)}`">
+              {{ componentStateLabel(component) }}
+            </span>
+            <em v-if="componentIssues[component.component_id]">
+              {{ componentIssues[component.component_id] }}
+            </em>
+            <em v-else-if="!component.downloaded">
+              Optional · {{ component.component_id === "vad" ? "browser energy gate fallback" : "direct ASR fallback" }}
+            </em>
+            <em v-else-if="streamingMode && component.component_id === 'vad'">
+              Speech boundary detection only · audio remains continuous within each utterance
+            </em>
+            <em v-else-if="streamingMode && component.component_id === 'enhancement'">
+              Disabled for Nemotron streaming
+            </em>
+            <em v-else-if="componentState(component) === 'not-loaded'">
+              Loads automatically when listening starts
+            </em>
+          </article>
+          <p v-if="componentIssues.status">{{ componentIssues.status }}</p>
+        </div>
 
         <button
           class="record-button"
           :class="{ recording: listening }"
           type="button"
-          :disabled="!modelReady"
+          :disabled="loadingModel || !selectedArtifactAvailable"
           @click="listening ? stopListening() : startListening()"
         >
           <i></i>{{ listening ? "STOP LISTENING" : "START LISTENING" }}
         </button>
-        <p class="recorder-note">停顿 {{ Math.round(SILENCE_SECONDS * 1000) }}ms 自动断句 · 单句最长 {{ MAX_UTTERANCE_SECONDS }}s</p>
+        <p class="recorder-note">
+          <template v-if="streamingMode">
+            {{ loadedVadModel ? "Silero VAD boundaries" : "Browser energy boundaries" }} → Raw audio → Nemotron ·
+            {{ Math.round(SILENCE_SECONDS * 1000) }}ms pause finalizes each stream
+          </template>
+          <template v-else>
+            {{ loadedVadModel ? "Silero VAD" : "Browser energy gate" }} →
+            {{ loadedEnhancementModel ? "DeepFilterNet3 Core ML" : "Direct audio" }} → ASR ·
+            {{ Math.round(SILENCE_SECONDS * 1000) }}ms pause splitting · {{ MAX_UTTERANCE_SECONDS }}s maximum utterance
+          </template>
+        </p>
       </aside>
 
       <article class="transcript-panel">
         <header>
           <div>
-            <p class="kicker">LIVE TRANSCRIPT</p>
-            <span>{{ segments.length }} utterances · {{ pendingCount }} processing</span>
+            <p class="kicker">{{ streamingMode ? "LIVE STREAM" : "LIVE TRANSCRIPT" }}</p>
+            <span v-if="streamingMode">
+              {{ streamingStatus }} · {{ streamingAudioSeconds.toFixed(1) }}s audio · {{ streamingTokens }} tokens
+            </span>
+            <span v-else>{{ segments.length }} utterances · {{ pendingCount }} processing</span>
           </div>
           <div>
             <button type="button" :disabled="!transcriptText" @click="copyTranscript">COPY</button>
-            <button type="button" :disabled="!segments.length" @click="clearTranscript">CLEAR</button>
+            <button type="button" :disabled="!transcriptText || listening" @click="clearTranscript">CLEAR</button>
           </div>
         </header>
 
         <div class="transcript-scroll">
-          <div v-if="!segments.length" class="transcript-empty">
+          <div v-if="streamingMode" class="streaming-transcript" :class="`streaming-${streamingStatus}`">
+            <header>
+              <span>STATEFUL RNN-T</span>
+              <span v-if="streamingLanguage">LANGUAGE · {{ streamingLanguage }}</span>
+              <span>CHUNK · {{ selectedModel?.streaming_chunk_seconds?.toFixed(2) ?? "2.24" }}s</span>
+            </header>
+            <p v-if="streamingText">
+              {{ streamingText }}<i v-if="listening || streamingStatus === 'processing'" aria-hidden="true"></i>
+            </p>
+            <div v-else class="streaming-placeholder">
+              <span aria-hidden="true">⌁</span>
+              <strong>{{ listening ? "Listening for the first streaming tokens…" : "Continuous text will appear here." }}</strong>
+              <small>Nemotron keeps encoder and decoder caches within each Silero-bounded utterance.</small>
+            </div>
+            <footer v-if="streamingInferenceMs != null">
+              LAST CHUNK · {{ streamingInferenceMs.toFixed(0) }}ms inference
+              · RAW AUDIO
+            </footer>
+          </div>
+          <div v-else-if="!segments.length" class="transcript-empty">
             <span aria-hidden="true">〰</span>
             <strong>Your words will appear here.</strong>
-            <p>点击 Start Listening，然后自然说话。短暂停顿后，识别结果会逐句写入。</p>
+            <p>Click Start Listening and speak naturally. Each utterance appears after a short pause.</p>
           </div>
           <ol v-else class="transcript-list">
             <li v-for="segment in segments" :key="segment.id" :class="`segment--${segment.status}`">
@@ -458,7 +957,12 @@ onBeforeUnmount(() => {
                   <span v-for="event in segment.events" :key="event">🔊 {{ event }}</span>
                 </div>
               </div>
-              <small v-if="segment.inferenceMs != null">{{ segment.inferenceMs.toFixed(0) }}ms inference</small>
+              <small v-if="segment.inferenceMs != null">
+                {{ segment.inferenceMs.toFixed(0) }}ms ASR
+                <template v-if="segment.vadInferenceMs != null"> · {{ segment.vadInferenceMs.toFixed(0) }}ms VAD</template>
+                <template v-if="segment.enhancementInferenceMs != null"> · {{ segment.enhancementInferenceMs.toFixed(0) }}ms DENOISE</template>
+                <template v-if="segment.speechDurationSeconds != null"> · {{ segment.speechDurationSeconds.toFixed(1) }}s speech</template>
+              </small>
             </li>
           </ol>
           <div ref="transcriptEnd"></div>
@@ -469,34 +973,35 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.transcription-page { padding-top:2.2rem; }
-.transcription-hero { align-items:end; display:grid; gap:3rem; grid-template-columns:1fr 19rem; padding:1rem 0 2.5rem; }
-.transcription-hero h1 { font-size:clamp(3.8rem,7.5vw,8rem); letter-spacing:-.075em; line-height:.78; margin:1.2rem 0 1.8rem; }
+.transcription-page { padding-top:0; }
+.transcription-hero { align-items:stretch; display:grid; gap:clamp(1.5rem,3vw,3.5rem); grid-template-columns:minmax(0,1fr) minmax(25rem,.72fr); padding:.65rem 0 1.4rem; }
+.hero-copy { align-self:center; min-width:0; }
+.transcription-hero h1 { font-size:clamp(2.4rem,5vw,4.6rem); letter-spacing:-.065em; line-height:.95; margin:.55rem 0 .8rem; white-space:nowrap; }
 .transcription-hero h1 > span { display:inline-block; font-size:.58em; margin-right:.2em; transform:rotate(-8deg); }
 .transcription-hero h1 em { color:transparent; font-style:normal; -webkit-text-stroke:1.5px var(--ink); }
-.transcription-hero > div > p:last-child { color:var(--muted); line-height:1.65; max-width:42rem; }
-.asr-model-card { background:var(--ink); color:var(--paper); padding:1.35rem; }
-.asr-model-card__top { align-items:center; border-bottom:1px solid #ffffff24; display:flex; font:.58rem var(--font-mono); justify-content:space-between; padding-bottom:.8rem; }
-.asr-model-card__top i { background:#ff7148; border-radius:50%; height:.55rem; width:.55rem; }
-.asr-model-card__top i.ready { background:var(--signal); box-shadow:0 0 12px var(--signal); }
-.asr-model-card > strong { display:block; font-size:2.1rem; letter-spacing:-.05em; margin-top:1.1rem; }
-.asr-model-card > span { color:#999; font:.58rem var(--font-mono); }
-.model-download { align-items:center; border-top:1px solid #ffffff24; display:flex; justify-content:space-between; margin-top:1.2rem; padding-top:1rem; }
-.model-download div { display:flex; flex-direction:column; }
-.model-download b,.model-download small,.model-download button { font:.54rem var(--font-mono); }
-.model-download small { color:#888; margin-top:.25rem; }
-.model-download button { background:var(--signal); border:0; cursor:pointer; font-weight:700; padding:.65rem; }
-.asr-model-picker { display:grid; gap:.8rem; grid-template-columns:repeat(2,minmax(0,1fr)); margin-bottom:1.2rem; }
-.asr-model-picker > button { align-items:center; background:transparent; border:1px solid var(--line); color:var(--ink); cursor:pointer; display:grid; gap:1rem; grid-template-columns:auto 1fr auto; padding:1rem; text-align:left; transition:.2s ease; }
-.asr-model-picker > button:hover { border-color:var(--ink); transform:translateY(-2px); }
-.asr-model-picker > button.selected { background:#c8ff4618; border-color:var(--ink); box-shadow:inset 0 -3px var(--signal); }
-.asr-model-picker > button:disabled { cursor:not-allowed; opacity:.55; transform:none; }
-.asr-model-picker > button > span { font-size:1.8rem; }
-.asr-model-picker > button div { display:flex; flex-direction:column; gap:.22rem; }
-.asr-model-picker small,.asr-model-picker i { color:var(--muted); font:.5rem var(--font-mono); text-transform:uppercase; }
-.asr-model-picker strong { font-size:1rem; }
-.asr-model-picker p { color:var(--muted); font-size:.67rem; line-height:1.4; margin:0; }
-.asr-model-picker i { color:var(--ink); font-style:normal; }
+.hero-copy > p:last-child { color:var(--muted); font-size:.82rem; line-height:1.5; max-width:42rem; }
+.lifecycle-success { color:#75c763; font:.52rem var(--font-mono); }.lifecycle-error { color:#ff8066; font:.52rem var(--font-mono); }
+.asr-model-picker { align-content:center; display:flex; flex-direction:column; gap:.55rem; }
+.asr-model-picker article { align-items:center; background:#f7f5eb; border:1px solid var(--line); display:grid; gap:.8rem; grid-template-columns:minmax(0,1fr) minmax(10.5rem,.62fr); padding:.62rem .72rem; transition:border-color .2s,background .2s,transform .2s; }
+.asr-model-picker article:hover { border-color:var(--ink); transform:translateX(-3px); }
+.asr-model-picker article.selected { background:#c8ff4614; border-color:var(--ink); box-shadow:inset 3px 0 var(--signal); }
+.asr-model-picker article.unavailable { opacity:.62; }
+.model-identity { align-items:center; background:transparent; border:0; color:var(--ink); cursor:pointer; display:grid; gap:.7rem; grid-template-columns:2rem minmax(0,1fr) .55rem; padding:0; text-align:left; width:100%; }
+.model-identity:disabled { cursor:not-allowed; }
+.model-identity > span:first-child { font-size:1.35rem; text-align:center; }
+.model-identity > span:nth-child(2) { display:flex; flex-direction:column; min-width:0; }
+.model-identity small,.model-controls span { color:var(--muted); font:.46rem var(--font-mono); text-transform:uppercase; }
+.model-identity strong { font-size:.9rem; line-height:1.15; }
+.model-identity em { color:var(--muted); font-size:.58rem; font-style:normal; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.model-identity > i { background:#aaa; border-radius:50%; height:.48rem; width:.48rem; }
+.asr-model-picker article.loaded .model-identity > i { background:var(--signal); box-shadow:0 0 8px #8ebd22; }
+.model-controls { align-items:end; border-left:1px solid var(--line); display:grid; gap:.5rem; grid-template-columns:minmax(5.5rem,1fr) auto; margin:0; padding-left:.72rem; }
+.model-controls label { display:flex; flex-direction:column; gap:.2rem; }
+.model-controls select { background:transparent; border:0; color:var(--ink); font:600 .55rem var(--font-mono); min-width:0; outline:none; padding:0; text-transform:uppercase; width:100%; }
+.model-controls > button { background:var(--ink); border:0; color:var(--paper); cursor:pointer; font:700 .5rem var(--font-mono); min-width:4.4rem; padding:.58rem .65rem; }
+.model-controls > button:hover { background:var(--signal); color:var(--ink); }
+.model-controls > button:disabled,.model-controls select:disabled { cursor:not-allowed; opacity:.4; }
+.asr-model-picker article > small { grid-column:1/-1; margin-top:-.35rem; }
 .transcription-studio { border:1px solid var(--ink); display:grid; grid-template-columns:minmax(17rem,.7fr) minmax(0,1.3fr); min-height:38rem; }
 .recorder-panel { background:#141614; color:var(--paper); display:flex; flex-direction:column; padding:2rem; }
 .recorder-state { align-items:center; display:flex; flex-direction:column; text-align:center; }
@@ -516,6 +1021,16 @@ onBeforeUnmount(() => {
 .vad-sensitivity { align-items:center; border-bottom:1px solid #ffffff1f; border-top:1px solid #ffffff1f; display:grid; gap:.8rem; grid-template-columns:1fr 7rem 2rem; padding:1rem 0; }
 .vad-sensitivity span { display:flex; flex-direction:column; }.vad-sensitivity b,.vad-sensitivity output { font:.56rem var(--font-mono); }.vad-sensitivity small { color:#888; font-size:.65rem; margin-top:.2rem; }
 .vad-sensitivity input { accent-color:#c8ff46; width:100%; }
+.pipeline-components { border-bottom:1px solid #ffffff1f; display:grid; gap:.55rem; padding:.8rem 0; }
+.pipeline-components article { align-items:start; display:grid; gap:.25rem .55rem; grid-template-columns:minmax(0,1fr) auto; }
+.pipeline-components article > div { display:flex; flex-direction:column; min-width:0; }
+.pipeline-components strong { font:.56rem var(--font-mono); }
+.pipeline-components small,.pipeline-components em,.pipeline-components > p { color:#888; font:.5rem var(--font-mono); font-style:normal; line-height:1.4; margin:0; }
+.pipeline-components article > em { grid-column:1/-1; }
+.pipeline-components article > span { border:1px solid #ffffff2e; font:.45rem var(--font-mono); padding:.22rem .34rem; white-space:nowrap; }
+.pipeline-components .component-loaded { border-color:#c8ff46; color:#c8ff46; }
+.pipeline-components .component-not-loaded { color:#f0c966; }
+.pipeline-components .component-not-downloaded { color:#999; }
 .record-button { background:#c8ff46; border:0; cursor:pointer; font:700 .68rem var(--font-mono); margin-top:auto; padding:1.1rem; }
 .record-button i { background:#111; border-radius:50%; display:inline-block; height:.55rem; margin-right:.6rem; width:.55rem; }
 .record-button.recording { background:#ff7148; }.record-button.recording i { border-radius:1px; }
@@ -527,6 +1042,15 @@ onBeforeUnmount(() => {
 .transcript-panel > header button { background:transparent; border:1px solid var(--line); cursor:pointer; font:.55rem var(--font-mono); margin-left:.4rem; padding:.55rem; }
 .transcript-panel > header button:disabled { opacity:.3; }
 .transcript-scroll { flex:1; max-height:39rem; overflow:auto; padding:1.5rem; }
+.streaming-transcript { display:flex; flex-direction:column; min-height:31rem; }
+.streaming-transcript > header { border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; gap:.45rem; padding-bottom:.8rem; }
+.streaming-transcript > header span { background:#e4e8dc; font:.5rem var(--font-mono); padding:.32rem .45rem; }
+.streaming-transcript > p { font-size:clamp(1.4rem,2.6vw,2.25rem); letter-spacing:-.025em; line-height:1.5; margin:1.8rem 0; white-space:pre-wrap; }
+.streaming-transcript > p i { animation:stream-cursor .8s steps(1) infinite; background:var(--signal); display:inline-block; height:1.15em; margin-left:.18rem; vertical-align:-.12em; width:.18em; }
+.streaming-transcript > footer { border-top:1px solid var(--line); color:var(--muted); font:.5rem var(--font-mono); margin-top:auto; padding-top:.8rem; }
+.streaming-placeholder { align-items:center; color:var(--muted); display:flex; flex:1; flex-direction:column; justify-content:center; text-align:center; }
+.streaming-placeholder > span { color:var(--ink); font-size:5rem; }.streaming-placeholder strong { color:var(--ink); font-size:1.15rem; }.streaming-placeholder small { font-size:.68rem; margin-top:.5rem; max-width:26rem; }
+.streaming-error { color:#cf3f27; }
 .transcript-empty { align-items:center; color:var(--muted); display:flex; flex-direction:column; height:100%; justify-content:center; min-height:25rem; text-align:center; }
 .transcript-empty > span { color:var(--ink); font-size:5rem; }.transcript-empty strong { color:var(--ink); font-size:1.35rem; }.transcript-empty p { font-size:.8rem; line-height:1.6; max-width:24rem; }
 .transcript-list { list-style:none; margin:0; padding:0; }
@@ -543,14 +1067,12 @@ onBeforeUnmount(() => {
 .segment--error p { color:#cf3f27; }
 @keyframes listen-pulse { from { opacity:.8; transform:scale(.85); } to { opacity:0; transform:scale(1.15); } }
 @keyframes typing { 50% { opacity:.2; transform:translateY(-4px); } }
+@keyframes stream-cursor { 50% { opacity:0; } }
 @media (max-width:760px) {
   .transcription-page { padding-top:1rem; }
   .transcription-hero { align-items:stretch; gap:1.5rem; grid-template-columns:1fr; }
-  .transcription-hero h1 { font-size:4rem; }
-  .asr-model-card { padding:1rem; }
-  .asr-model-picker { grid-template-columns:1fr; }
-  .asr-model-picker > button { grid-template-columns:auto 1fr; }
-  .asr-model-picker i { display:none; }
+  .transcription-hero h1 { font-size:3rem; white-space:normal; }
+  .asr-model-picker { width:100%; }
   .transcription-studio { grid-template-columns:1fr; }
   .recorder-panel { min-height:34rem; padding:1.3rem; }
   .transcript-scroll { max-height:none; min-height:30rem; }

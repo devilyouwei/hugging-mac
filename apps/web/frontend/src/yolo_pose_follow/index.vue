@@ -3,10 +3,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
 
 import { ApiError } from "@/api/client"
 import { captureVideoFrame, waitForNextVideoFrame } from "@/object_detection/frame"
-import { downloadSource, estimatePoses, fetchResourceStatus } from "@/pose_estimation/api"
+import { estimatePoses, fetchResourceStatus } from "@/pose_estimation/api"
 import PoseSkeletonLayer from "@/pose_estimation/components/PoseSkeletonLayer.vue"
 import type { PoseResult } from "@/pose_estimation/types"
 import type { ResourceStatus } from "@/vision/types"
+import { errorMessage, loadSharedModel, unloadModel } from "@/modelLifecycle"
 
 import { fetchPoseTemplates, matchPose } from "./api"
 import PoseFigure from "./PoseFigure.vue"
@@ -33,7 +34,6 @@ const stream = ref<MediaStream | null>(null)
 const cameraReady = ref(false)
 const templates = ref<PoseTemplate[]>([])
 const resource = ref<ResourceStatus | null>(null)
-const setupBusy = ref(false)
 const phase = ref<GamePhase>("lobby")
 const difficulty = ref<Difficulty>("normal")
 const prepCount = ref(3)
@@ -48,6 +48,9 @@ const successCount = ref(0)
 const timeLeftMs = ref(0)
 const roundOutcome = ref<"success" | "fail" | null>(null)
 const error = ref("")
+const modelInstanceId = ref<string | null>(null)
+const modelBusy = ref(false)
+const lifecycleMessage = ref<{ type: "success" | "error"; text: string } | null>(null)
 const canvas = document.createElement("canvas")
 
 let gameGeneration = 0
@@ -109,18 +112,6 @@ async function loadGame() {
   }
 }
 
-async function prepareWeights() {
-  setupBusy.value = true
-  error.value = ""
-  try {
-    resource.value = await downloadSource("m")
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "YOLOv8 Pose M 下载失败"
-  } finally {
-    setupBusy.value = false
-  }
-}
-
 async function openCamera(): Promise<boolean> {
   if (cameraReady.value) return true
   error.value = ""
@@ -147,6 +138,43 @@ async function openCamera(): Promise<boolean> {
   }
 }
 
+async function ensureModelLoaded(): Promise<boolean> {
+  if (modelInstanceId.value) return true
+  if (!resource.value || !sourceReady.value) return false
+  modelBusy.value = true
+  lifecycleMessage.value = null
+  try {
+    const loadedModel = await loadSharedModel(resource.value.model_id, "m", "auto")
+    modelInstanceId.value = loadedModel.instance_id
+    lifecycleMessage.value = { type: "success", text: "模型加载成功" }
+    return true
+  } catch (caught) {
+    lifecycleMessage.value = { type: "error", text: errorMessage(caught, "模型加载失败") }
+    return false
+  } finally {
+    modelBusy.value = false
+  }
+}
+
+async function toggleModel() {
+  if (modelBusy.value) return
+  if (!modelInstanceId.value) {
+    await ensureModelLoaded()
+    return
+  }
+  modelBusy.value = true
+  lifecycleMessage.value = null
+  try {
+    await unloadModel(modelInstanceId.value)
+    modelInstanceId.value = null
+    lifecycleMessage.value = { type: "success", text: "模型卸载成功" }
+  } catch (caught) {
+    lifecycleMessage.value = { type: "error", text: errorMessage(caught, "模型卸载失败") }
+  } finally {
+    modelBusy.value = false
+  }
+}
+
 function closeCamera() {
   stopActiveWork()
   stream.value?.getTracks().forEach((track) => track.stop())
@@ -167,9 +195,10 @@ function stopActiveWork() {
 
 async function startGame() {
   if (!sourceReady.value) {
-    error.value = "请先下载 YOLOv8 Pose M 权重"
+    error.value = "模型不可用，请前往 Models 页面下载、转换并加载 YOLOv8 Pose M"
     return
   }
+  if (!await ensureModelLoaded()) return
   phase.value = "preparing"
   await nextTick()
   if (!(await openCamera())) {
@@ -334,7 +363,7 @@ onBeforeUnmount(() => {
     <main v-if="phase === 'lobby'" class="game-lobby">
       <section class="game-lobby__intro">
         <p class="kicker">NEURAL CAMERA GAME · YOLOV8 POSE M</p>
-        <h1>Follow the pose.<br /><em>Beat the clock.</em></h1>
+        <h1>Follow the pose. <em>Beat the clock.</em></h1>
         <p>镜头中的你就是控制器。模仿骨架、保持姿势、连续得分，节奏会越来越快。</p>
         <div class="difficulty-picker" aria-label="选择难度">
           <button
@@ -350,11 +379,16 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="!sourceReady" class="game-model-setup">
           <div><span></span><strong>YOLOv8 Pose M weights required</strong></div>
-          <button type="button" :disabled="setupBusy || !resource" @click="prepareWeights">
-            {{ setupBusy ? "DOWNLOADING…" : "DOWNLOAD MODEL" }}
+          <p class="game-error">模型不可用，请前往 Models 页面管理 YOLOv8 Pose M。</p>
+        </div>
+        <div class="game-model-action">
+          <span>YOLOv8 Pose M · AUTO</span>
+          <button type="button" :disabled="modelBusy || (!modelInstanceId && !sourceReady)" @click="toggleModel">
+            {{ modelBusy ? "WAIT…" : modelInstanceId ? "UNLOAD" : "LOAD" }}
           </button>
         </div>
-        <button class="game-start" type="button" :disabled="!sourceReady || !templates.length" @click="startGame">
+        <small v-if="lifecycleMessage" :class="`lifecycle-${lifecycleMessage.type}`">{{ lifecycleMessage.text }}</small>
+        <button class="game-start" type="button" :disabled="modelBusy || !sourceReady || !templates.length" @click="startGame">
           <span>START {{ selectedLevel.label.toUpperCase() }}</span><b>→</b>
         </button>
         <p v-if="error" class="game-error" role="alert">{{ error }}</p>
@@ -421,16 +455,16 @@ onBeforeUnmount(() => {
 :global(body.pose-game-active .site-header),
 :global(body.pose-game-active .site-footer) { display:none; }
 .pose-game { background:#0c0d0c; color:#f4f1e8; min-height:100vh; overflow:hidden; }
-.pose-game__topbar { align-items:center; border-bottom:1px solid #ffffff24; display:grid; font-family:var(--font-mono); grid-template-columns:1fr auto 1fr; height:4.2rem; padding:0 2.1rem; position:relative; z-index:20; }
+.pose-game__topbar { align-items:center; border-bottom:1px solid #ffffff24; display:grid; font-family:var(--font-mono); grid-template-columns:1fr auto 1fr; height:3.3rem; padding:0 2.1rem; position:relative; z-index:20; }
 .pose-game__back { color:#aaa; font-size:.68rem; text-decoration:none; text-transform:uppercase; }
 .pose-game__brand { font-size:.78rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
 .pose-game__brand span { font-size:1.15rem; margin-right:.45rem; }
 .pose-game__topbar button { background:none; border:0; color:#aaa; cursor:pointer; font:inherit; font-size:.65rem; justify-self:end; }
-.game-lobby { display:grid; grid-template-columns:1.08fr .92fr; min-height:calc(100vh - 4.2rem); }
-.game-lobby__intro { align-self:center; max-width:760px; padding:4rem clamp(2rem,6vw,7rem); }
+.game-lobby { display:grid; grid-template-columns:1.08fr .92fr; min-height:calc(100vh - 3.3rem); }
+.game-lobby__intro { align-self:start; max-width:900px; padding:2rem clamp(2rem,5vw,5rem); }
 .game-lobby__intro .kicker { color:#c8ff46; }
-.game-lobby h1 { font-size:clamp(3.4rem,6.7vw,7.8rem); letter-spacing:-.075em; line-height:.82; margin:1.2rem 0 2rem; }
-.game-lobby h1 em { color:transparent; font-style:normal; -webkit-text-stroke:1.5px #f4f1e8; }
+.game-lobby h1 { font-size:clamp(2.3rem,4.5vw,4.8rem); letter-spacing:-.065em; line-height:.95; margin:.65rem 0 1rem; }
+.game-lobby h1 em { color:transparent; display:block; font-style:normal; -webkit-text-stroke:1.5px #f4f1e8; }
 .game-lobby__intro > p:not(.kicker,.game-error) { color:#aaa; font-size:1rem; line-height:1.6; max-width:36rem; }
 .difficulty-picker { display:grid; gap:.5rem; grid-template-columns:repeat(4,1fr); margin:2rem 0 1rem; }
 .difficulty-picker button { background:#171917; border:1px solid #ffffff22; color:#aaa; cursor:pointer; padding:.8rem; text-align:left; transition:.2s ease; }
@@ -446,6 +480,8 @@ onBeforeUnmount(() => {
 .game-start { align-items:center; background:#c8ff46; border:0; color:#0c0d0c; cursor:pointer; display:flex; font:700 .72rem var(--font-mono); justify-content:space-between; margin-top:1rem; padding:1.1rem 1.2rem; width:100%; }
 .game-start b { font-size:1.3rem; }
 .game-start:disabled { cursor:not-allowed; filter:grayscale(1); opacity:.35; }
+.game-model-action { align-items:center; display:flex; font:.56rem var(--font-mono); justify-content:space-between; margin-top:1rem; }.game-model-action button { background:#0c0d0c; border:0; color:#fff; cursor:pointer; font:inherit; padding:.55rem .7rem; }.game-model-action button:disabled { cursor:not-allowed; opacity:.4; }
+.lifecycle-success { color:#3c8b2f; font:.54rem var(--font-mono); }.lifecycle-error { color:#cf3f27; font:.54rem var(--font-mono); }
 .game-error { color:#ff8066!important; font: .65rem var(--font-mono); margin-top:1rem; }
 .game-lobby__preview { align-items:center; background:radial-gradient(circle at center,#c8ff4628 0,transparent 48%),linear-gradient(135deg,#181b17,#0d0e0d); display:flex; justify-content:center; min-height:520px; overflow:hidden; position:relative; }
 .game-lobby__preview :deep(.target-figure) { height:min(68vh,680px); position:relative; width:72%; z-index:2; }
@@ -509,7 +545,7 @@ onBeforeUnmount(() => {
   .pose-game__topbar button { display:none; }
   .game-lobby { grid-template-columns:1fr; }
   .game-lobby__intro { padding:2.4rem 1.2rem; }
-  .game-lobby h1 { font-size:3.8rem; }
+  .game-lobby h1 { font-size:3rem; white-space:normal; }
   .difficulty-picker { grid-template-columns:repeat(2,1fr); }
   .game-lobby__preview { min-height:380px; }
   .game-arena { grid-template-columns:1fr; grid-template-rows:62% 38%; height:calc(100svh - 4.2rem); }

@@ -15,9 +15,13 @@ from fastapi import (
     UploadFile,
     status,
 )
+from hugging_mac_sdk.schemas.detection import (
+    DEFAULT_DETECTION_CONFIDENCE,
+    DEFAULT_DETECTION_IOU_THRESHOLD,
+    DEFAULT_MAX_DETECTIONS,
+)
 
 from hugging_mac_web.dependencies import ContextDependency
-from hugging_mac_web.object_detection.config import ObjectDetectionSettings
 from hugging_mac_web.object_detection.schemas import (
     DetectCommand,
     DetectionResult,
@@ -31,7 +35,7 @@ from hugging_mac_web.shared.utils.time_util import utc_now
 from hugging_mac_web.shared.utils.upload_util import read_upload_limited
 
 
-def create_router(settings: ObjectDetectionSettings) -> APIRouter:
+def create_router() -> APIRouter:
     router = APIRouter(
         prefix="/api/v1/apps/object-detection",
         tags=["object-detection"],
@@ -42,43 +46,7 @@ def create_router(settings: ObjectDetectionSettings) -> APIRouter:
         context: ContextDependency,
         variant: str | None = Query(default=None),
     ) -> ApiResponse[ResourceStatusView]:
-        data = await ObjectDetectionService(context, settings).resource_status(variant=variant)
-        return ApiResponse(
-            data=data,
-            meta=ResponseMeta(generated_at=utc_now()),
-        )
-
-    @router.post(
-        "/resources/source/download",
-        response_model=ApiResponse[ResourceStatusView],
-    )
-    async def download_source(
-        context: ContextDependency,
-        variant: str | None = Query(default=None),
-        overwrite: bool = False,
-    ) -> ApiResponse[ResourceStatusView]:
-        data = await ObjectDetectionService(context, settings).download_source(
-            variant=variant,
-            overwrite=overwrite,
-        )
-        return ApiResponse(
-            data=data,
-            meta=ResponseMeta(generated_at=utc_now()),
-        )
-
-    @router.post(
-        "/resources/coreml/convert",
-        response_model=ApiResponse[ResourceStatusView],
-    )
-    async def convert_coreml(
-        context: ContextDependency,
-        variant: str | None = Query(default=None),
-        overwrite: bool = False,
-    ) -> ApiResponse[ResourceStatusView]:
-        data = await ObjectDetectionService(context, settings).convert_coreml(
-            variant=variant,
-            overwrite=overwrite,
-        )
+        data = await ObjectDetectionService(context).resource_status(variant=variant)
         return ApiResponse(
             data=data,
             meta=ResponseMeta(generated_at=utc_now()),
@@ -93,15 +61,15 @@ def create_router(settings: ObjectDetectionSettings) -> APIRouter:
         confidence: Annotated[
             float,
             Form(ge=0.0, le=1.0),
-        ] = settings.default_confidence,
+        ] = DEFAULT_DETECTION_CONFIDENCE,
         iou_threshold: Annotated[
             float,
             Form(ge=0.0, le=1.0),
-        ] = settings.default_iou_threshold,
+        ] = DEFAULT_DETECTION_IOU_THRESHOLD,
         max_detections: Annotated[
             int,
             Form(ge=1, le=1000),
-        ] = settings.default_max_detections,
+        ] = DEFAULT_MAX_DETECTIONS,
         cache_input: Annotated[
             bool,
             Form(description="Persist the input image in the local content cache"),
@@ -123,7 +91,7 @@ def create_router(settings: ObjectDetectionSettings) -> APIRouter:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=str(error),
             ) from error
-        result = await ObjectDetectionService(context, settings).detect(
+        result = await ObjectDetectionService(context).detect(
             DetectCommand(
                 runtime=runtime,
                 variant=variant,
@@ -156,15 +124,15 @@ def create_router(settings: ObjectDetectionSettings) -> APIRouter:
         confidence: Annotated[
             float,
             Query(ge=0.0, le=1.0),
-        ] = settings.default_confidence,
+        ] = DEFAULT_DETECTION_CONFIDENCE,
         iou_threshold: Annotated[
             float,
             Query(ge=0.0, le=1.0),
-        ] = settings.default_iou_threshold,
+        ] = DEFAULT_DETECTION_IOU_THRESHOLD,
         max_detections: Annotated[
             int,
             Query(ge=1, le=1000),
-        ] = settings.default_max_detections,
+        ] = DEFAULT_MAX_DETECTIONS,
     ) -> ApiResponse[DetectionResult]:
         normalized_content_type = content_type.split(";", maxsplit=1)[0]
         if normalized_content_type not in {"image/jpeg", "image/png", "image/webp"}:
@@ -188,7 +156,7 @@ def create_router(settings: ObjectDetectionSettings) -> APIRouter:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=str(error),
             ) from error
-        result = await ObjectDetectionService(context, settings).detect(
+        result = await ObjectDetectionService(context).detect(
             DetectCommand(
                 runtime=runtime,
                 variant=variant,

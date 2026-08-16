@@ -1,4 +1,4 @@
-"""Resource management for Qwen3-TTS 0.6B Base MLX 4-bit."""
+"""Resource management for Qwen3-TTS 0.6B Base runtimes."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ from hugging_mac_sdk.schemas.resources import (
 )
 
 from .config import (
+    QWEN3_TTS_COREML_GRAPHS,
     QWEN3_TTS_COREML_REQUIRED_FILES,
     QWEN3_TTS_MODEL_ID,
     QWEN3_TTS_REQUIRED_FILES,
@@ -35,7 +36,7 @@ from .config import (
 
 
 class Qwen3TtsCoreMlResourceResolver:
-    """Resolve the precompiled six-graph Core ML pipeline and shared tokenizer."""
+    """Resolve aufklarer's six-graph Core ML pipeline and shared tokenizer."""
 
     def __init__(
         self,
@@ -79,6 +80,7 @@ class Qwen3TtsCoreMlResourceResolver:
             raise ResourceNotFoundError(
                 "Qwen3-TTS Core ML bundle is incomplete", details={"missing": missing}
             )
+        await asyncio.to_thread(self._validate, self.path)
         return ResolvedResource(
             path=self.path, source=self._source, size_bytes=directory_size(self.path)
         )
@@ -91,7 +93,8 @@ class Qwen3TtsCoreMlResourceResolver:
         ]
         if missing:
             raise ResourceNotFoundError(
-                "Qwen3-TTS shared tokenizers are incomplete", details={"missing": missing}
+                "Qwen3-TTS shared tokenizers are incomplete",
+                details={"model_id": QWEN3_TTS_MODEL_ID, "missing": missing},
             )
         return ResolvedResource(
             path=self.tokenizer_path,
@@ -136,14 +139,30 @@ class Qwen3TtsCoreMlResourceResolver:
                 ),
                 ModelArtifactStatus(
                     artifact_id="tokenizers",
-                    format="tokenizer",
+                    format=ArtifactFormat.TOKENIZER.value,
                     runtime=None,
                     shared=True,
                     available=tokenizer_available,
-                    size_bytes=directory_size(self.tokenizer_path) if tokenizer_available else None,
+                    size_bytes=(
+                        directory_size(self.tokenizer_path) if tokenizer_available else None
+                    ),
                 ),
             ),
         )
+
+    @staticmethod
+    def _validate(path: Path) -> None:
+        try:
+            config = json.loads((path / "config.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ResourceIntegrityError("Qwen3-TTS Core ML config is invalid") from error
+        if config.get("model_type") != "qwen3_tts_coreml":
+            raise ResourceIntegrityError(
+                "Qwen3-TTS Core ML config has an unsupported model_type",
+                details={"model_type": config.get("model_type")},
+            )
+        if tuple(config.get("models", ())) != QWEN3_TTS_COREML_GRAPHS:
+            raise ResourceIntegrityError("Qwen3-TTS Core ML graph declaration is invalid")
 
     async def delete(self) -> None:
         target = self.path.expanduser().resolve(strict=False)

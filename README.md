@@ -28,7 +28,7 @@ pose-controlled games, and whatever comes next.
 ### Digital Human 🎙️
 
 A fully local, camera-aware voice conversation on Apple Silicon. Digital Human
-combines Audio8-ASR, Qwen 3.5 vision-language generation, and Kokoro MLX speech
+combines Audio8-ASR, Qwen 3.5 vision-language generation, and Kokoro speech
 to listen, respond to the current camera frame, and speak back with low latency.
 
 [![Watch the Digital Human demo](https://img.youtube.com/vi/YPr6fYPnCMQ/hqdefault.jpg)](https://youtu.be/YPr6fYPnCMQ)

@@ -5,9 +5,13 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Body, File, Form, Header, HTTPException, Query, UploadFile, status
+from hugging_mac_sdk.schemas.detection import (
+    DEFAULT_DETECTION_CONFIDENCE,
+    DEFAULT_DETECTION_IOU_THRESHOLD,
+    DEFAULT_MAX_DETECTIONS,
+)
 
 from hugging_mac_web.dependencies import ContextDependency
-from hugging_mac_web.pose_estimation.config import PoseEstimationSettings
 from hugging_mac_web.pose_estimation.schemas import (
     PoseCommand,
     PoseResult,
@@ -23,7 +27,7 @@ from hugging_mac_web.shared.utils.upload_util import read_upload_limited
 SUPPORTED_IMAGES = {"image/jpeg", "image/png", "image/webp"}
 
 
-def create_router(settings: PoseEstimationSettings) -> APIRouter:
+def create_router() -> APIRouter:
     router = APIRouter(prefix="/api/v1/apps/pose-estimation", tags=["pose-estimation"])
 
     @router.get("/resources", response_model=ApiResponse[ResourceStatusView])
@@ -31,31 +35,7 @@ def create_router(settings: PoseEstimationSettings) -> APIRouter:
         context: ContextDependency,
         variant: str | None = Query(default=None),
     ) -> ApiResponse[ResourceStatusView]:
-        data = await PoseEstimationService(context, settings).resource_status(variant=variant)
-        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
-
-    @router.post("/resources/source/download", response_model=ApiResponse[ResourceStatusView])
-    async def download_source(
-        context: ContextDependency,
-        variant: str | None = Query(default=None),
-        overwrite: bool = False,
-    ) -> ApiResponse[ResourceStatusView]:
-        data = await PoseEstimationService(context, settings).download_source(
-            variant=variant,
-            overwrite=overwrite,
-        )
-        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
-
-    @router.post("/resources/coreml/convert", response_model=ApiResponse[ResourceStatusView])
-    async def convert_coreml(
-        context: ContextDependency,
-        variant: str | None = Query(default=None),
-        overwrite: bool = False,
-    ) -> ApiResponse[ResourceStatusView]:
-        data = await PoseEstimationService(context, settings).convert_coreml(
-            variant=variant,
-            overwrite=overwrite,
-        )
+        data = await PoseEstimationService(context).resource_status(variant=variant)
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.post("/estimate", response_model=ApiResponse[PoseResult])
@@ -64,9 +44,9 @@ def create_router(settings: PoseEstimationSettings) -> APIRouter:
         file: Annotated[UploadFile, File(description="JPEG, PNG or WebP image")],
         runtime: Annotated[RuntimeChoice, Form()] = RuntimeChoice.AUTO,
         variant: Annotated[str | None, Form()] = None,
-        confidence: Annotated[float, Form(ge=0.0, le=1.0)] = settings.default_confidence,
-        iou_threshold: Annotated[float, Form(ge=0.0, le=1.0)] = settings.default_iou_threshold,
-        max_detections: Annotated[int, Form(ge=1, le=1000)] = settings.default_max_detections,
+        confidence: Annotated[float, Form(ge=0.0, le=1.0)] = DEFAULT_DETECTION_CONFIDENCE,
+        iou_threshold: Annotated[float, Form(ge=0.0, le=1.0)] = DEFAULT_DETECTION_IOU_THRESHOLD,
+        max_detections: Annotated[int, Form(ge=1, le=1000)] = DEFAULT_MAX_DETECTIONS,
         cache_input: Annotated[bool, Form()] = True,
     ) -> ApiResponse[PoseResult]:
         if file.content_type not in SUPPORTED_IMAGES:
@@ -82,7 +62,7 @@ def create_router(settings: PoseEstimationSettings) -> APIRouter:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=str(error),
             ) from error
-        result = await PoseEstimationService(context, settings).estimate(
+        result = await PoseEstimationService(context).estimate(
             PoseCommand(
                 runtime=runtime,
                 variant=variant,
@@ -106,9 +86,9 @@ def create_router(settings: PoseEstimationSettings) -> APIRouter:
         content_type: Annotated[str, Header(alias="Content-Type")],
         runtime: Annotated[RuntimeChoice, Query()] = RuntimeChoice.AUTO,
         variant: Annotated[str | None, Query()] = None,
-        confidence: Annotated[float, Query(ge=0.0, le=1.0)] = settings.default_confidence,
-        iou_threshold: Annotated[float, Query(ge=0.0, le=1.0)] = settings.default_iou_threshold,
-        max_detections: Annotated[int, Query(ge=1, le=1000)] = settings.default_max_detections,
+        confidence: Annotated[float, Query(ge=0.0, le=1.0)] = DEFAULT_DETECTION_CONFIDENCE,
+        iou_threshold: Annotated[float, Query(ge=0.0, le=1.0)] = DEFAULT_DETECTION_IOU_THRESHOLD,
+        max_detections: Annotated[int, Query(ge=1, le=1000)] = DEFAULT_MAX_DETECTIONS,
     ) -> ApiResponse[PoseResult]:
         normalized_content_type = content_type.split(";", maxsplit=1)[0]
         if normalized_content_type not in SUPPORTED_IMAGES:
@@ -132,7 +112,7 @@ def create_router(settings: PoseEstimationSettings) -> APIRouter:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=str(error),
             ) from error
-        result = await PoseEstimationService(context, settings).estimate(
+        result = await PoseEstimationService(context).estimate(
             PoseCommand(
                 runtime=runtime,
                 variant=variant,

@@ -14,24 +14,6 @@ export async function fetchResourceStatus(variant?: string): Promise<ResourceSta
   ).data
 }
 
-export async function downloadSource(variant: string): Promise<ResourceStatus> {
-  return (
-    await request<ResourceStatus>(
-      `/api/v1/apps/object-detection/resources/source/download${variantQuery(variant)}`,
-      { method: "POST" },
-    )
-  ).data
-}
-
-export async function convertCoreMl(variant: string): Promise<ResourceStatus> {
-  return (
-    await request<ResourceStatus>(
-      `/api/v1/apps/object-detection/resources/coreml/convert${variantQuery(variant)}`,
-      { method: "POST" },
-    )
-  ).data
-}
-
 export async function detectObjects(
   file: File,
   options: DetectOptions,

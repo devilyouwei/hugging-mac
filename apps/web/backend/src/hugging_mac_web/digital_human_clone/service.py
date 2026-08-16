@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
-from time import perf_counter
+from typing import Literal
 
-from hugging_mac_sdk import ArtifactFormat, AudioInput, ReusePolicy, TranscriptionRequest
-from hugging_mac_sdk.capabilities import Chat, SpeechSynthesis, SpeechTranscription
-from hugging_mac_sdk.core.instance import ModelState
+from hugging_mac_sdk import ReusePolicy
+from hugging_mac_sdk.capabilities import Chat, SpeechSynthesis
+from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import ResourceNotFoundError
+from hugging_mac_sdk.schemas.catalog import InstanceSnapshot
 from hugging_mac_sdk.schemas.chat import ChatImage, ChatMessage, ChatRequest, ChatStreamEvent
 from hugging_mac_sdk.schemas.speech_synthesis import SpeechSynthesisRequest
 
@@ -19,24 +21,29 @@ from hugging_mac_web.context import PlatformContext
 from hugging_mac_web.digital_human_clone.config import DigitalHumanSettings
 from hugging_mac_web.digital_human_clone.schemas import (
     ConversationMessage,
-    LoadedModelsView,
     LlmVariantView,
+    LoadedModelsView,
     ModelStateView,
     SetupView,
     TranscriptView,
 )
+from hugging_mac_web.live_transcription.config import LiveTranscriptionSettings
+from hugging_mac_web.live_transcription.service import (
+    DEEPFILTERNET3_MODEL_ID,
+    SILERO_MODEL_ID,
+    LiveTranscriptionService,
+)
 from hugging_mac_web.text_to_speech.audio import float32le_to_wav
 
-ASR_MODEL_ID = "audio8/audio8-asr-0.1b"
-LLM_MODEL_ID = "mlx-community/qwen3.5-mlx"
-TTS_MODEL_ID = "mlx-community/kokoro-82m-bf16"
+ASR_MODEL_ID = "audio8/audio8-asr"
+LLM_MODEL_ID = "qwen/qwen3.5"
+TTS_MODEL_ID = "hexgrad/kokoro"
 
-_MODEL_SPECS = (
-    ("asr", ASR_MODEL_ID, "base", "coreml", "coreml"),
-    ("llm", LLM_MODEL_ID, "4b-optiq-4bit", "mlx", "model"),
-    ("tts", TTS_MODEL_ID, "bf16", "mlx", "model"),
-)
+type ModelRole = Literal["asr", "llm", "tts"]
+type ModelSpec = tuple[ModelRole, str, str, str]
+
 _UNSPEAKABLE = re.compile(r"[`*_#>|~\[\]{}]+")
+logger = logging.getLogger(__name__)
 
 
 class DigitalHumanService:
@@ -48,15 +55,14 @@ class DigitalHumanService:
         llm_variant = self._llm_variant(llm_variant)
         snapshots = await self._context.models.instances.snapshots()
         models: list[ModelStateView] = []
-        for role, model_id, variant, runtime, required_artifact in self._model_specs(llm_variant):
+        for role, model_id, variant, runtime in self._model_specs(llm_variant):
             status = await self._context.models.resources.status(
                 model_id,
                 variant=variant,
                 options=self._options(role),
             )
             resources_ready = any(
-                artifact.artifact_id == required_artifact and artifact.available
-                for artifact in status.artifacts
+                item.runtime == runtime and item.available for item in status.runtimes
             )
             ready = next(
                 (
@@ -71,7 +77,7 @@ class DigitalHumanService:
             )
             models.append(
                 ModelStateView(
-                    role=role,  # type: ignore[arg-type]
+                    role=role,
                     model_id=model_id,
                     runtime=runtime,
                     resources_ready=resources_ready,
@@ -82,51 +88,136 @@ class DigitalHumanService:
             models=tuple(models),
             llm_variants=self._llm_variants(),
             selected_llm_variant=llm_variant,
+            vad_instance_id=self._ready_snapshot_id(snapshots, SILERO_MODEL_ID),
+            enhancement_instance_id=self._ready_snapshot_id(
+                snapshots, DEEPFILTERNET3_MODEL_ID
+            ),
         )
 
-    async def prepare(self, llm_variant: str | None = None) -> LoadedModelsView:
-        llm_variant = self._llm_variant(llm_variant)
-        await self._prepare_resources(llm_variant)
-
-        async def load(role: str, model_id: str, variant: str, runtime: str) -> str:
-            handle = await self._context.models.load(
-                model_id,
-                variant=variant,
-                runtime=runtime,
-                options=self._options(role),
-                reuse=ReusePolicy.SHARED,
-            )
-            try:
-                return handle.info().instance_id
-            finally:
-                await handle.close()
-
+    async def load_models(self, llm_variant: str | None = None) -> LoadedModelsView:
+        selected_variant = self._llm_variant(llm_variant)
         asr, llm, tts = await asyncio.gather(
             *(
-                load(role, model_id, variant, runtime)
-                for role, model_id, variant, runtime, _ in self._model_specs(llm_variant)
+                self._load(role, model_id, variant, runtime)
+                for role, model_id, variant, runtime in self._model_specs(selected_variant)
             )
+        )
+        vad, enhancement = await asyncio.gather(
+            self._load_optional_pipeline_component("vad"),
+            self._load_optional_pipeline_component("enhancement"),
         )
         return LoadedModelsView(
             asr_instance_id=asr,
             llm_instance_id=llm,
             tts_instance_id=tts,
+            vad_instance_id=vad,
+            enhancement_instance_id=enhancement,
         )
 
-    async def transcribe(self, audio: bytes, instance_id: str) -> TranscriptView:
-        instance = await self._ready_instance(instance_id, ASR_MODEL_ID)
-        capability = instance.require(SpeechTranscription)  # type: ignore[type-abstract]
-        started = perf_counter()
-        response = await capability.transcribe(
-            TranscriptionRequest(
-                audio=AudioInput(data=audio),
+    async def load_model(self, role: str, llm_variant: str | None = None) -> str:
+        selected_variant = self._llm_variant(llm_variant)
+        for spec_role, model_id, variant, runtime in self._model_specs(selected_variant):
+            if spec_role == role:
+                return await self._load(spec_role, model_id, variant, runtime)
+        raise ResourceNotFoundError(f"Digital Human model role is not supported: {role}")
+
+    async def _load(self, role: str, model_id: str, variant: str, runtime: str) -> str:
+        handle = await self._context.models.load(
+            model_id,
+            variant=variant,
+            runtime=runtime,
+            options=self._options(role),
+            reuse=ReusePolicy.SHARED,
+        )
+        try:
+            return handle.info().instance_id
+        finally:
+            await handle.close()
+
+    async def transcribe(
+        self,
+        audio: bytes,
+        instance_id: str,
+        *,
+        vad_instance_id: str | None = None,
+        enhancement_instance_id: str | None = None,
+    ) -> TranscriptView:
+        response = await LiveTranscriptionService(
+            self._context,
+            LiveTranscriptionSettings(
                 prompt="Transcribe the speech accurately in its original language.",
                 max_new_tokens=128,
-            )
+            ),
+        ).transcribe(
+            audio,
+            model_id=ASR_MODEL_ID,
+            instance_id=instance_id,
+            vad_instance_id=vad_instance_id if self._settings.enable_vad else None,
+            enhancement_instance_id=(
+                enhancement_instance_id
+                if self._settings.enable_speech_enhancement
+                else None
+            ),
+            vad_threshold=self._settings.vad_threshold,
         )
         return TranscriptView(
             text=response.text.strip(),
-            inference_ms=(perf_counter() - started) * 1000,
+            inference_ms=response.inference_ms,
+            source_duration_seconds=response.source_duration_seconds,
+            speech_duration_seconds=response.speech_duration_seconds,
+            speech_segment_count=response.speech_segment_count,
+            vad_inference_ms=response.vad_inference_ms,
+            enhancement_inference_ms=response.enhancement_inference_ms,
+        )
+
+    async def _load_optional_pipeline_component(self, component: str) -> str | None:
+        if component == "vad":
+            if not self._settings.enable_vad:
+                return None
+            model_id = SILERO_MODEL_ID
+        else:
+            if not self._settings.enable_speech_enhancement:
+                return None
+            model_id = DEEPFILTERNET3_MODEL_ID
+        try:
+            manifest = self._context.models.registry.get(model_id).manifest
+            status = await self._context.models.resources.status(
+                model_id,
+                variant=manifest.default_variant,
+                options={"model_home": self._context.settings.model_home},
+            )
+            if not any(
+                item.runtime == manifest.default_runtime and item.available
+                for item in status.runtimes
+            ):
+                return None
+            live = LiveTranscriptionService(self._context, LiveTranscriptionSettings())
+            loaded = await (
+                live.load_vad() if component == "vad" else live.load_enhancement()
+            )
+            return loaded.instance_id
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning(
+                "Digital Human optional ASR component unavailable component=%s model_id=%s",
+                component,
+                model_id,
+                exc_info=True,
+            )
+            return None
+
+    @staticmethod
+    def _ready_snapshot_id(
+        snapshots: tuple[InstanceSnapshot, ...], model_id: str
+    ) -> str | None:
+        return next(
+            (
+                snapshot.instance_id
+                for snapshot in snapshots
+                if snapshot.model_id == model_id and snapshot.state is ModelState.READY
+            ),
+            None,
         )
 
     async def stream_chat(
@@ -194,32 +285,9 @@ class DigitalHumanService:
         )
         return float32le_to_wav(response.audio, response.sample_rate)
 
-    async def _prepare_resources(self, llm_variant: str) -> None:
-        for role, model_id, variant, _, required_artifact in self._model_specs(llm_variant):
-            options = self._options(role)
-            status = await self._context.models.resources.status(
-                model_id, variant=variant, options=options
-            )
-            ready = any(
-                artifact.artifact_id == required_artifact and artifact.available
-                for artifact in status.artifacts
-            )
-            if ready:
-                continue
-            source = next((item for item in status.artifacts if item.artifact_id == "source"), None)
-            if source is None or not source.available:
-                await self._context.models.resources.download_source(
-                    model_id, variant=variant, options=options
-                )
-            if role == "asr":
-                await self._context.models.resources.convert(
-                    model_id,
-                    ArtifactFormat.COREML,
-                    variant=variant,
-                    options=options,
-                )
-
-    async def _ready_instance(self, instance_id: str, model_id: str):
+    async def _ready_instance(
+        self, instance_id: str, model_id: str
+    ) -> BaseModelInstance:
         instance = await self._context.models.instances.require(instance_id)
         info = instance.info()
         if info.model_id != model_id or info.state is not ModelState.READY:
@@ -233,12 +301,24 @@ class DigitalHumanService:
         options: dict[str, object] = {"model_home": self._context.settings.model_home}
         return options
 
-    @staticmethod
-    def _model_specs(llm_variant: str):
-        return (
-            ("asr", ASR_MODEL_ID, "base", "coreml", "coreml"),
-            ("llm", LLM_MODEL_ID, llm_variant, "mlx", "model"),
-            ("tts", TTS_MODEL_ID, "bf16", "mlx", "model"),
+    def _model_specs(self, llm_variant: str) -> tuple[ModelSpec, ...]:
+        """Resolve every role through the shared WEB_RUNTIME_PREFERENCE policy."""
+
+        selections = (
+            ("asr", ASR_MODEL_ID, "0.1b"),
+            ("llm", LLM_MODEL_ID, llm_variant),
+            ("tts", TTS_MODEL_ID, "v1.0"),
+        )
+        return tuple(
+            (
+                role,
+                model_id,
+                variant,
+                self._context.models.runtime_policy.select(
+                    self._context.models.registry.get(model_id).manifest
+                ),
+            )
+            for role, model_id, variant in selections
         )
 
     def _llm_variants(self) -> tuple[LlmVariantView, ...]:
@@ -254,7 +334,7 @@ class DigitalHumanService:
 
     def _llm_variant(self, value: str | None) -> str:
         variants = self._llm_variants()
-        selected = value or "4b-optiq-4bit"
+        selected = value or "4b"
         if selected not in {variant.name for variant in variants}:
             raise ResourceNotFoundError("The selected Qwen3.5 variant is not registered")
         return selected
