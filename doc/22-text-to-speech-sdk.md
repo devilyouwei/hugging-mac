@@ -84,8 +84,13 @@ models/qwen3_tts/
 ### Kokoro 82M
 
 - model ID：`hexgrad/kokoro`；variant：`v1.0`；输出：24 kHz；
-- 默认下载并运行固定 revision 的 `aufklarer/Kokoro-82M-CoreML`，端到端模型每次最多处理 128 个
-  phoneme 和 5 秒音频，长文本由 SDK 分段；官方 PyTorch MPS/CPU runtime 仍可选；
+- 默认下载并运行固定 revision 的 `FluidInference/kokoro-82m-coreml` Float32
+  `kokoro_21_5s.mlmodelc`。端到端 graph 每次最多处理 124 个 input ID，并提供 175,800-sample 固定
+  输出缓冲；SDK 先按自然边界限制输入长度，在预测超过 6.8 秒安全线时丢弃该次输出、优先沿标点或空格
+  递归拆分后重新合成；
+- Core ML 后处理信任该 graph 返回的 `audio_length_samples`，只做 5 ms 淡出，不再保留旧 artifact 的
+  padding tail，也不使用能量阈值寻找语音终点。该 graph 不暴露 speed 控制；官方 PyTorch MPS/CPU
+  runtime 仍支持 speed；
 
 ### Qwen3-TTS 12Hz 0.6B Base
 
@@ -162,7 +167,7 @@ handle = await sdk.load(
 )
 ```
 
-Kokoro Core ML 产物来自固定 revision 的 `aufklarer/Kokoro-82M-CoreML`，通过普通模型资源下载
+Kokoro Core ML 产物来自固定 revision 的 `FluidInference/kokoro-82m-coreml`，通过普通模型资源下载
 获得，不再执行本地转换。PyTorch 与 Core ML runtime 仍可独立选择。
 
 Audio8 MLX BF16 是同一 Audio8-TTS 模型的 runtime artifact，并支持参考音频或已保存 voice profile：
@@ -271,5 +276,5 @@ RTF 按同组的 `平均合成耗时 / 平均音频时长` 计算；小于 1 表
 - [Audio8 TTS Preview 0.6B](https://huggingface.co/Audio8/Audio8-TTS-Preview-0.6b)
 - [Audio8 TTS Preview 0.6B MLX BF16](https://huggingface.co/mlx-community/Audio8-TTS-Preview-0.6b-bf16)
 - [Kokoro 82M](https://huggingface.co/hexgrad/Kokoro-82M)
-- [Kokoro 82M Core ML](https://huggingface.co/aufklarer/Kokoro-82M-CoreML)
+- [Kokoro 82M Core ML](https://huggingface.co/FluidInference/kokoro-82m-coreml)
 - [Qwen3-TTS Core ML](https://huggingface.co/aufklarer/Qwen3-TTS-CoreML)

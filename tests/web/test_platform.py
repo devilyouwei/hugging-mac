@@ -653,6 +653,57 @@ def _streaming_view(*, is_final: bool, delta: str) -> StreamingTranscriptionView
     )
 
 
+def test_digital_human_streams_nemotron_over_websocket(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_start(*_: object, **__: object) -> StreamingSessionView:
+        return StreamingSessionView(
+            session_id="stream-1",
+            model_id=NEMOTRON_3_5_ASR_PROFILE.model_id,
+            instance_id="nemotron-instance",
+            runtime="coreml",
+            device="cpu-and-neural-engine",
+            sample_rate=16000,
+        )
+
+    async def fake_chunk(
+        _: object, audio: bytes, **__: object
+    ) -> StreamingTranscriptionView:
+        assert audio.startswith(b"RIFF")
+        assert b"\0\0" * 160 in audio
+        return _streaming_view(is_final=False, delta="hello")
+
+    async def fake_finish(*_: object, **__: object) -> StreamingTranscriptionView:
+        return _streaming_view(is_final=True, delta="")
+
+    monkeypatch.setattr(LiveTranscriptionService, "start_stream", fake_start)
+    monkeypatch.setattr(LiveTranscriptionService, "transcribe_stream_chunk", fake_chunk)
+    monkeypatch.setattr(LiveTranscriptionService, "finish_stream", fake_finish)
+    app = create_app(_settings(tmp_path))
+
+    with (
+        TestClient(app) as client,
+        client.websocket_connect("/api/v1/games/digital-human/asr/ws") as socket,
+    ):
+        socket.send_json(
+            {
+                "type": "start_utterance",
+                "model_id": NEMOTRON_3_5_ASR_PROFILE.model_id,
+                "instance_id": "nemotron-instance",
+                "sample_rate": 16000,
+            }
+        )
+        assert socket.receive_json()["type"] == "ready"
+        socket.send_bytes(b"\0\0" * 160)
+        assert socket.receive_json()["type"] == "partial"
+        socket.send_json({"type": "finish_utterance"})
+        final = socket.receive_json()
+
+    assert final["type"] == "final"
+    assert final["text"] == "hello world"
+
+
 def test_live_transcription_declares_inference_ready_asr_models() -> None:
     requirements = {
         requirement.model_id: requirement
@@ -766,6 +817,24 @@ def test_digital_human_uses_runtime_preference_and_declared_kokoro_variant(
         "v1.0",
         "coreml",
     )
+
+
+def test_digital_human_supports_nemotron_streaming_asr(tmp_path: Path) -> None:
+    context = create_context(_settings(tmp_path))
+    service = DigitalHumanService(context, DigitalHumanSettings())
+    model_id = "nvidia/nemotron-3.5-asr-streaming-0.6b"
+
+    specs = service._model_specs("4b", model_id)
+    options = {item.model_id: item for item in service._asr_models()}
+
+    assert specs[0] == (
+        "asr",
+        model_id,
+        "multilingual-2240ms",
+        "coreml",
+    )
+    assert options[model_id].streaming is True
+    assert options[model_id].streaming_chunk_seconds == 2.24
 
 
 def test_text_to_speech_returns_actionable_inference_reason(

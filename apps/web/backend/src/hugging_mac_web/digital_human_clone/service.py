@@ -20,6 +20,7 @@ from hugging_mac_sdk.schemas.speech_synthesis import SpeechSynthesisRequest
 from hugging_mac_web.context import PlatformContext
 from hugging_mac_web.digital_human_clone.config import DigitalHumanSettings
 from hugging_mac_web.digital_human_clone.schemas import (
+    AsrModelOptionView,
     ConversationMessage,
     LlmVariantView,
     LoadedModelsView,
@@ -27,7 +28,12 @@ from hugging_mac_web.digital_human_clone.schemas import (
     SetupView,
     TranscriptView,
 )
-from hugging_mac_web.live_transcription.config import LiveTranscriptionSettings
+from hugging_mac_web.live_transcription.config import (
+    AUDIO8_PROFILE,
+    NEMOTRON_3_5_ASR_PROFILE,
+    AsrModelProfile,
+    LiveTranscriptionSettings,
+)
 from hugging_mac_web.live_transcription.service import (
     DEEPFILTERNET3_MODEL_ID,
     SILERO_MODEL_ID,
@@ -35,7 +41,8 @@ from hugging_mac_web.live_transcription.service import (
 )
 from hugging_mac_web.text_to_speech.audio import float32le_to_wav
 
-ASR_MODEL_ID = "audio8/audio8-asr"
+ASR_MODEL_ID = AUDIO8_PROFILE.model_id
+NEMOTRON_ASR_MODEL_ID = NEMOTRON_3_5_ASR_PROFILE.model_id
 LLM_MODEL_ID = "qwen/qwen3.5"
 TTS_MODEL_ID = "hexgrad/kokoro"
 
@@ -51,11 +58,16 @@ class DigitalHumanService:
         self._context = context
         self._settings = settings
 
-    async def setup(self, llm_variant: str | None = None) -> SetupView:
+    async def setup(
+        self, llm_variant: str | None = None, asr_model_id: str | None = None
+    ) -> SetupView:
         llm_variant = self._llm_variant(llm_variant)
+        asr_profile = self._asr_profile(asr_model_id)
         snapshots = await self._context.models.instances.snapshots()
         models: list[ModelStateView] = []
-        for role, model_id, variant, runtime in self._model_specs(llm_variant):
+        for role, model_id, variant, runtime in self._model_specs(
+            llm_variant, asr_profile.model_id
+        ):
             status = await self._context.models.resources.status(
                 model_id,
                 variant=variant,
@@ -86,6 +98,8 @@ class DigitalHumanService:
             )
         return SetupView(
             models=tuple(models),
+            asr_models=self._asr_models(),
+            selected_asr_model_id=asr_profile.model_id,
             llm_variants=self._llm_variants(),
             selected_llm_variant=llm_variant,
             vad_instance_id=self._ready_snapshot_id(snapshots, SILERO_MODEL_ID),
@@ -94,12 +108,17 @@ class DigitalHumanService:
             ),
         )
 
-    async def load_models(self, llm_variant: str | None = None) -> LoadedModelsView:
+    async def load_models(
+        self, llm_variant: str | None = None, asr_model_id: str | None = None
+    ) -> LoadedModelsView:
         selected_variant = self._llm_variant(llm_variant)
+        selected_asr = self._asr_profile(asr_model_id)
         asr, llm, tts = await asyncio.gather(
             *(
                 self._load(role, model_id, variant, runtime)
-                for role, model_id, variant, runtime in self._model_specs(selected_variant)
+                for role, model_id, variant, runtime in self._model_specs(
+                    selected_variant, selected_asr.model_id
+                )
             )
         )
         vad, enhancement = await asyncio.gather(
@@ -114,9 +133,17 @@ class DigitalHumanService:
             enhancement_instance_id=enhancement,
         )
 
-    async def load_model(self, role: str, llm_variant: str | None = None) -> str:
+    async def load_model(
+        self,
+        role: str,
+        llm_variant: str | None = None,
+        asr_model_id: str | None = None,
+    ) -> str:
         selected_variant = self._llm_variant(llm_variant)
-        for spec_role, model_id, variant, runtime in self._model_specs(selected_variant):
+        selected_asr = self._asr_profile(asr_model_id)
+        for spec_role, model_id, variant, runtime in self._model_specs(
+            selected_variant, selected_asr.model_id
+        ):
             if spec_role == role:
                 return await self._load(spec_role, model_id, variant, runtime)
         raise ResourceNotFoundError(f"Digital Human model role is not supported: {role}")
@@ -139,9 +166,16 @@ class DigitalHumanService:
         audio: bytes,
         instance_id: str,
         *,
+        model_id: str = ASR_MODEL_ID,
         vad_instance_id: str | None = None,
         enhancement_instance_id: str | None = None,
     ) -> TranscriptView:
+        profile = self._asr_profile(model_id)
+        if profile.streaming:
+            raise ResourceNotFoundError(
+                "Streaming ASR must use the stream start/chunk/finish endpoints",
+                details={"model_id": profile.model_id},
+            )
         response = await LiveTranscriptionService(
             self._context,
             LiveTranscriptionSettings(
@@ -150,7 +184,7 @@ class DigitalHumanService:
             ),
         ).transcribe(
             audio,
-            model_id=ASR_MODEL_ID,
+            model_id=profile.model_id,
             instance_id=instance_id,
             vad_instance_id=vad_instance_id if self._settings.enable_vad else None,
             enhancement_instance_id=(
@@ -301,11 +335,13 @@ class DigitalHumanService:
         options: dict[str, object] = {"model_home": self._context.settings.model_home}
         return options
 
-    def _model_specs(self, llm_variant: str) -> tuple[ModelSpec, ...]:
+    def _model_specs(
+        self, llm_variant: str, asr_model_id: str = ASR_MODEL_ID
+    ) -> tuple[ModelSpec, ...]:
         """Resolve every role through the shared WEB_RUNTIME_PREFERENCE policy."""
 
         selections = (
-            ("asr", ASR_MODEL_ID, "0.1b"),
+            ("asr", asr_model_id, self._asr_profile(asr_model_id).variant),
             ("llm", LLM_MODEL_ID, llm_variant),
             ("tts", TTS_MODEL_ID, "v1.0"),
         )
@@ -331,6 +367,34 @@ class DigitalHumanService:
             )
             for variant in manifest.variants
         )
+
+    @staticmethod
+    def _asr_models() -> tuple[AsrModelOptionView, ...]:
+        return tuple(
+            AsrModelOptionView(
+                model_id=profile.model_id,
+                display_name=profile.display_name,
+                description=profile.description,
+                streaming=profile.streaming,
+                streaming_chunk_seconds=profile.streaming_chunk_seconds,
+            )
+            for profile in (AUDIO8_PROFILE, NEMOTRON_3_5_ASR_PROFILE)
+        )
+
+    @staticmethod
+    def _asr_profile(value: str | None) -> AsrModelProfile:
+        selected = value or ASR_MODEL_ID
+        profiles = {
+            profile.model_id: profile
+            for profile in (AUDIO8_PROFILE, NEMOTRON_3_5_ASR_PROFILE)
+        }
+        try:
+            return profiles[selected]
+        except KeyError as error:
+            raise ResourceNotFoundError(
+                "The selected Digital Human ASR model is not supported",
+                details={"model_id": selected, "supported_models": list(profiles)},
+            ) from error
 
     def _llm_variant(self, value: str | None) -> str:
         variants = self._llm_variants()

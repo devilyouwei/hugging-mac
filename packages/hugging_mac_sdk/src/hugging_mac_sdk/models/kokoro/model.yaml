@@ -3,7 +3,7 @@ manifest:
   model_id: hexgrad/kokoro
   revision: f3ff3571791e39611d31c381e3a41a3af07b4987
   display_name: Kokoro 82M v1.0
-  description: 官方 PyTorch Kokoro-82M，以及可直接下载的端到端 Core ML 版本。
+  description: 官方 PyTorch Kokoro-82M，以及 FluidInference 预编译 Float32 Core ML 版本。
   tags: [audio, tts, styletts2, istftnet, pytorch, coreml, ane]
   family: kokoro
   capabilities: [speech-synthesis]
@@ -37,17 +37,11 @@ manifest:
             - kokoro-v1_0.pth
             - voices/*.pt
         - kind: huggingface
-          repo_id: aufklarer/Kokoro-82M-CoreML
-          revision: f8ff771e4cab0bb3368e8af3a090a7e847485401
+          repo_id: FluidInference/kokoro-82m-coreml
+          revision: c94edcb4b671856795458645cd389c0a9184e8bb
           allow_patterns:
-            - kokoro_5s.mlmodelc/**
-            - G2PEncoder.mlmodelc/**
-            - G2PDecoder.mlmodelc/**
+            - kokoro_21_5s.mlmodelc/**
             - vocab_index.json
-            - g2p_vocab.json
-            - us_gold.json
-            - us_silver.json
-            - pipeline_config.json
             - voices/*.json
   default_variant: v1.0
   license: Apache-2.0
@@ -70,19 +64,13 @@ artifacts:
     variant: v1.0
     runtime: coreml
     format: coreml
-    path: hexgrad/kokoro/f3ff3571791e39611d31c381e3a41a3af07b4987/v1.0/coreml/model
+    path: hexgrad/kokoro/c94edcb4b671856795458645cd389c0a9184e8bb/v1.0/coreml/model
     kind: directory
     source:
       kind: huggingface
-      repo_id: aufklarer/Kokoro-82M-CoreML
-      revision: f8ff771e4cab0bb3368e8af3a090a7e847485401
+      repo_id: FluidInference/kokoro-82m-coreml
+      revision: c94edcb4b671856795458645cd389c0a9184e8bb
       allow_patterns:
-        - kokoro_5s.mlmodelc/**
-        - G2PEncoder.mlmodelc/**
-        - G2PDecoder.mlmodelc/**
+        - kokoro_21_5s.mlmodelc/**
         - vocab_index.json
-        - g2p_vocab.json
-        - us_gold.json
-        - us_silver.json
-        - pipeline_config.json
         - voices/*.json

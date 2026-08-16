@@ -1,4 +1,4 @@
-"""Runtime for aufklarer's precompiled end-to-end Kokoro Core ML model."""
+"""Runtime for FluidInference's precompiled end-to-end Kokoro Core ML model."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from hugging_mac_sdk.errors import UnsupportedRuntimeError
 from hugging_mac_sdk.runtime.base import RuntimeSession
 from hugging_mac_sdk.runtime.coreml import CoreMLProvider
 from hugging_mac_sdk.schemas.speech_synthesis import SpeechSynthesisRequest
@@ -32,8 +33,16 @@ _LANGUAGE_CODES = {
     "ja": "j",
     "zh": "z",
 }
-_MAX_INPUT_IDS = 128
+_MAX_INPUT_IDS = 124
 _MAX_PHONEMES = _MAX_INPUT_IDS - 2
+_MAX_AUDIO_SAMPLES = 175_800
+_SAFE_AUDIO_SAMPLES = int(6.8 * KOKORO_82M_SAMPLE_RATE)
+_FADE_SAMPLES = int(0.005 * KOKORO_82M_SAMPLE_RATE)
+_SPLIT_BOUNDARIES = (
+    "!.?\u2026\u3002\uff01\uff1f;\uff1b:\n",
+    ",\uff0c\u3001\u2014\u2013",
+    " \t",
+)
 
 
 class CoreMlKokoro82mEngine:
@@ -62,7 +71,7 @@ class CoreMlKokoro82mEngine:
         vocab_data = json.loads((artifact / "vocab_index.json").read_text(encoding="utf-8"))
         self._vocab = {str(key): int(value) for key, value in vocab_data["vocab"].items()}
         self._session = await CoreMLProvider().create_session(
-            artifact / "kokoro_5s.mlmodelc",
+            artifact / "kokoro_21_5s.mlmodelc",
             device=self._config.compute_units,
             options={},
         )
@@ -87,6 +96,10 @@ class CoreMlKokoro82mEngine:
 
         if self._session is None or self._artifact is None:
             raise RuntimeError("Kokoro-82M Core ML engine is not loaded")
+        if request.speed != 1.0:
+            raise UnsupportedRuntimeError(
+                "FluidInference Kokoro Core ML does not expose speed control"
+            )
         language = request.language or self._config.default_language
         language_code = _LANGUAGE_CODES.get(language.lower(), language.lower())
         pipeline = self._pipelines.get(language_code)
@@ -113,31 +126,16 @@ class CoreMlKokoro82mEngine:
         generated_tokens = 0
         for result in pipeline(request.text, model=False):
             phonemes = result.phonemes or ""
-            for start in range(0, len(phonemes), _MAX_PHONEMES):
+            for chunk in self._fit_input_chunks(phonemes):
                 if cancelled.is_set():
                     raise RuntimeError("Kokoro-82M synthesis was cancelled")
-                chunk = phonemes[start : start + _MAX_PHONEMES]
-                ids = [1, *(self._vocab[symbol] for symbol in chunk if symbol in self._vocab), 2]
-                if len(ids) <= 2:
-                    continue
-                generated_tokens += len(ids)
-                token_count = min(len(ids), _MAX_INPUT_IDS)
-                padded = np.zeros((1, _MAX_INPUT_IDS), dtype=np.int32)
-                padded[0, :token_count] = ids[:token_count]
-                attention_mask = np.zeros_like(padded)
-                attention_mask[0, :token_count] = 1
-                output = self._session.run(
-                    {
-                        "input_ids": padded,
-                        "attention_mask": attention_mask,
-                        "ref_s": embedding,
-                        "speed": np.asarray([request.speed], dtype=np.float32),
-                        "random_phases": np.random.random((1, 9)).astype(np.float32),
-                    }
+                chunk_waveforms, chunk_tokens = self._synthesize_phonemes(
+                    chunk,
+                    embedding=embedding,
+                    cancelled=cancelled,
                 )
-                audio = np.asarray(output["audio"], dtype=np.float32).reshape(-1)
-                length = int(np.asarray(output["audio_length_samples"]).reshape(-1)[0])
-                waveforms.append(self._trim_trailing_artifacts(audio[: max(0, length)]))
+                waveforms.extend(chunk_waveforms)
+                generated_tokens += chunk_tokens
         if not waveforms:
             raise RuntimeError("Kokoro-82M Core ML produced no audio")
         waveform = np.ascontiguousarray(np.concatenate(waveforms), dtype="<f4")
@@ -148,20 +146,85 @@ class CoreMlKokoro82mEngine:
             generated_tokens=generated_tokens,
         )
 
-    @staticmethod
-    def _trim_trailing_artifacts(audio: Any) -> Any:
+    def _synthesize_phonemes(
+        self,
+        phonemes: str,
+        *,
+        embedding: Any,
+        cancelled: threading.Event,
+    ) -> tuple[list[Any], int]:
         import numpy as np
 
-        if audio.size == 0:
-            return audio
-        window = max(1, int(0.05 * KOKORO_82M_SAMPLE_RATE))
-        speech_end = audio.size
-        for start in range(max(0, audio.size - window), 0, -(window // 2)):
-            if float(np.sqrt(np.mean(np.square(audio[start : start + window])))) > 0.03:
-                speech_end = min(audio.size, start + window)
-                break
-        trimmed = np.array(audio[:speech_end], copy=True)
-        fade = min(trimmed.size, int(0.01 * KOKORO_82M_SAMPLE_RATE))
+        if cancelled.is_set():
+            raise RuntimeError("Kokoro-82M synthesis was cancelled")
+        ids = [1, *(self._vocab[symbol] for symbol in phonemes if symbol in self._vocab), 2]
+        if len(ids) <= 2:
+            return [], 0
+        token_count = min(len(ids), _MAX_INPUT_IDS)
+        padded = np.zeros((1, _MAX_INPUT_IDS), dtype=np.int32)
+        padded[0, :token_count] = ids[:token_count]
+        attention_mask = np.zeros_like(padded)
+        attention_mask[0, :token_count] = 1
+        if self._session is None:
+            raise RuntimeError("Kokoro-82M Core ML engine is not loaded")
+        output = self._session.run(
+            {
+                "input_ids": padded,
+                "attention_mask": attention_mask,
+                "ref_s": embedding,
+                "random_phases": np.random.random((1, 9)).astype(np.float32),
+            }
+        )
+        audio = np.asarray(output["audio"], dtype=np.float32).reshape(-1)
+        length = int(np.asarray(output["audio_length_samples"]).reshape(-1)[0])
+        if length > _SAFE_AUDIO_SAMPLES:
+            split = self._split_phonemes(phonemes)
+            if split is not None:
+                left, right = split
+                left_audio, left_tokens = self._synthesize_phonemes(
+                    left, embedding=embedding, cancelled=cancelled
+                )
+                right_audio, right_tokens = self._synthesize_phonemes(
+                    right, embedding=embedding, cancelled=cancelled
+                )
+                return [*left_audio, *right_audio], left_tokens + right_tokens
+        return [self._prepare_audio(audio, length)], token_count
+
+    @classmethod
+    def _fit_input_chunks(cls, phonemes: str) -> list[str]:
+        if len(phonemes) <= _MAX_PHONEMES:
+            return [phonemes] if phonemes.strip() else []
+        split = cls._split_phonemes(phonemes)
+        if split is None:
+            return []
+        left, right = split
+        return [*cls._fit_input_chunks(left), *cls._fit_input_chunks(right)]
+
+    @staticmethod
+    def _split_phonemes(phonemes: str) -> tuple[str, str] | None:
+        if len(phonemes) < 2:
+            return None
+        midpoint = len(phonemes) // 2
+        for boundaries in _SPLIT_BOUNDARIES:
+            candidates = [
+                index + 1
+                for index, symbol in enumerate(phonemes)
+                if symbol in boundaries and 0 < index + 1 < len(phonemes)
+            ]
+            for split_at in sorted(candidates, key=lambda value: abs(value - midpoint)):
+                left, right = phonemes[:split_at].strip(), phonemes[split_at:].strip()
+                if left and right:
+                    return left, right
+        left, right = phonemes[:midpoint].strip(), phonemes[midpoint:].strip()
+        return (left, right) if left and right else None
+
+    @staticmethod
+    def _prepare_audio(audio: Any, length: int) -> Any:
+        import numpy as np
+
+        safe_length = min(audio.size, max(0, length), _MAX_AUDIO_SAMPLES)
+        trimmed = np.array(audio[:safe_length], copy=True)
+        fade = min(trimmed.size, _FADE_SAMPLES)
         if fade >= 2:
             trimmed[-fade:] *= np.linspace(1.0, 0.0, fade, dtype=np.float32)
         return trimmed

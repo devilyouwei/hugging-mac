@@ -17,6 +17,11 @@ DIGITAL_HUMAN_MANIFEST = AppManifest(
             preferred_runtime="coreml",
         ),
         AppModelRequirement(
+            model_id="nvidia/nemotron-3.5-asr-streaming-0.6b",
+            capabilities=("streaming-speech-transcription",),
+            preferred_runtime="coreml",
+        ),
+        AppModelRequirement(
             model_id="qwen/qwen3.5",
             capabilities=("chat", "vision-language-generation"),
             preferred_runtime="mlx",

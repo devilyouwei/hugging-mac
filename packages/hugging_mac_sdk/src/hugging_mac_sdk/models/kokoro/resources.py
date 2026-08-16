@@ -32,10 +32,8 @@ from .config import (
 )
 
 _COREML_REQUIRED_FILES = (
-    "kokoro_5s.mlmodelc/model.mil",
-    "kokoro_5s.mlmodelc/weights/weight.bin",
-    "G2PEncoder.mlmodelc/model.mil",
-    "G2PDecoder.mlmodelc/model.mil",
+    "kokoro_21_5s.mlmodelc/model.mil",
+    "kokoro_21_5s.mlmodelc/weights/weight.bin",
     "vocab_index.json",
     "voices/af_heart.json",
 )
@@ -172,7 +170,15 @@ class Kokoro82mResourceResolver:
         return self._model_root() / "pytorch" / "model"
 
     def _default_coreml_path(self) -> Path:
-        return self._model_root() / "coreml" / "model"
+        return (
+            self._config.model_home
+            / "hexgrad"
+            / "kokoro"
+            / self._coreml_source.revision
+            / self._config.variant
+            / "coreml"
+            / "model"
+        )
 
     def _model_root(self) -> Path:
         return (

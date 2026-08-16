@@ -4,6 +4,8 @@
 
 Canonical SDK package for `hexgrad/kokoro`, a compact multilingual text-to-speech model. Model size and compiled formats remain variant/artifact metadata.
 
+The downloadable Core ML runtime uses FluidInference's pinned Float32 `kokoro_21_5s.mlmodelc` artifact. It accepts 124 input IDs and exposes a 175,800-sample output buffer. The SDK keeps each pass below a 6.8-second safety threshold, recursively retrying overlong predictions at punctuation or whitespace boundaries, then trusts the model-reported sample length and applies only a 5 ms fade. The graph does not expose speed control.
+
 ## Runtimes and variants
 
 - Variant: `v1.0`
@@ -24,4 +26,3 @@ Canonical SDK package for `hexgrad/kokoro`, a compact multilingual text-to-speec
 - `coreml.py`: end-to-end Core ML engine.
 - `resources.py`: source and prebuilt artifact lifecycle.
 - `utils/`: private output types and upstream notices.
-

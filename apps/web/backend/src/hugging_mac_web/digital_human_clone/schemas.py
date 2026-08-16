@@ -19,6 +19,8 @@ class SetupView(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     models: tuple[ModelStateView, ...]
+    asr_models: tuple["AsrModelOptionView", ...]
+    selected_asr_model_id: str
     llm_variants: tuple["LlmVariantView", ...]
     selected_llm_variant: str
     vad_instance_id: str | None = None
@@ -45,6 +47,16 @@ class LlmVariantView(BaseModel):
     name: str
     display_name: str
     description: str
+
+
+class AsrModelOptionView(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_id: str
+    display_name: str
+    description: str
+    streaming: bool = False
+    streaming_chunk_seconds: float | None = None
 
 
 class TranscriptView(BaseModel):

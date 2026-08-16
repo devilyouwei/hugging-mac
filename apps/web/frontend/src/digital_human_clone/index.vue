@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 
 import {
+  DigitalHumanAsrSocket,
   fetchSetup,
   loadModel as loadDigitalHumanModel,
   loadModels as loadDigitalHumanModels,
@@ -9,7 +10,13 @@ import {
   synthesize,
   transcribe,
 } from "./api"
-import type { ConversationMessage, LoadedModels, ModelState } from "./types"
+import type {
+  AsrModelOption,
+  ConversationMessage,
+  LoadedModels,
+  ModelState,
+  StreamingTranscript,
+} from "./types"
 import { encodeWave } from "./wav"
 import { errorMessage, unloadModel } from "@/modelLifecycle"
 
@@ -103,7 +110,21 @@ interface TurnTiming {
   endToEndMs: number | null
 }
 
+interface ActiveAsrStream {
+  utteranceId: number
+  controller: AbortController
+  chunks: Float32Array[]
+  sampleCount: number
+  sampleRate: number
+  inferenceMs: number
+  transcript: Promise<StreamingTranscript>
+  resolve: (value: StreamingTranscript) => void
+  reject: (reason?: unknown) => void
+}
+
 const models = ref<ModelState[]>([])
+const asrModels = ref<AsrModelOption[]>([])
+const asrModelId = ref("")
 const llmVariants = ref<Array<{ name: string; display_name: string; description: string }>>([])
 const llmVariant = ref("")
 const loaded = ref<LoadedModels | null>(null)
@@ -122,12 +143,13 @@ const error = ref("")
 const lifecycleMessages = ref<Record<string, { type: "success" | "error"; text: string }>>({})
 const turnTiming = ref<TurnTiming | null>(null)
 const video = ref<HTMLVideoElement | null>(null)
-const subtitleEnd = ref<HTMLElement | null>(null)
+const subtitles = ref<HTMLElement | null>(null)
 
 let mediaStream: MediaStream | null = null
 let audioContext: AudioContext | null = null
 let sourceNode: MediaStreamAudioSourceNode | null = null
 let analyserNode: AnalyserNode | null = null
+let processorNode: ScriptProcessorNode | null = null
 let silentGain: GainNode | null = null
 let vadFrame = 0
 let recorder: MediaRecorder | null = null
@@ -144,8 +166,11 @@ let playbackScheduledUntil = 0
 let turn = 0
 let utteranceSequence = 0
 let latestUtterance = 0
+let activeAsrStream: ActiveAsrStream | null = null
+let asrSocket: DigitalHumanAsrSocket | null = null
 
 const modelsReady = computed(() => Boolean(loaded.value))
+const selectedAsr = computed(() => asrModels.value.find((item) => item.model_id === asrModelId.value))
 const resourcesReady = computed(() => models.value.length === 3 && models.value.every((item) => item.resources_ready))
 const availableVoices = computed(() =>
   KOKORO_VOICES.filter((voice) => voice.startsWith(language.value)),
@@ -171,8 +196,10 @@ function formatTime(value: number | null): string {
 
 async function refreshSetup() {
   try {
-    const setup = await fetchSetup(llmVariant.value || undefined)
+    const setup = await fetchSetup(llmVariant.value || undefined, asrModelId.value || undefined)
     models.value = setup.models
+    asrModels.value = setup.asr_models
+    asrModelId.value = setup.selected_asr_model_id
     llmVariants.value = setup.llm_variants
     llmVariant.value = setup.selected_llm_variant
     const byRole = Object.fromEntries(setup.models.map((model) => [model.role, model]))
@@ -200,7 +227,7 @@ async function loadAllModels(): Promise<boolean> {
   error.value = ""
   lifecycleMessages.value = {}
   try {
-    loaded.value = await loadDigitalHumanModels(llmVariant.value)
+    loaded.value = await loadDigitalHumanModels(llmVariant.value, asrModelId.value)
     phase.value = "Models ready"
     await refreshSetup()
     return true
@@ -223,7 +250,7 @@ async function toggleModel(role: ModelState["role"]) {
       await unloadModel(selected.ready_instance_id)
       lifecycleMessages.value[role] = { type: "success", text: "卸载成功" }
     } else {
-      await loadDigitalHumanModel(role, llmVariant.value)
+      await loadDigitalHumanModel(role, llmVariant.value, asrModelId.value)
     }
     await refreshSetup()
   } catch (caught) {
@@ -239,6 +266,10 @@ async function startConversation() {
   try {
     if (!modelsReady.value && !await loadAllModels()) return
     stopAudioGraph()
+    if (selectedAsr.value?.streaming) {
+      asrSocket?.close()
+      asrSocket = await DigitalHumanAsrSocket.connect()
+    }
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         autoGainControl: true,
@@ -281,7 +312,11 @@ function sampleVoiceActivity() {
 }
 
 function beginUtterance() {
-  if (!mediaStream || recorder) return
+  if (!mediaStream || recorder || activeAsrStream) return
+  if (selectedAsr.value?.streaming) {
+    beginStreamingUtterance()
+    return
+  }
   const audioTracks = mediaStream.getAudioTracks()
   if (!audioTracks.length) throw new Error("The webcam session has no microphone track")
   recorderChunks = []
@@ -304,9 +339,128 @@ function beginUtterance() {
 }
 
 function finishUtterance() {
+  if (activeAsrStream) {
+    speaking.value = false
+    finishStreamingUtterance()
+    return
+  }
   if (!recorder || recorder.state === "inactive") return
   speaking.value = false
   recorder.stop()
+}
+
+function beginStreamingUtterance() {
+  if (!loaded.value || !audioContext || activeAsrStream) return
+  const utteranceId = ++utteranceSequence
+  latestUtterance = utteranceId
+  const controller = new AbortController()
+  let resolve!: (value: StreamingTranscript) => void
+  let reject!: (reason?: unknown) => void
+  const transcript = new Promise<StreamingTranscript>((onResolve, onReject) => {
+    resolve = onResolve
+    reject = onReject
+  })
+  const stream: ActiveAsrStream = {
+    utteranceId,
+    controller,
+    chunks: [],
+    sampleCount: 0,
+    sampleRate: audioContext.sampleRate,
+    inferenceMs: 0,
+    transcript,
+    resolve,
+    reject,
+  }
+  activeAsrStream = stream
+  speechStartedAt = performance.now()
+  silenceStartedAt = 0
+  speaking.value = true
+  userSubtitle.value = ""
+  phase.value = "Starting live transcription"
+  if (!asrSocket) {
+    stream.reject(new Error("ASR WebSocket is not connected"))
+    activeAsrStream = null
+    return
+  }
+  asrSocket.startUtterance(
+    asrModelId.value,
+    loaded.value.asr_instance_id,
+    stream.sampleRate,
+    (response) => {
+      stream.inferenceMs += response.inference_ms ?? 0
+      if (
+        activeAsrStream === stream
+        && stream.utteranceId === latestUtterance
+        && isValidSpeechText(response.text)
+      ) {
+        userSubtitle.value = response.text
+        phase.value = "You are speaking · live transcription"
+        scrollSubtitlesToBottom()
+      }
+    },
+    (caught) => stream.reject(caught),
+  )
+  phase.value = "You are speaking · live transcription"
+  void recognizeUtterance(new Blob(), utteranceId, transcript, controller)
+}
+
+function captureStreamingAudio(event: AudioProcessingEvent) {
+  const stream = activeAsrStream
+  if (!stream || !speaking.value || stream.controller.signal.aborted) return
+  const chunk = new Float32Array(event.inputBuffer.getChannelData(0))
+  stream.chunks.push(chunk)
+  stream.sampleCount += chunk.length
+  const chunkSeconds = selectedAsr.value?.streaming_chunk_seconds ?? 2.24
+  if (stream.sampleCount / stream.sampleRate >= chunkSeconds) flushStreamingAudio(stream)
+}
+
+function flushStreamingAudio(stream: ActiveAsrStream) {
+  if (!stream.chunks.length) return
+  const audio = encodePcm16(stream.chunks)
+  stream.chunks = []
+  stream.sampleCount = 0
+  if (!stream.controller.signal.aborted) asrSocket?.sendAudio(audio)
+}
+
+function finishStreamingUtterance() {
+  const stream = activeAsrStream
+  if (!stream) return
+  const duration = (performance.now() - speechStartedAt) / 1000
+  if (duration < MIN_SPEECH_SECONDS) {
+    cancelActiveAsrStream()
+    if (active.value && !isPlaybackActive() && !responseRequest) phase.value = "Listening"
+    return
+  }
+  flushStreamingAudio(stream)
+  phase.value = "Finalizing speech"
+  if (!asrSocket) {
+    stream.reject(new Error("ASR WebSocket is not connected"))
+    activeAsrStream = null
+    return
+  }
+  void asrSocket.finishUtterance().then((response) => {
+    stream.inferenceMs += response.inference_ms ?? 0
+    stream.resolve({
+      ...response,
+      inference_ms: stream.inferenceMs,
+      source_duration_seconds: duration,
+      speech_duration_seconds: response.audio_seconds,
+      speech_segment_count: 1,
+      vad_inference_ms: null,
+      enhancement_inference_ms: null,
+    })
+  }).catch(stream.reject).finally(() => {
+    if (activeAsrStream === stream) activeAsrStream = null
+  })
+}
+
+function cancelActiveAsrStream() {
+  const stream = activeAsrStream
+  if (!stream) return
+  activeAsrStream = null
+  stream.controller.abort()
+  stream.reject(new DOMException("Aborted", "AbortError"))
+  asrSocket?.cancelUtterance()
 }
 
 async function submitRecordedUtterance() {
@@ -325,19 +479,24 @@ async function submitRecordedUtterance() {
   let audio: Blob
   try {
     const decoded = await audioContext.decodeAudioData(await encodedAudio.arrayBuffer())
-    audio = encodeWave([new Float32Array(decoded.getChannelData(0))], decoded.sampleRate)
+    const samples = new Float32Array(decoded.getChannelData(0))
+    audio = encodeWave([samples], decoded.sampleRate)
+    const utteranceId = ++utteranceSequence
+    latestUtterance = utteranceId
+    void recognizeUtterance(audio, utteranceId)
   } catch (caught) {
     showError(caught, "Unable to decode microphone audio")
-    return
   }
-  const utteranceId = ++utteranceSequence
-  latestUtterance = utteranceId
-  void recognizeUtterance(audio, utteranceId)
 }
 
-async function recognizeUtterance(audio: Blob, utteranceId: number) {
+async function recognizeUtterance(
+  audio: Blob,
+  utteranceId: number,
+  streamedTranscript?: Promise<StreamingTranscript>,
+  existingController?: AbortController,
+) {
   if (!loaded.value || !voiceId.value) return
-  const controller = new AbortController()
+  const controller = existingController ?? new AbortController()
   let responseController: AbortController | null = null
   const turnStartedAt = performance.now()
   turnTiming.value = {
@@ -354,13 +513,16 @@ async function recognizeUtterance(audio: Blob, utteranceId: number) {
   asrRequests.set(utteranceId, controller)
   try {
     const asrStartedAt = performance.now()
-    const transcript = await transcribe(
-      audio,
-      loaded.value.asr_instance_id,
-      loaded.value.vad_instance_id,
-      loaded.value.enhancement_instance_id,
-      controller.signal,
-    )
+    const transcript = streamedTranscript
+      ? await streamedTranscript
+      : await transcribe(
+          audio,
+          asrModelId.value,
+          loaded.value.asr_instance_id,
+          loaded.value.vad_instance_id,
+          loaded.value.enhancement_instance_id,
+          controller.signal,
+        )
     const asrTotalMs = performance.now() - asrStartedAt
     if (utteranceId === latestUtterance && turnTiming.value) {
       turnTiming.value.asrTotalMs = asrTotalMs
@@ -479,8 +641,15 @@ async function recognizeUtterance(audio: Blob, utteranceId: number) {
     ) {
       phase.value = "Listening"
     }
-    void nextTick(() => subtitleEnd.value?.scrollIntoView({ behavior: "smooth" }))
+    scrollSubtitlesToBottom()
   }
+}
+
+function scrollSubtitlesToBottom() {
+  void nextTick(() => {
+    const target = subtitles.value
+    target?.scrollTo({ top: target.scrollHeight, behavior: "smooth" })
+  })
 }
 
 async function captureFrame(): Promise<Blob> {
@@ -614,6 +783,9 @@ function isPlaybackActive(): boolean {
 
 function stopConversation() {
   interruptResponse()
+  cancelActiveAsrStream()
+  asrSocket?.close()
+  asrSocket = null
   for (const request of asrRequests.values()) request.abort()
   asrRequests.clear()
   latestUtterance = ++utteranceSequence
@@ -635,8 +807,12 @@ async function createAudioCapture() {
   analyserNode.smoothingTimeConstant = 0.2
   silentGain = audioContext.createGain()
   silentGain.gain.value = 0.00001
+  processorNode = audioContext.createScriptProcessor(4096, 1, 1)
+  processorNode.onaudioprocess = captureStreamingAudio
   sourceNode.connect(analyserNode)
+  sourceNode.connect(processorNode)
   analyserNode.connect(silentGain)
+  processorNode.connect(silentGain)
   silentGain.connect(audioContext.destination)
   vadFrame = requestAnimationFrame(sampleVoiceActivity)
 }
@@ -651,6 +827,8 @@ function stopAudioGraph() {
   }
   sourceNode?.disconnect()
   analyserNode?.disconnect()
+  if (processorNode) processorNode.onaudioprocess = null
+  processorNode?.disconnect()
   silentGain?.disconnect()
   mediaStream?.getTracks().forEach((track) => track.stop())
   void audioContext?.close()
@@ -658,6 +836,7 @@ function stopAudioGraph() {
   audioContext = null
   sourceNode = null
   analyserNode = null
+  processorNode = null
   silentGain = null
   recorder = null
   recorderChunks = []
@@ -671,6 +850,21 @@ function mediaRecorderOptions(): MediaRecorderOptions | undefined {
     if (MediaRecorder.isTypeSupported(mimeType)) return { mimeType }
   }
   return undefined
+}
+
+function encodePcm16(chunks: Float32Array[]): ArrayBuffer {
+  const sampleCount = chunks.reduce((total, chunk) => total + chunk.length, 0)
+  const output = new ArrayBuffer(sampleCount * 2)
+  const view = new DataView(output)
+  let offset = 0
+  for (const chunk of chunks) {
+    for (const sample of chunk) {
+      const clamped = Math.max(-1, Math.min(1, sample))
+      view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true)
+      offset += 2
+    }
+  }
+  return output
 }
 
 function updateLevel(chunk: Float32Array): number {
@@ -716,7 +910,19 @@ onBeforeUnmount(() => {
             <div v-for="model in models" :key="model.role" class="mini-model">
               <b>{{ model.role.toUpperCase() }}</b>
               <select
-                v-if="model.role === 'llm'"
+                v-if="model.role === 'asr'"
+                v-model="asrModelId"
+                class="mini-model-select"
+                aria-label="Speech recognition model"
+                :disabled="active"
+                @change="refreshSetup"
+              >
+                <option v-for="item in asrModels" :key="item.model_id" :value="item.model_id">
+                  {{ item.display_name }}{{ item.streaming ? " · STREAM" : "" }}
+                </option>
+              </select>
+              <select
+                v-else-if="model.role === 'llm'"
                 v-model="llmVariant"
                 class="mini-model-select"
                 aria-label="Language model variant"
@@ -782,10 +988,9 @@ onBeforeUnmount(() => {
           </div>
           <div class="scanline"></div>
           <div class="live-label"><i></i>{{ active ? "LIVE" : "STANDBY" }}</div>
-          <div class="subtitles">
+          <div ref="subtitles" class="subtitles">
             <p v-if="userSubtitle"><span>YOU</span>{{ userSubtitle }}</p>
             <p v-if="assistantSubtitle" class="digital-human-line"><span>DIGITAL HUMAN</span>{{ assistantSubtitle }}</p>
-            <i ref="subtitleEnd"></i>
           </div>
         </div>
         <section v-if="turnTiming" class="result-panel" aria-label="Turn timing results">

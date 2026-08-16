@@ -88,9 +88,9 @@ ML Program、复制 tokenizer/processor 配置，并保存 projector 与 decoder
 ## Kokoro-82M Core ML 产物
 
 Kokoro 不再提供本地 Core ML 转换入口。Model SDK 从固定 revision 的
-`aufklarer/Kokoro-82M-CoreML` 直接下载预编译端到端模型、G2P 模型、词表和 voice embeddings。
-主模型支持最多 128 个 phoneme、单段最多 5 秒，并以固定长度分段处理长文本。该 artifact 要求
-Apple Silicon 和 macOS 15+，默认允许 Core ML 在 ANE、GPU 与 CPU 间调度。
+`FluidInference/kokoro-82m-coreml` 直接下载预编译 Float32 端到端模型、词表和 voice embeddings。
+主模型支持最多 124 个 input ID，并由 SDK 按预测时长分段处理长文本。该 artifact 要求
+Apple Silicon 和 macOS 13+，默认允许 Core ML 在 ANE、GPU 与 CPU 间调度。
 
 ## 安全与复现
 

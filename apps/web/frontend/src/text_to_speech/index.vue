@@ -75,7 +75,6 @@ const referenceRecording = ref(false)
 const useSavedProfile = ref(false)
 const synthesisBusy = ref(false)
 const error = ref("")
-const lifecycleMessage = ref<{ type: "success" | "error"; text: string } | null>(null)
 const results = ref<GeneratedSpeech[]>([])
 let resultId = 0
 let activeRequest: AbortController | null = null
@@ -196,16 +195,15 @@ async function ensureSelectedModelLoaded(): Promise<LoadedTtsModel> {
     throw new Error("模型资产不可用，请先在 Models 页面准备模型。")
   }
   loadingModel.value = true
-  lifecycleMessage.value = null
+  error.value = ""
   try {
     const runtime = runtimeForModel(selectedModel.value)
     const loaded = await loadTtsModel(selectedModel.value.model_id, runtime)
     loadedModels.value[runtimeKey(loaded.model_id, loaded.runtime)] = loaded
-    lifecycleMessage.value = { type: "success", text: "模型加载成功" }
     return loaded
   } catch (caught) {
     const message = errorMessage(caught, "TTS 模型加载失败")
-    lifecycleMessage.value = { type: "error", text: message }
+    error.value = message
     throw caught
   } finally {
     loadingModel.value = false
@@ -215,7 +213,6 @@ async function ensureSelectedModelLoaded(): Promise<LoadedTtsModel> {
 function selectModel(modelId: string) {
   if (synthesisBusy.value) return
   selectedModelId.value = modelId
-  lifecycleMessage.value = null
   const model = models.value.find((item) => item.model_id === modelId)
   if (model?.languages.length && !model.languages.includes(language.value)) {
     language.value = model.languages[0] ?? "en-us"
@@ -226,7 +223,6 @@ function selectModel(modelId: string) {
 function selectRuntime(model: TtsModel, runtime: string) {
   if (synthesisBusy.value || loadingModel.value) return
   selectedRuntimeByModel.value[model.model_id] = runtime
-  if (selectedModelId.value === model.model_id) lifecycleMessage.value = null
 }
 
 function onRuntimeChange(model: TtsModel, event: Event) {
@@ -241,13 +237,12 @@ async function toggleSelectedModel() {
     return
   }
   loadingModel.value = true
-  lifecycleMessage.value = null
+  error.value = ""
   try {
     await unloadModel(current.instance_id)
     delete loadedModels.value[runtimeKey(current.model_id, current.runtime)]
-    lifecycleMessage.value = { type: "success", text: "模型卸载成功" }
   } catch (caught) {
-    lifecycleMessage.value = { type: "error", text: errorMessage(caught, "模型卸载失败") }
+    error.value = errorMessage(caught, "模型卸载失败")
   } finally {
     loadingModel.value = false
   }
@@ -448,10 +443,6 @@ onBeforeUnmount(() => {
               {{ loadingModel && selectedModelId === model.model_id ? "WAIT…" : modelIsReady(model) ? "UNLOAD" : "LOAD" }}
             </button>
           </div>
-          <small
-            v-if="selectedModelId === model.model_id && lifecycleMessage"
-            :class="`lifecycle-${lifecycleMessage.type}`"
-          >{{ lifecycleMessage.text }}</small>
         </article>
       </section>
     </header>
@@ -674,7 +665,7 @@ onBeforeUnmount(() => {
 .tts-hero h1 em { color: transparent; font-style: normal; -webkit-text-stroke: 1.5px var(--ink); }
 .hero-copy > p:last-child { color: var(--muted); font-size: .82rem; line-height: 1.5; max-width: 42rem; }
 .tts-model-picker { align-content: center; display: flex; flex-direction: column; gap: .55rem; }
-.tts-model-picker article { align-items: center; background: #f7f5eb; border: 1px solid var(--line); display: grid; gap: .8rem; grid-template-columns: minmax(0, 1fr) minmax(10.5rem, .62fr); padding: .62rem .72rem; transition: border-color .2s, background .2s, transform .2s; }
+.tts-model-picker article { align-items: center; background: #f7f5eb; border: 1px solid var(--line); box-sizing: border-box; display: grid; gap: .8rem; grid-template-columns: minmax(0, 1fr) minmax(10.5rem, .62fr); height: 4.5rem; padding: .62rem .72rem; transition: border-color .2s, background .2s, transform .2s; }
 .tts-model-picker article:hover { border-color: var(--ink); transform: translateX(-3px); }
 .tts-model-picker article.selected { background: #c8ff4614; border-color: var(--ink); box-shadow: inset 3px 0 var(--signal); }
 .tts-model-picker article.unavailable { opacity: .62; }
@@ -693,9 +684,6 @@ onBeforeUnmount(() => {
 .model-controls > button { background: var(--ink); border: 0; color: var(--paper); cursor: pointer; font: 700 .5rem var(--font-mono); min-width: 4.4rem; padding: .58rem .65rem; }
 .model-controls > button:hover { background: var(--signal); color: var(--ink); }
 .model-controls > button:disabled, .model-controls select:disabled { cursor: not-allowed; opacity: .4; }
-.tts-model-picker article > small { grid-column: 1 / -1; margin-top: -.35rem; }
-.lifecycle-success { color: #57951f; font: .52rem var(--font-mono); }
-.lifecycle-error { color: #cf3f27; font: .52rem var(--font-mono); }
 .tts-workbench { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(21rem, .65fr); margin-top: 1rem; }
 .script-panel, .voice-panel { border: 1px solid var(--ink); min-height: 33rem; padding: clamp(1.5rem, 3vw, 2.6rem); }
 .voice-panel { background: var(--ink); color: var(--paper); }

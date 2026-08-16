@@ -17,6 +17,21 @@ from .config import Kokoro82mInstanceConfig
 from .resources import Kokoro82mResourceResolver
 from .utils.types import KokoroEngineOutput
 
+_LANGUAGE_CODES = {
+    "en": "a",
+    "en-us": "a",
+    "en-gb": "b",
+    "es": "e",
+    "fr": "f",
+    "fr-fr": "f",
+    "hi": "h",
+    "it": "i",
+    "pt": "p",
+    "pt-br": "p",
+    "ja": "j",
+    "zh": "z",
+}
+
 
 class TorchKokoro82mEngine:
     runtime_name = "pytorch-mps"
@@ -84,6 +99,7 @@ class TorchKokoro82mEngine:
         if self._model is None or self._artifact is None:
             raise RuntimeError("Kokoro-82M PyTorch engine is not loaded")
         language = request.language or self._config.default_language
+        language = _LANGUAGE_CODES.get(language.lower(), language.lower())
         pipeline = self._pipelines.get(language)
         if pipeline is None:
             pipeline = KPipeline(

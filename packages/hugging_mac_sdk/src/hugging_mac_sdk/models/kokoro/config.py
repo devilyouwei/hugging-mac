@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field
 KOKORO_82M_MODEL_ID: Final = "hexgrad/kokoro"
 KOKORO_82M_REPO_ID: Final = "hexgrad/Kokoro-82M"
 KOKORO_82M_REVISION: Final = "f3ff3571791e39611d31c381e3a41a3af07b4987"
-KOKORO_82M_COREML_REPO_ID: Final = "aufklarer/Kokoro-82M-CoreML"
-KOKORO_82M_COREML_REVISION: Final = "f8ff771e4cab0bb3368e8af3a090a7e847485401"
+KOKORO_82M_COREML_REPO_ID: Final = "FluidInference/kokoro-82m-coreml"
+KOKORO_82M_COREML_REVISION: Final = "c94edcb4b671856795458645cd389c0a9184e8bb"
 KOKORO_82M_WEIGHT_SHA256: Final = "496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4"
 KOKORO_82M_VARIANT: Final = "v1.0"
 KOKORO_82M_SAMPLE_RATE: Final = 24000
