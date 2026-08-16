@@ -6,6 +6,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+DEFAULT_DETECTION_CONFIDENCE = 0.5
+DEFAULT_DETECTION_IOU_THRESHOLD = 0.7
+DEFAULT_MAX_DETECTIONS = 300
+
 
 class ImageInput(BaseModel):
     """An image supplied as a local path or encoded bytes."""
@@ -26,9 +30,9 @@ class DetectionRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     image: ImageInput
-    confidence: float = Field(default=0.25, ge=0.0, le=1.0)
-    iou_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
-    max_detections: int = Field(default=300, ge=1)
+    confidence: float = Field(default=DEFAULT_DETECTION_CONFIDENCE, ge=0.0, le=1.0)
+    iou_threshold: float = Field(default=DEFAULT_DETECTION_IOU_THRESHOLD, ge=0.0, le=1.0)
+    max_detections: int = Field(default=DEFAULT_MAX_DETECTIONS, ge=1)
     classes: tuple[int, ...] | None = None
 
 

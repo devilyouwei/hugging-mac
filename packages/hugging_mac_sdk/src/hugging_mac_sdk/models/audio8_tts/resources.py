@@ -28,10 +28,12 @@ from .config import (
     AUDIO8_TTS_MODEL_ID,
     AUDIO8_TTS_REQUIRED_FILES,
     AUDIO8_TTS_REVISION,
+    AUDIO8_TTS_TOKENIZER_REQUIRED_FILES,
     AUDIO8_TTS_VARIANT,
     AUDIO8_TTS_WEIGHT_SHA256,
     Audio8TtsInstanceConfig,
 )
+from .mlx_resources import Audio8TtsMlxResourceProvider
 
 
 class Audio8TtsResourceResolver:
@@ -40,9 +42,11 @@ class Audio8TtsResourceResolver:
         source: HuggingFaceSource,
         config: Audio8TtsInstanceConfig,
         *,
+        tokenizer_source: HuggingFaceSource | None = None,
         downloader: ResourceDownloader | None = None,
     ) -> None:
         self._source = source
+        self._tokenizer_source = tokenizer_source or source
         self._config = config
         self._downloader = downloader or ResourceDownloader(timeout=3600)
 
@@ -56,16 +60,52 @@ class Audio8TtsResourceResolver:
             size_bytes=directory_size(path),
         )
 
+    @property
+    def tokenizer_path(self) -> Path:
+        return (
+            self._config.tokenizer_path
+            or self._config.model_home
+            / "audio8"
+            / "audio8-tts-preview"
+            / "shared"
+            / "tokenizer"
+            / "afa762738efa064eb11720c934271b739b02cf97"
+        )
+
+    async def resolve_tokenizer(self) -> ResolvedResource:
+        missing = [
+            name
+            for name in AUDIO8_TTS_TOKENIZER_REQUIRED_FILES
+            if not (self.tokenizer_path / name).is_file()
+        ]
+        if missing:
+            raise ResourceNotFoundError(
+                "Audio8-TTS shared tokenizer is incomplete",
+                details={"model_id": AUDIO8_TTS_MODEL_ID, "missing": missing},
+            )
+        return ResolvedResource(
+            path=self.tokenizer_path,
+            source=self._tokenizer_source,
+            size_bytes=directory_size(self.tokenizer_path),
+        )
+
     async def download_source(self, *, overwrite: bool = False) -> ResolvedResource:
         path = self._config.source_path or self._default_source_path()
-        if path.exists() and not overwrite:
-            return await self.resolve_source()
-        await self._downloader.download(
-            self._source,
-            path,
-            overwrite=overwrite,
-            token=self._config.hf_token,
-        )
+        if overwrite or not path.exists():
+            await self._downloader.download(
+                self._source,
+                path,
+                overwrite=overwrite,
+                token=self._config.hf_token,
+            )
+        if overwrite or not self.tokenizer_path.exists():
+            await self._downloader.download(
+                self._tokenizer_source,
+                self.tokenizer_path,
+                overwrite=overwrite,
+                token=self._config.hf_token,
+            )
+        await self.resolve_tokenizer()
         return await self.resolve_source()
 
     async def delete(self, *, runtime: str | None = None) -> None:
@@ -89,6 +129,10 @@ class Audio8TtsResourceResolver:
     def status(self) -> ModelResourceStatus:
         path = self._config.source_path or self._default_source_path()
         available = self._snapshot_files_exist(path)
+        tokenizer_available = all(
+            (self.tokenizer_path / name).is_file()
+            for name in AUDIO8_TTS_TOKENIZER_REQUIRED_FILES
+        )
         return ModelResourceStatus(
             model_id=AUDIO8_TTS_MODEL_ID,
             revision=AUDIO8_TTS_REVISION,
@@ -101,6 +145,16 @@ class Audio8TtsResourceResolver:
                     available=available,
                     size_bytes=directory_size(path) if available else None,
                 ),
+                ModelArtifactStatus(
+                    artifact_id="tokenizer",
+                    format=ArtifactFormat.TOKENIZER.value,
+                    runtime=None,
+                    shared=True,
+                    available=tokenizer_available,
+                    size_bytes=(
+                        directory_size(self.tokenizer_path) if tokenizer_available else None
+                    ),
+                ),
             ),
         )
 
@@ -111,7 +165,7 @@ class Audio8TtsResourceResolver:
         return (
             self._config.model_home
             / "audio8"
-            / "audio8-tts-preview-0.6b"
+            / "audio8-tts-preview"
             / self._source.revision
             / self._config.variant
         )
@@ -165,8 +219,13 @@ class Audio8TtsResourceResolver:
 
 
 class Audio8TtsResourceProvider:
-    def __init__(self, source: HuggingFaceSource) -> None:
+    def __init__(
+        self,
+        source: HuggingFaceSource,
+        tokenizer_source: HuggingFaceSource | None = None,
+    ) -> None:
         self._source = source
+        self._tokenizer_source = tokenizer_source or source
 
     async def status(
         self, variant: str, options: Mapping[str, object] | None = None
@@ -227,4 +286,73 @@ class Audio8TtsResourceProvider:
         config = Audio8TtsInstanceConfig.model_validate(
             normalized | {"variant": variant}
         )
-        return Audio8TtsResourceResolver(self._source, config)
+        return Audio8TtsResourceResolver(
+            self._source, config, tokenizer_source=self._tokenizer_source
+        )
+
+
+class Audio8TtsCombinedResourceProvider:
+    """Expose all downloadable runtime artifacts through one canonical model."""
+
+    def __init__(
+        self,
+        pytorch_source: HuggingFaceSource,
+        mlx_source: HuggingFaceSource,
+        tokenizer_source: HuggingFaceSource,
+    ) -> None:
+        self._pytorch = Audio8TtsResourceProvider(pytorch_source, tokenizer_source)
+        self._mlx = Audio8TtsMlxResourceProvider(mlx_source, tokenizer_source)
+
+    async def status(
+        self, variant: str, options: Mapping[str, object] | None = None
+    ) -> ModelResourceStatus:
+        pytorch = await self._pytorch.status(variant, options)
+        mlx = await self._mlx.status(variant, options)
+        # Reconstruct the status so ModelResourceStatus recomputes its derived
+        # runtime aggregates for both backends. model_copy(update=...) skips
+        # validation and would leave only the PyTorch runtime visible.
+        return ModelResourceStatus(
+            model_id=pytorch.model_id,
+            revision=pytorch.revision,
+            variant=pytorch.variant,
+            artifacts=pytorch.artifacts + mlx.artifacts,
+        )
+
+    async def download_source(
+        self,
+        variant: str,
+        options: Mapping[str, object] | None = None,
+        *,
+        overwrite: bool = False,
+    ) -> ModelResourceStatus:
+        await self._pytorch.download_source(variant, options, overwrite=overwrite)
+        await self._mlx.download_source(variant, options, overwrite=overwrite)
+        return await self.status(variant, options)
+
+    async def convert(
+        self,
+        variant: str,
+        target_format: ArtifactFormat,
+        options: Mapping[str, object] | None = None,
+        *,
+        overwrite: bool = False,
+    ) -> ModelResourceStatus:
+        del variant, options, overwrite
+        raise UnsupportedRuntimeError(
+            f"Audio8-TTS conversion to {target_format} is not implemented"
+        )
+
+    async def delete(
+        self,
+        variant: str,
+        options: Mapping[str, object] | None = None,
+        *,
+        runtime: str | None = None,
+    ) -> ModelResourceStatus:
+        if runtime in {None, "pytorch"}:
+            await self._pytorch.delete(variant, options, runtime=runtime)
+        if runtime in {None, "mlx"}:
+            await self._mlx.delete(variant, options, runtime=runtime)
+        if runtime not in {None, "pytorch", "mlx"}:
+            raise UnsupportedRuntimeError(f"Audio8-TTS does not support runtime {runtime}")
+        return await self.status(variant, options)

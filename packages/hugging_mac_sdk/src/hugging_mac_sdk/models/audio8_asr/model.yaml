@@ -1,6 +1,6 @@
 manifest:
   schema_version: "1"
-  model_id: audio8/audio8-asr-0.1b
+  model_id: audio8/audio8-asr
   revision: 8487da63d581fa4fc9b5c60444cb57c3a523d7aa
   display_name: Audio8-ASR 0.1B
   description: 面向中英等七种语言、最长 30 秒短音频的轻量自回归语音识别模型。
@@ -22,7 +22,7 @@ manifest:
       architectures: [arm64]
       required_modules: [coremltools, torch, transformers, safetensors, numpy, soundfile, scipy]
   variants:
-    - name: base
+    - name: 0.1b
       display_name: Audio8-ASR 0.1B
       description: 0.324B 端到端参数、0.104B 语言模型参数的原始 BF16 权重。
       metadata:
@@ -36,18 +36,21 @@ manifest:
           revision: 8487da63d581fa4fc9b5c60444cb57c3a523d7aa
           allow_patterns:
             - model.safetensors
-            - "*.json"
-  default_variant: base
+            - config.json
+            - generation_config.json
+            - preprocessor_config.json
+            - processor_config.json
+  default_variant: 0.1b
   license: CC-BY-NC-4.0
   source_url: https://huggingface.co/Audio8/Audio8-ASR-0.1B
   default_runtime: pytorch-mps
 
 artifacts:
   - artifact_id: source
-    variant: base
+    variant: 0.1b
     runtime: pytorch-mps
     format: safetensors
-    path: audio8/audio8-asr-0.1b/8487da63d581fa4fc9b5c60444cb57c3a523d7aa/base/pytorch/model
+    path: audio8/audio8-asr/8487da63d581fa4fc9b5c60444cb57c3a523d7aa/0.1b/pytorch/model
     kind: directory
     source:
       kind: huggingface
@@ -55,10 +58,26 @@ artifacts:
       revision: 8487da63d581fa4fc9b5c60444cb57c3a523d7aa
       allow_patterns:
         - model.safetensors
-        - "*.json"
+        - config.json
+        - generation_config.json
+        - preprocessor_config.json
+        - processor_config.json
   - artifact_id: coreml
-    variant: base
+    convert: true
+    variant: 0.1b
     runtime: coreml
     format: coreml
-    path: audio8/audio8-asr-0.1b/8487da63d581fa4fc9b5c60444cb57c3a523d7aa/base/coreml/audio8-asr-coreml
+    path: audio8/audio8-asr/8487da63d581fa4fc9b5c60444cb57c3a523d7aa/0.1b/coreml/audio8-asr-coreml
     kind: directory
+  - artifact_id: tokenizer
+    variant: 0.1b
+    runtime: pytorch-mps
+    format: tokenizer
+    path: audio8/audio8-asr/shared/tokenizer/778bac55980c1bfbaf79cf4d27ec9bb13682afb8
+    kind: directory
+    shared: true
+    source:
+      kind: huggingface
+      repo_id: Audio8/Audio8-ASR-0.1B
+      revision: 8487da63d581fa4fc9b5c60444cb57c3a523d7aa
+      allow_patterns: [tokenizer.json, tokenizer_config.json, special_tokens_map.json, added_tokens.json]

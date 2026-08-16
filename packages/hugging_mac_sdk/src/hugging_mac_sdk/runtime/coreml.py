@@ -9,7 +9,10 @@ from __future__ import annotations
 import asyncio
 import importlib
 import importlib.util
+from collections import deque
 from collections.abc import Mapping
+from concurrent.futures import Executor
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +38,18 @@ class CoreMLSession:
     def __init__(self, model: Any, device: str) -> None:
         self._model = model
         self._device = device
-        self._input_names = frozenset(item.name for item in model.get_spec().description.input)
+        get_spec = getattr(model, "get_spec", None)
+        self._input_names = (
+            frozenset(item.name for item in get_spec().description.input)
+            if get_spec is not None
+            else frozenset()
+        )
+        # coremltools may expose output arrays backed by native MLMultiArray
+        # storage. Retain a small history of both feature providers until Core
+        # ML's internal asynchronous work has fully quiesced.
+        self._retained_predictions: deque[tuple[dict[str, Any], Mapping[str, Any]]] = deque(
+            maxlen=8
+        )
 
     @property
     def device(self) -> str:
@@ -49,10 +63,33 @@ class CoreMLSession:
             if self._input_names
             else dict(inputs)
         )
-        return dict(self._model.predict(selected))
+        raw = self._model.predict(selected)
+        self._retained_predictions.append((selected, raw))
+        return _copy_outputs(raw)
+
+    def make_state(self) -> Any:
+        if self._model is None:
+            raise RuntimeError("Core ML session is closed")
+        maker = getattr(self._model, "make_state", None)
+        if maker is None:
+            raise UnsupportedRuntimeError("This Core ML model does not expose MLState")
+        return maker()
+
+    def run_with_state(self, inputs: Mapping[str, Any], state: Any) -> Mapping[str, Any]:
+        if self._model is None:
+            raise RuntimeError("Core ML session is closed")
+        selected = (
+            {name: value for name, value in inputs.items() if name in self._input_names}
+            if self._input_names
+            else dict(inputs)
+        )
+        raw = self._model.predict(selected, state=state)
+        self._retained_predictions.append((selected, raw))
+        return _copy_outputs(raw)
 
     async def close(self) -> None:
         self._model = None
+        self._retained_predictions.clear()
 
 
 class CoreMLProvider(RuntimeBackend):
@@ -72,6 +109,7 @@ class CoreMLProvider(RuntimeBackend):
         *,
         device: str | None,
         options: Mapping[str, Any],
+        executor: Executor | None = None,
     ) -> CoreMLSession:
         if not self.is_available():
             raise UnsupportedRuntimeError(
@@ -88,10 +126,27 @@ class CoreMLProvider(RuntimeBackend):
         coremltools = importlib.import_module("coremltools")
         compute_units = getattr(coremltools.ComputeUnit, unit_name)
         function_name = options.get("function_name")
-        model = await asyncio.to_thread(
-            coremltools.models.MLModel,
-            str(artifact),
-            compute_units=compute_units,
-            function_name=str(function_name) if function_name is not None else None,
+        model_type = (
+            coremltools.models.CompiledMLModel
+            if artifact.suffix == ".mlmodelc"
+            else coremltools.models.MLModel
+        )
+        model = await asyncio.get_running_loop().run_in_executor(
+            executor,
+            partial(
+                model_type,
+                str(artifact),
+                compute_units=compute_units,
+                function_name=str(function_name) if function_name is not None else None,
+            ),
         )
         return CoreMLSession(model, requested)
+
+
+def _copy_outputs(outputs: Mapping[str, Any]) -> dict[str, Any]:
+    """Detach ndarray-like results from Core ML-owned native storage."""
+    copied: dict[str, Any] = {}
+    for name, value in outputs.items():
+        copy = getattr(value, "copy", None)
+        copied[name] = copy() if callable(copy) else value
+    return copied

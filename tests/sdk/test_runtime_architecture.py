@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
+import numpy as np
 import pytest
 from hugging_mac_sdk import (
     ArtifactFormat,
@@ -20,6 +21,7 @@ from hugging_mac_sdk import (
     RuntimeSession,
     RuntimeSpec,
     UnsupportedRuntimeError,
+    UrlFileSource,
     load_model_config,
 )
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
@@ -99,6 +101,28 @@ def _manifest() -> ModelManifest:
     )
 
 
+def test_runtime_policy_normalizes_mps_alias_and_keeps_configured_order() -> None:
+    manifest = ModelManifest(
+        model_id="example/apple-runtimes",
+        display_name="Apple Runtimes",
+        family="test",
+        capabilities=frozenset({"test"}),
+        runtimes=tuple(
+            RuntimeSpec(name=name, required_modules=("sys",))
+            for name in ("onnx", "pytorch-mps", "mlx", "coreml")
+        ),
+    )
+
+    policy = RuntimePolicy(("coreml", "mlx", "mps", "onnx"))
+
+    assert policy.candidates(manifest) == (
+        "coreml",
+        "mlx",
+        "pytorch-mps",
+        "onnx",
+    )
+
+
 def _definition() -> ModelDefinition:
     return ModelDefinition(
         manifest=_manifest(),
@@ -107,6 +131,15 @@ def _definition() -> ModelDefinition:
             "beta": DummyInstance,
         },
         artifacts=(
+            ModelArtifact(
+                artifact_id="tokenizer",
+                runtime="alpha",
+                format=ArtifactFormat.TOKENIZER,
+                path=Path("example/shared/tokenizer"),
+                kind=ArtifactKind.DIRECTORY,
+                source=UrlFileSource(url="https://models.example/tokenizer.zip"),
+                shared=True,
+            ),
             ModelArtifact(
                 artifact_id="alpha-model",
                 runtime="alpha",
@@ -132,6 +165,12 @@ def test_registry_reports_only_bound_runtimes_and_resolves_artifacts(
 
     assert registry.list_models() == (registry.get("example/multi-runtime"),)
     assert registry.supported_runtimes("example/multi-runtime") == ("alpha", "beta")
+    shared = registry.get("example/multi-runtime").shared_artifacts
+    assert tuple(item.artifact_id for item in shared) == ("tokenizer",)
+    assert tuple(
+        item.artifact_id
+        for item in registry.get_artifacts("example/multi-runtime", "alpha")
+    ) == ("alpha-model",)
     assert registry.get_artifact("example/multi-runtime", "beta").artifact_id == "beta-model"
     assert registry.resolve_artifact_path(
         "example/multi-runtime",
@@ -147,6 +186,24 @@ def test_coreml_session_passes_inputs_for_multifunction_packages() -> None:
 
     assert model.received == {"audios": "features", "attn_mask": "mask"}
     assert output == {"hidden": "output"}
+
+
+def test_coreml_session_detaches_array_outputs_from_native_storage() -> None:
+    class ArrayModel:
+        def __init__(self) -> None:
+            self.output = np.asarray([1.0, 2.0], dtype=np.float32)
+
+        def predict(self, inputs: dict[str, object]) -> dict[str, object]:
+            del inputs
+            return {"hidden": self.output}
+
+    model = ArrayModel()
+    session = CoreMLSession(model, "cpu-only")
+
+    output = session.run({})
+    model.output[0] = 99.0
+
+    assert np.asarray(output["hidden"]).tolist() == [1.0, 2.0]
 
 
 def test_definition_rejects_declared_runtime_without_implementation() -> None:

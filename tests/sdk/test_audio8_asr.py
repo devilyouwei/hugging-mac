@@ -10,6 +10,7 @@ from hugging_mac_sdk.core.instance import ModelState
 from hugging_mac_sdk.core.registry import ModelRegistry
 from hugging_mac_sdk.errors import UnsupportedRuntimeError
 from hugging_mac_sdk.models.audio8_asr import (
+    AUDIO8_ASR_DEFINITION,
     AUDIO8_ASR_MANIFEST,
     register_audio8_asr,
 )
@@ -62,7 +63,7 @@ class FakeAsrEngine:
 
 
 def test_audio8_manifest_downloads_only_weights_and_json() -> None:
-    assert AUDIO8_ASR_MANIFEST.default_variant == "base"
+    assert AUDIO8_ASR_MANIFEST.default_variant == "0.1b"
     assert AUDIO8_ASR_MANIFEST.capabilities == {"speech-transcription"}
     assert AUDIO8_ASR_MANIFEST.license == "CC-BY-NC-4.0"
     assert {runtime.name for runtime in AUDIO8_ASR_MANIFEST.runtimes} == {
@@ -70,7 +71,21 @@ def test_audio8_manifest_downloads_only_weights_and_json() -> None:
         "coreml",
     }
     source = AUDIO8_ASR_MANIFEST.get_variant().resources[0]
-    assert source.allow_patterns == ("model.safetensors", "*.json")  # type: ignore[union-attr]
+    assert source.allow_patterns == (  # type: ignore[union-attr]
+        "model.safetensors",
+        "config.json",
+        "generation_config.json",
+        "preprocessor_config.json",
+        "processor_config.json",
+    )
+    shared = AUDIO8_ASR_DEFINITION.shared_artifacts[0]
+    assert shared.artifact_id == "tokenizer"
+    assert shared.source.allow_patterns == (  # type: ignore[union-attr]
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "special_tokens_map.json",
+        "added_tokens.json",
+    )
 
 
 def test_registered_factory_exposes_speech_transcription() -> None:
@@ -78,10 +93,10 @@ def test_registered_factory_exposes_speech_transcription() -> None:
     converters = ConverterRegistry()
     definition = register_audio8_asr(registry, converters)
 
-    pytorch = definition.create(runtime="pytorch-mps", variant="base")
+    pytorch = definition.create(runtime="pytorch-mps", variant="0.1b")
     coreml = definition.create(
         runtime="coreml",
-        variant="base",
+        variant="0.1b",
         options={"device": "cpu-and-neural-engine"},
     )
 
@@ -89,7 +104,7 @@ def test_registered_factory_exposes_speech_transcription() -> None:
     assert isinstance(coreml, Audio8AsrInstance)
     assert pytorch.supports(SpeechTranscription)  # type: ignore[type-abstract]
     assert coreml.supports(SpeechTranscription)  # type: ignore[type-abstract]
-    assert pytorch.info().variant == "base"
+    assert pytorch.info().variant == "0.1b"
     assert pytorch.info().runtime == "pytorch-mps"
     assert coreml.info().runtime == "coreml"
     assert coreml.info().device == "cpu-and-neural-engine"
@@ -143,4 +158,4 @@ async def test_audio8_resource_provider_rejects_unsupported_conversion() -> None
     provider = Audio8AsrResourceProvider(source)  # type: ignore[arg-type]
 
     with pytest.raises(UnsupportedRuntimeError, match="not implemented"):
-        await provider.convert("base", ArtifactFormat.ONNX)
+        await provider.convert("0.1b", ArtifactFormat.ONNX)

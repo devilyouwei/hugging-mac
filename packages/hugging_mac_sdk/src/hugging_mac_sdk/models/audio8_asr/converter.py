@@ -29,10 +29,6 @@ _COPIED_CONFIG_FILES = (
     "generation_config.json",
     "preprocessor_config.json",
     "processor_config.json",
-    "tokenizer.json",
-    "tokenizer_config.json",
-    "special_tokens_map.json",
-    "added_tokens.json",
 )
 
 
@@ -50,7 +46,7 @@ class Audio8AsrConverter(ModelConverter):
     def supports(self, request: ConversionRequest) -> bool:
         return (
             request.model_id == AUDIO8_ASR_MODEL_ID
-            and request.variant == "base"
+            and request.variant == "0.1b"
             and request.source_format is ArtifactFormat.SAFETENSORS
             and request.target_format is ArtifactFormat.COREML
             and request.source.path.is_dir()

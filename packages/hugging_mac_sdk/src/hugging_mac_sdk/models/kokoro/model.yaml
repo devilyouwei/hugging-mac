@@ -1,0 +1,88 @@
+manifest:
+  schema_version: "1"
+  model_id: hexgrad/kokoro
+  revision: f3ff3571791e39611d31c381e3a41a3af07b4987
+  display_name: Kokoro 82M v1.0
+  description: 官方 PyTorch Kokoro-82M，以及可直接下载的端到端 Core ML 版本。
+  tags: [audio, tts, styletts2, istftnet, pytorch, coreml, ane]
+  family: kokoro
+  capabilities: [speech-synthesis]
+  runtimes:
+    - name: pytorch-mps
+      devices: [mps, cpu]
+      dtypes: [float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [torch, kokoro, misaki, numpy]
+    - name: coreml
+      devices: [ane, gpu, cpu]
+      dtypes: [float16, float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [coremltools, kokoro, misaki, numpy]
+  variants:
+    - name: v1.0
+      display_name: Kokoro 82M v1.0
+      description: 官方 PyTorch checkpoint 与打包 voices。
+      metadata:
+        parameters_millions: 82
+        sample_rate: 24000
+        context_phonemes: 510
+      resources:
+        - kind: huggingface
+          repo_id: hexgrad/Kokoro-82M
+          revision: f3ff3571791e39611d31c381e3a41a3af07b4987
+          allow_patterns:
+            - config.json
+            - kokoro-v1_0.pth
+            - voices/*.pt
+        - kind: huggingface
+          repo_id: aufklarer/Kokoro-82M-CoreML
+          revision: f8ff771e4cab0bb3368e8af3a090a7e847485401
+          allow_patterns:
+            - kokoro_5s.mlmodelc/**
+            - G2PEncoder.mlmodelc/**
+            - G2PDecoder.mlmodelc/**
+            - vocab_index.json
+            - g2p_vocab.json
+            - us_gold.json
+            - us_silver.json
+            - pipeline_config.json
+            - voices/*.json
+  default_variant: v1.0
+  license: Apache-2.0
+  source_url: https://huggingface.co/hexgrad/Kokoro-82M
+  default_runtime: coreml
+
+artifacts:
+  - artifact_id: source
+    variant: v1.0
+    runtime: pytorch-mps
+    format: pytorch
+    path: hexgrad/kokoro/f3ff3571791e39611d31c381e3a41a3af07b4987/v1.0/pytorch/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: hexgrad/Kokoro-82M
+      revision: f3ff3571791e39611d31c381e3a41a3af07b4987
+      allow_patterns: [config.json, kokoro-v1_0.pth, voices/*.pt]
+  - artifact_id: coreml
+    variant: v1.0
+    runtime: coreml
+    format: coreml
+    path: hexgrad/kokoro/f3ff3571791e39611d31c381e3a41a3af07b4987/v1.0/coreml/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: aufklarer/Kokoro-82M-CoreML
+      revision: f8ff771e4cab0bb3368e8af3a090a7e847485401
+      allow_patterns:
+        - kokoro_5s.mlmodelc/**
+        - G2PEncoder.mlmodelc/**
+        - G2PDecoder.mlmodelc/**
+        - vocab_index.json
+        - g2p_vocab.json
+        - us_gold.json
+        - us_silver.json
+        - pipeline_config.json
+        - voices/*.json

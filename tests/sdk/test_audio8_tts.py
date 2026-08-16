@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from hugging_mac_sdk.capabilities import SpeechSynthesis
 from hugging_mac_sdk.core.instance import ModelState
 from hugging_mac_sdk.core.registry import ModelRegistry
 from hugging_mac_sdk.models.audio8_tts import (
+    AUDIO8_TTS_DEFINITION,
     AUDIO8_TTS_MANIFEST,
     register_audio8_tts,
 )
@@ -54,7 +56,7 @@ class FakeTtsEngine:
 
 
 def test_audio8_tts_manifest_is_pinned() -> None:
-    assert AUDIO8_TTS_MANIFEST.default_variant == "preview"
+    assert AUDIO8_TTS_MANIFEST.default_variant == "0.6b-preview"
     assert AUDIO8_TTS_MANIFEST.capabilities == {"speech-synthesis"}
     assert AUDIO8_TTS_MANIFEST.license == "Apache-2.0"
     runtime = AUDIO8_TTS_MANIFEST.runtimes[0]
@@ -64,20 +66,39 @@ def test_audio8_tts_manifest_is_pinned() -> None:
     source = AUDIO8_TTS_MANIFEST.get_variant().resources[0]
     assert source.revision == "1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17"  # type: ignore[union-attr]
     assert source.allow_patterns == (  # type: ignore[union-attr]
-        "*.json",
+        "config.json",
+        "generation_config.json",
+        "preprocessor_config.json",
+        "processor_config.json",
         "*.py",
         "*.pth",
         "*.safetensors",
+    )
+    shared = AUDIO8_TTS_DEFINITION.shared_artifacts[0]
+    assert shared.artifact_id == "tokenizer"
+    assert shared.source.allow_patterns == (  # type: ignore[union-attr]
+        "special_tokens_map.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
     )
 
 
 def test_registered_factory_exposes_speech_synthesis() -> None:
     registry = ModelRegistry()
     definition = register_audio8_tts(registry)
-    instance = definition.create(runtime="pytorch", variant="preview")
+    instance = definition.create(runtime="pytorch", variant="0.6b-preview")
 
     assert isinstance(instance, Audio8TtsInstance)
     assert instance.supports(SpeechSynthesis)  # type: ignore[type-abstract]
+
+
+async def test_audio8_tts_resource_status_exposes_both_runtimes(tmp_path: Path) -> None:
+    provider = AUDIO8_TTS_DEFINITION.resource_provider
+    assert provider is not None
+
+    status = await provider.status("0.6b-preview", {"model_home": tmp_path})
+
+    assert {item.runtime for item in status.runtimes} == {"pytorch", "mlx"}
 
 
 def test_synthesis_request_requires_complete_reference_pair() -> None:
@@ -102,6 +123,59 @@ def test_audio8_tts_uses_cpu_by_default() -> None:
         float32 = "fp32"
 
     assert engine._resolve_dtype(FakeTorch) == "fp32"
+
+
+async def test_pytorch_engine_keeps_merged_model_view_until_close(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hugging_mac_sdk.models.audio8_tts.torch as torch_module
+
+    loaded_paths: list[Path] = []
+
+    class FakeModel:
+        def eval(self) -> "FakeModel":
+            return self
+
+        def to(self, device: str) -> "FakeModel":
+            assert device == "cpu"
+            return self
+
+    class FakeLoader:
+        @staticmethod
+        def from_pretrained(path: Path, **kwargs: object) -> object:
+            loaded_paths.append(Path(path))
+            return FakeModel()
+
+    fake_torch = SimpleNamespace(float32="float32")
+    fake_transformers = SimpleNamespace(
+        AutoProcessor=FakeLoader,
+        AutoModel=FakeLoader,
+    )
+    monkeypatch.setattr(
+        torch_module.importlib,
+        "import_module",
+        lambda name: fake_torch if name == "torch" else fake_transformers,
+    )
+    monkeypatch.setattr(torch_module, "_restore_rope_buffers", lambda *_: None)
+
+    tokenizer_path = tmp_path / "tokenizer"
+    artifact_path = tmp_path / "model"
+    tokenizer_path.mkdir()
+    artifact_path.mkdir()
+    resources = SimpleNamespace(tokenizer_path=tokenizer_path)
+    engine = TorchAudio8TtsEngine(
+        Audio8TtsInstanceConfig(),
+        resources,  # type: ignore[arg-type]
+    )
+
+    engine._load_sync(artifact_path)
+
+    assert engine._model is not None
+    assert loaded_paths[0].is_dir()
+
+    await engine.close()
+
+    assert not loaded_paths[0].exists()
 
 
 def test_audio8_tts_restores_transformers_v5_rope_buffers() -> None:

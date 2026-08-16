@@ -1,0 +1,83 @@
+manifest:
+  schema_version: "1"
+  model_id: qwen/qwen3.5
+  revision: variant-pinned
+  display_name: Qwen3.5
+  description: Apple Silicon Qwen3.5 multimodal chat models in OptiQ mixed-precision variants.
+  tags: [llm, vlm, chat, qwen3.5, mlx, 4bit]
+  family: qwen3.5
+  capabilities: [chat, vision-language-generation]
+  runtimes:
+    - name: mlx
+      devices: [gpu]
+      dtypes: [uint4, uint8, bfloat16]
+      quantizations: [4bit]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [mlx, mlx_vlm]
+  variants:
+    - name: 9b
+      display_name: Qwen3.5 9B OptiQ 4-bit
+      description: OptiQ mixed-precision four-bit checkpoint with a visual-weight sidecar.
+      metadata: {parameter_count_billions: 9, quantization_bits: 4, quantization_group_size: 64, disk_size_bytes: 6600000000, multimodal: true, quantization_method: optiq, mixed_precision_8bit_layers: 132, mixed_precision_4bit_layers: 116}
+      resources:
+        - kind: huggingface
+          repo_id: mlx-community/Qwen3.5-9B-OptiQ-4bit
+          revision: 890b4c43f99ff392819d83605f7b1e59fa9688aa
+          allow_patterns: [config.json, generation_config.json, kv_config.json, model*.safetensors, model.safetensors.index.json, optiq_metadata.json, chat_template.jinja, "optiq/*.safetensors"]
+    - name: 4b
+      display_name: Qwen3.5 4B OptiQ 4-bit
+      description: OptiQ mixed-precision four-bit checkpoint with a visual-weight sidecar.
+      metadata: {parameter_count_billions: 4, quantization_bits: 4, quantization_group_size: 64, disk_size_bytes: 3000000000, multimodal: true, quantization_method: optiq, mixed_precision_8bit_layers: 75, mixed_precision_4bit_layers: 173}
+      resources:
+        - kind: huggingface
+          repo_id: mlx-community/Qwen3.5-4B-OptiQ-4bit
+          revision: 6cb5bdfd0bf15f484881fb9f1ab6d7c840fddde9
+          allow_patterns: [config.json, generation_config.json, kv_config.json, model*.safetensors, model.safetensors.index.json, optiq_metadata.json, chat_template.jinja, "optiq/*.safetensors"]
+    - name: 2b
+      display_name: Qwen3.5 2B OptiQ 4-bit
+      description: Compact OptiQ mixed-precision four-bit checkpoint with a visual-weight sidecar.
+      metadata: {parameter_count_billions: 2, quantization_bits: 4, quantization_group_size: 64, disk_size_bytes: 1400000000, multimodal: true, quantization_method: optiq, mixed_precision_8bit_layers: 56, mixed_precision_4bit_layers: 130}
+      resources:
+        - kind: huggingface
+          repo_id: mlx-community/Qwen3.5-2B-OptiQ-4bit
+          revision: adc8669eb431e3168aeb4e320bd7b757914350e2
+          allow_patterns: [config.json, generation_config.json, kv_config.json, model*.safetensors, model.safetensors.index.json, optiq_metadata.json, chat_template.jinja, "optiq/*.safetensors"]
+  default_variant: 9b
+  license: Apache-2.0
+  source_url: https://huggingface.co/mlx-community/Qwen3.5-9B-OptiQ-4bit
+  default_runtime: mlx
+artifacts:
+  - artifact_id: mlx-optiq-4bit
+    variant: 9b
+    runtime: mlx
+    format: mlx
+    path: qwen/qwen3.5/9b/890b4c43f99ff392819d83605f7b1e59fa9688aa/mlx/model
+    kind: directory
+    source: {kind: huggingface, repo_id: mlx-community/Qwen3.5-9B-OptiQ-4bit, revision: 890b4c43f99ff392819d83605f7b1e59fa9688aa, allow_patterns: [config.json, generation_config.json, kv_config.json, model*.safetensors, model.safetensors.index.json, optiq_metadata.json, chat_template.jinja, "optiq/*.safetensors"]}
+  - artifact_id: mlx-optiq-4bit
+    variant: 4b
+    runtime: mlx
+    format: mlx
+    path: qwen/qwen3.5/4b/6cb5bdfd0bf15f484881fb9f1ab6d7c840fddde9/mlx/model
+    kind: directory
+    source: {kind: huggingface, repo_id: mlx-community/Qwen3.5-4B-OptiQ-4bit, revision: 6cb5bdfd0bf15f484881fb9f1ab6d7c840fddde9, allow_patterns: [config.json, generation_config.json, kv_config.json, model*.safetensors, model.safetensors.index.json, optiq_metadata.json, chat_template.jinja, "optiq/*.safetensors"]}
+  - artifact_id: mlx-optiq-4bit
+    variant: 2b
+    runtime: mlx
+    format: mlx
+    path: qwen/qwen3.5/2b/adc8669eb431e3168aeb4e320bd7b757914350e2/mlx/model
+    kind: directory
+    source: {kind: huggingface, repo_id: mlx-community/Qwen3.5-2B-OptiQ-4bit, revision: adc8669eb431e3168aeb4e320bd7b757914350e2, allow_patterns: [config.json, generation_config.json, kv_config.json, model*.safetensors, model.safetensors.index.json, optiq_metadata.json, chat_template.jinja, "optiq/*.safetensors"]}
+  - artifact_id: tokenizer
+    variant: 9b
+    runtime: mlx
+    format: tokenizer
+    path: qwen/qwen3.5/shared/tokenizer/67741b04f23bfdb46501f748ce27865ec82eccfb
+    kind: directory
+    shared: true
+    source:
+      kind: huggingface
+      repo_id: mlx-community/Qwen3.5-9B-OptiQ-4bit
+      revision: 890b4c43f99ff392819d83605f7b1e59fa9688aa
+      allow_patterns: [tokenizer.json, tokenizer_config.json]

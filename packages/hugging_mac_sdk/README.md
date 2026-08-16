@@ -275,11 +275,11 @@ register_audio8_asr(sdk.registry)
 options = {"model_home": Path("models")}
 
 await sdk.resources.download_source(
-    "audio8/audio8-asr-0.1b",
+    "audio8/audio8-asr",
     options=options,
 )
 handle = await sdk.load(
-    "audio8/audio8-asr-0.1b",
+    "audio8/audio8-asr",
     runtime="pytorch-mps",
     options=options,
 )
@@ -295,13 +295,13 @@ print(result.text)
 from hugging_mac_sdk import ArtifactFormat
 
 await sdk.resources.convert(
-    "audio8/audio8-asr-0.1b",
+    "audio8/audio8-asr",
     ArtifactFormat.COREML,
     options=options,
     overwrite=True,
 )
 handle = await sdk.load(
-    "audio8/audio8-asr-0.1b",
+    "audio8/audio8-asr",
     runtime="coreml",
     device="cpu-and-neural-engine",
     options=options,
@@ -326,19 +326,19 @@ from hugging_mac_sdk import (
     SpeechUnderstandingRequest,
 )
 from hugging_mac_sdk.capabilities import SpeechUnderstanding
-from hugging_mac_sdk.models.sensevoice_small import register_sensevoice_small
+from hugging_mac_sdk.models.sensevoice import register_sensevoice
 
 sdk = ModelSdk()
-register_sensevoice_small(sdk.registry)
+register_sensevoice(sdk.registry)
 options = {"model_home": Path("models")}
 
 await sdk.resources.download_source(
-    "funaudiollm/sensevoice-small",
+    "funaudiollm/sensevoice",
     variant="small",
     options=options,
 )
 handle = await sdk.load(
-    "funaudiollm/sensevoice-small",
+    "funaudiollm/sensevoice",
     runtime="pytorch-mps",
     options=options,
 )
@@ -384,7 +384,7 @@ detector = instance.require(ObjectDetection)
 result = await detector.detect(
     DetectionRequest(
         image=ImageInput(path=Path("example.jpg")),
-        confidence=0.25,
+        confidence=0.5,
     )
 )
 

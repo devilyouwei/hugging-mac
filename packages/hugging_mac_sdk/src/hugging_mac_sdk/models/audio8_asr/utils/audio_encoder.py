@@ -69,7 +69,10 @@ def feature_lengths_after_convolution(lengths: torch.Tensor) -> torch.Tensor:
     lengths = torch.clamp(lengths.long(), min=1)
     remainder = lengths % 100
     first = (remainder - 1) // 2 + 1
-    return ((first - 1) // 2 + 1 - 1) // 2 + 1 + (lengths // 100) * 13
+    return cast(
+        torch.Tensor,
+        ((first - 1) // 2 + 1 - 1) // 2 + 1 + (lengths // 100) * 13,
+    )
 
 
 def block_diagonal_mask(

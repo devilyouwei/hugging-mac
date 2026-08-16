@@ -1,0 +1,81 @@
+manifest:
+  schema_version: "1"
+  model_id: funaudiollm/sensevoice
+  revision: 3847d57b6bdf2dd8875cb1508d2af43d80a16bf7
+  display_name: SenseVoiceSmall
+  description: 非自回归多语言语音理解模型，支持转写、语种、情感和音频事件识别。
+  tags: [audio, asr, speech-understanding, emotion-recognition, audio-event-detection]
+  family: sensevoice
+  capabilities: [speech-transcription, speech-understanding]
+  runtimes:
+    - name: pytorch-mps
+      devices: [mps, cpu]
+      dtypes: [float16, float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [torch, torchaudio, sentencepiece, numpy, soundfile, scipy]
+    - name: coreml
+      devices: [cpu-and-neural-engine, all, cpu-and-gpu, cpu-only]
+      dtypes: [float16]
+      quantizations: [float16, int8]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [coremltools, torch, torchaudio, sentencepiece, numpy, soundfile, scipy]
+  variants:
+    - name: small
+      display_name: SenseVoiceSmall
+      description: 50 层主 SANM encoder、20 层 text-prompt encoder 的原始 PyTorch 权重。
+      metadata:
+        weight_size_bytes: 936291369
+        max_audio_seconds: 30
+        sample_rate: 16000
+        architecture: non-autoregressive-sanm-ctc
+      resources:
+        - kind: huggingface
+          repo_id: FunAudioLLM/SenseVoiceSmall
+          revision: 3847d57b6bdf2dd8875cb1508d2af43d80a16bf7
+          allow_patterns:
+            - model.pt
+            - config.yaml
+            - configuration.json
+            - am.mvn
+  default_variant: small
+  license: FunASR-Model-License-1.1
+  source_url: https://huggingface.co/FunAudioLLM/SenseVoiceSmall
+  default_runtime: pytorch-mps
+
+artifacts:
+  - artifact_id: source
+    variant: small
+    runtime: pytorch-mps
+    format: pytorch
+    path: funaudiollm/sensevoice/3847d57b6bdf2dd8875cb1508d2af43d80a16bf7/small/pytorch/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: FunAudioLLM/SenseVoiceSmall
+      revision: 3847d57b6bdf2dd8875cb1508d2af43d80a16bf7
+      allow_patterns:
+        - model.pt
+        - config.yaml
+        - configuration.json
+        - am.mvn
+  - artifact_id: coreml
+    convert: true
+    variant: small
+    runtime: coreml
+    format: coreml
+    path: funaudiollm/sensevoice/3847d57b6bdf2dd8875cb1508d2af43d80a16bf7/small/coreml/sensevoice-small-coreml
+    kind: directory
+  - artifact_id: tokenizer
+    variant: small
+    runtime: pytorch-mps
+    format: tokenizer
+    path: funaudiollm/sensevoice/shared/tokenizer/aa87f86064c3730d799ddf7af3c04659151102cba548bce325cf06ba4da4e6a8
+    kind: directory
+    shared: true
+    source:
+      kind: huggingface
+      repo_id: FunAudioLLM/SenseVoiceSmall
+      revision: 3847d57b6bdf2dd8875cb1508d2af43d80a16bf7
+      allow_patterns: [chn_jpn_yue_eng_ko_spectok.bpe.model]

@@ -57,9 +57,7 @@ class ModelDefinition:
                     "implemented": sorted(implemented),
                 },
             )
-        invalid_artifacts = sorted(
-            {artifact.runtime for artifact in self.artifacts} - declared
-        )
+        invalid_artifacts = sorted({artifact.runtime for artifact in self.artifacts} - declared)
         if invalid_artifacts:
             raise ManifestError(
                 f"Artifacts reference undeclared runtimes for {self.manifest.model_id}",
@@ -82,6 +80,35 @@ class ModelDefinition:
             raise ManifestError(
                 f"Artifact IDs must be unique within a runtime for {self.manifest.model_id}"
             )
+        shared_ids = [artifact.artifact_id for artifact in self.artifacts if artifact.shared]
+        if len(shared_ids) != len(set(shared_ids)):
+            raise ManifestError(
+                f"Shared artifact IDs must be unique for {self.manifest.model_id}"
+            )
+        scoped_ids = {artifact.artifact_id for artifact in self.artifacts if not artifact.shared}
+        overlapping_ids = sorted(set(shared_ids) & scoped_ids)
+        if overlapping_ids:
+            raise ManifestError(
+                f"Shared artifact IDs must not overlap scoped artifacts for "
+                f"{self.manifest.model_id}",
+                details={"artifact_ids": overlapping_ids},
+            )
+        invalid_shared = [
+            artifact.artifact_id
+            for artifact in self.artifacts
+            if artifact.shared and (artifact.source is None or artifact.convert)
+        ]
+        if invalid_shared:
+            raise ManifestError(
+                f"Shared artifacts must be directly downloadable for {self.manifest.model_id}",
+                details={"artifact_ids": invalid_shared},
+            )
+
+    @property
+    def shared_artifacts(self) -> tuple[ModelArtifact, ...]:
+        """Artifacts reused by every variant and runtime of this model."""
+
+        return tuple(artifact for artifact in self.artifacts if artifact.shared)
 
     @property
     def supported_runtimes(self) -> tuple[str, ...]:
@@ -164,7 +191,9 @@ class ModelDefinition:
         artifacts = tuple(
             artifact
             for artifact in self.artifacts
-            if artifact.runtime == runtime and artifact.variant == selected_variant
+            if not artifact.shared
+            and artifact.runtime == runtime
+            and artifact.variant == selected_variant
         )
         if artifacts:
             return artifacts

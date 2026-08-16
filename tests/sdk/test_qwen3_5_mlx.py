@@ -1,22 +1,25 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+from types import ModuleType
 
-from hugging_mac_sdk.models.qwen3_5_mlx import QWEN3_5_MLX_DEFINITION, QWEN3_5_MLX_MANIFEST
-from hugging_mac_sdk.models.qwen3_5_mlx.config import (
+from hugging_mac_sdk.models.qwen3_5 import QWEN3_5_DEFINITION, QWEN3_5_MANIFEST
+from hugging_mac_sdk.models.qwen3_5.config import (
     QWEN3_5_MLX_REQUIRED_FILES,
     QWEN3_5_MLX_VARIANTS,
     Qwen35MlxInstanceConfig,
 )
-from hugging_mac_sdk.models.qwen3_5_mlx.resources import Qwen35MlxResourceResolver
+from hugging_mac_sdk.models.qwen3_5.mlx import MlxQwen35Engine
+from hugging_mac_sdk.models.qwen3_5.resources import Qwen35MlxResourceResolver
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource
 
 
 def test_2b_optiq_variant_is_pinned_with_its_mixed_precision_metadata() -> None:
-    variant = QWEN3_5_MLX_MANIFEST.get_variant("2b-optiq-4bit")
+    variant = QWEN3_5_MANIFEST.get_variant("2b")
 
-    assert QWEN3_5_MLX_DEFINITION.supported_runtimes == ("mlx",)
-    assert QWEN3_5_MLX_VARIANTS == ("9b-4bit", "4b-optiq-4bit", "2b-optiq-4bit")
+    assert QWEN3_5_DEFINITION.supported_runtimes == ("mlx",)
+    assert QWEN3_5_MLX_VARIANTS == ("9b", "4b", "2b")
     assert variant.resources[0].repo_id == "mlx-community/Qwen3.5-2B-OptiQ-4bit"
     assert variant.resources[0].revision == "adc8669eb431e3168aeb4e320bd7b757914350e2"
     assert variant.metadata == {
@@ -34,7 +37,7 @@ def test_2b_optiq_variant_is_pinned_with_its_mixed_precision_metadata() -> None:
 def test_2b_optiq_snapshot_requires_the_visual_sidecar(tmp_path: Path) -> None:
     model = tmp_path / "model"
     model.mkdir()
-    for filename in QWEN3_5_MLX_REQUIRED_FILES["2b-optiq-4bit"]:
+    for filename in QWEN3_5_MLX_REQUIRED_FILES["2b"]:
         path = model / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"model-data")
@@ -44,9 +47,73 @@ def test_2b_optiq_snapshot_requires_the_visual_sidecar(tmp_path: Path) -> None:
             repo_id="mlx-community/Qwen3.5-2B-OptiQ-4bit",
             revision="adc8669eb431e3168aeb4e320bd7b757914350e2",
         ),
-        Qwen35MlxInstanceConfig(source_path=model, variant="2b-optiq-4bit"),
+        Qwen35MlxInstanceConfig(source_path=model, variant="2b"),
     )
 
     assert resolver.status().artifacts[0].available
     (model / "optiq" / "optiq_vision.safetensors").unlink()
     assert not resolver.status().artifacts[0].available
+
+
+async def test_lazy_mlx_load_materializes_before_merged_view_closes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    artifact = tmp_path / "model"
+    tokenizer = tmp_path / "tokenizer"
+    (artifact / "optiq").mkdir(parents=True)
+    tokenizer.mkdir()
+    (artifact / "config.json").write_text("{}")
+    (artifact / "optiq" / "optiq_vision.safetensors").touch()
+    (tokenizer / "tokenizer.json").write_text("{}")
+
+    observed: dict[str, object] = {}
+
+    class FakeModel:
+        def __init__(self, view: Path) -> None:
+            self.view = view
+
+        @staticmethod
+        def sanitize(weights):
+            return weights
+
+        @staticmethod
+        def load_weights(weights, *, strict: bool) -> None:
+            assert weights == [("vision_tower.weight", "vision")]
+            assert not strict
+
+        def parameters(self):
+            return {"weight": self.view / "config.json"}
+
+    mlx_vlm = ModuleType("mlx_vlm")
+
+    def fake_load(path: str, *, lazy: bool, strict: bool):
+        view = Path(path)
+        assert (view / "config.json").is_file()
+        assert (view / "tokenizer.json").is_file()
+        assert lazy and not strict
+        observed["view"] = view
+        return FakeModel(view), object()
+
+    mlx_vlm.load = fake_load  # type: ignore[attr-defined]
+    mlx = ModuleType("mlx")
+    mlx_core = ModuleType("mlx.core")
+    mlx_core.load = lambda _path: {"vision_tower.weight": "vision"}  # type: ignore[attr-defined]
+
+    def fake_eval(parameters) -> None:
+        observed["evaluated_while_present"] = parameters["weight"].is_file()
+
+    mlx_core.eval = fake_eval  # type: ignore[attr-defined]
+    mlx.core = mlx_core  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "mlx", mlx)
+    monkeypatch.setitem(sys.modules, "mlx.core", mlx_core)
+    monkeypatch.setitem(sys.modules, "mlx_vlm", mlx_vlm)
+
+    resources = type("Resources", (), {"tokenizer_path": tokenizer})()
+    engine = MlxQwen35Engine(
+        Qwen35MlxInstanceConfig(source_path=artifact, tokenizer_path=tokenizer, variant="2b"),
+        resources,  # type: ignore[arg-type]
+    )
+    await engine.load(artifact)
+
+    assert observed["evaluated_while_present"] is True
+    assert not Path(observed["view"]).exists()  # type: ignore[arg-type]

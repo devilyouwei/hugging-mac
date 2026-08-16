@@ -19,6 +19,7 @@ from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size, file_sha256
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest
 from hugging_mac_sdk.schemas.resources import (
+    CompositeSource,
     HuggingFaceSource,
     ModelArtifactStatus,
     ModelResourceStatus,
@@ -240,6 +241,11 @@ class _YoloTaskResourceResolver:
                     details=self._details("source"),
                 )
             return self._source.filename
+        if isinstance(self._source, CompositeSource):
+            raise ResourceIntegrityError(
+                "A YOLO source must resolve to one downloadable file",
+                details=self._details("source"),
+            )
         return Path(str(self._source.url)).name
 
     def _details(self, artifact_id: str | None = None) -> dict[str, str]:

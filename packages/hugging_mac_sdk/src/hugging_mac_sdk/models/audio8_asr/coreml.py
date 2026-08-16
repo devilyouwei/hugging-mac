@@ -44,7 +44,9 @@ class CoreMlAudio8AsrEngine:
         return self._config.compute_units
 
     async def resolve(self) -> Path:
-        return (await self._resources.resolve_coreml()).path
+        artifact = await self._resources.resolve_coreml()
+        await self._resources.resolve_tokenizer()
+        return artifact.path
 
     async def load(self, artifact: Path) -> None:
         provider = CoreMLProvider()
@@ -111,7 +113,7 @@ class CoreMlAudio8AsrEngine:
             dtype=dtype,
         )
         tokenizer = transformers.Qwen2TokenizerFast.from_pretrained(
-            artifact,
+            self._resources.tokenizer_path,
             local_files_only=True,
             fix_mistral_regex=True,
         )

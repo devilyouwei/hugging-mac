@@ -34,6 +34,8 @@ class ModelArtifact(BaseModel):
     path: Path
     kind: ArtifactKind = ArtifactKind.FILE
     source: ResourceSource | None = None
+    convert: bool = False
+    shared: bool = False
     expected_sha256: Sha256 | None = None
 
     @model_validator(mode="after")

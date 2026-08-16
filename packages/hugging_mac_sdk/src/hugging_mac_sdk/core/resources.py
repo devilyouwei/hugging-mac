@@ -6,13 +6,22 @@ this service deliberately, normally from a user-triggered workflow.
 
 from __future__ import annotations
 
+import glob
 from collections.abc import Mapping
-from typing import Protocol
+from pathlib import Path
+from typing import Protocol, cast
 
-from hugging_mac_sdk.core.registry import ModelRegistry
+from hugging_mac_sdk.core.registry import ModelDefinition, ModelRegistry
 from hugging_mac_sdk.errors import UnsupportedCapabilityError
+from hugging_mac_sdk.resources.downloader import ResourceDownloader
+from hugging_mac_sdk.resources.hashing import directory_size
+from hugging_mac_sdk.schemas.artifact import ArtifactKind, ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat
-from hugging_mac_sdk.schemas.resources import ModelResourceStatus
+from hugging_mac_sdk.schemas.resources import (
+    HuggingFaceSource,
+    ModelArtifactStatus,
+    ModelResourceStatus,
+)
 
 
 class ModelResourceProvider(Protocol):
@@ -62,7 +71,8 @@ class ModelResourceService:
     ) -> ModelResourceStatus:
         definition = self._registry.get(model_id, revision)
         selected_variant = definition.manifest.get_variant(variant).name
-        return await self._provider(model_id, revision).status(selected_variant, options)
+        status = await self._provider(model_id, revision).status(selected_variant, options)
+        return self._with_shared_status(definition, status, options)
 
     async def download_source(
         self,
@@ -75,11 +85,18 @@ class ModelResourceService:
     ) -> ModelResourceStatus:
         definition = self._registry.get(model_id, revision)
         selected_variant = definition.manifest.get_variant(variant).name
-        return await self._provider(model_id, revision).download_source(
+        await self.ensure_shared_artifacts(
+            model_id,
+            revision=revision,
+            options=options,
+            overwrite=overwrite,
+        )
+        status = await self._provider(model_id, revision).download_source(
             selected_variant,
             options,
             overwrite=overwrite,
         )
+        return self._with_shared_status(definition, status, options)
 
     async def convert(
         self,
@@ -93,12 +110,19 @@ class ModelResourceService:
     ) -> ModelResourceStatus:
         definition = self._registry.get(model_id, revision)
         selected_variant = definition.manifest.get_variant(variant).name
-        return await self._provider(model_id, revision).convert(
+        await self.ensure_shared_artifacts(
+            model_id,
+            revision=revision,
+            options=options,
+            overwrite=False,
+        )
+        status = await self._provider(model_id, revision).convert(
             selected_variant,
             target_format,
             options,
             overwrite=overwrite,
         )
+        return self._with_shared_status(definition, status, options)
 
     async def delete(
         self,
@@ -113,10 +137,88 @@ class ModelResourceService:
 
         definition = self._registry.get(model_id, revision)
         selected_variant = definition.manifest.get_variant(variant).name
-        return await self._provider(model_id, revision).delete(
+        status = await self._provider(model_id, revision).delete(
             selected_variant,
             options,
             runtime=runtime,
+        )
+        return self._with_shared_status(definition, status, options)
+
+    async def ensure_shared_artifacts(
+        self,
+        model_id: str,
+        *,
+        revision: str | None = None,
+        options: Mapping[str, object] | None = None,
+        overwrite: bool = False,
+    ) -> None:
+        """Install missing model-wide artifacts before a scoped resource operation."""
+
+        definition = self._registry.get(model_id, revision)
+        model_home = self._model_home(options)
+        downloader = ResourceDownloader()
+        token_value = (options or {}).get("hf_token")
+        token = str(token_value) if token_value is not None else None
+        for artifact in definition.shared_artifacts:
+            path = artifact.resolve(model_home)
+            if not overwrite and artifact_available(artifact, path):
+                continue
+            assert artifact.source is not None
+            await downloader.download(
+                artifact.source,
+                path,
+                overwrite=overwrite,
+                token=token,
+            )
+
+    def _with_shared_status(
+        self,
+        definition: ModelDefinition,
+        status: ModelResourceStatus,
+        options: Mapping[str, object] | None,
+    ) -> ModelResourceStatus:
+        shared_artifacts = definition.shared_artifacts
+        if not shared_artifacts:
+            return status
+        shared_ids = {artifact.artifact_id for artifact in shared_artifacts}
+        artifacts = tuple(
+            artifact for artifact in status.artifacts if artifact.artifact_id not in shared_ids
+        ) + tuple(
+            self._shared_status(artifact, options) for artifact in shared_artifacts
+        )
+        return ModelResourceStatus(
+            model_id=status.model_id,
+            revision=status.revision,
+            variant=status.variant,
+            artifacts=artifacts,
+        )
+
+    def _shared_status(
+        self,
+        artifact: ModelArtifact,
+        options: Mapping[str, object] | None,
+    ) -> ModelArtifactStatus:
+        path = artifact.resolve(self._model_home(options))
+        available = artifact_available(artifact, path)
+        return ModelArtifactStatus(
+            artifact_id=artifact.artifact_id,
+            format=artifact.format.value,
+            runtime=None,
+            shared=True,
+            available=available,
+            size_bytes=(
+                directory_size(path) if path.is_dir() else path.stat().st_size
+            )
+            if available
+            else None,
+        )
+
+    def _model_home(self, options: Mapping[str, object] | None) -> Path:
+        configured = (options or {}).get("model_home")
+        return (
+            Path(cast(str | Path, configured))
+            if configured is not None
+            else self._registry.storage_root
         )
 
     def _provider(
@@ -131,3 +233,21 @@ class ModelResourceService:
                 details={"model_id": model_id},
             )
         return definition.resource_provider
+
+
+def artifact_available(artifact: ModelArtifact, path: Path) -> bool:
+    """Return whether a declared artifact is complete enough to use."""
+    if artifact.kind is ArtifactKind.FILE:
+        return path.is_file()
+    if not path.is_dir():
+        return False
+    source = artifact.source
+    if not isinstance(source, HuggingFaceSource):
+        return True
+    for pattern in source.allow_patterns:
+        if glob.has_magic(pattern):
+            if not any(path.glob(pattern)):
+                return False
+        elif not (path / pattern).exists():
+            return False
+    return True

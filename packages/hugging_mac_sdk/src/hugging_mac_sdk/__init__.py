@@ -72,6 +72,8 @@ from hugging_mac_sdk.schemas.health import HealthReport, HealthStatus
 from hugging_mac_sdk.schemas.manifest import ModelManifest, ModelVariantSpec, RuntimeSpec
 from hugging_mac_sdk.schemas.pose import Keypoint, Pose, PoseEstimationResponse, PoseRequest
 from hugging_mac_sdk.schemas.resources import (
+    CompositeResource,
+    CompositeSource,
     ConversionTargetStatus,
     HuggingFaceSource,
     ModelArtifactStatus,
@@ -87,6 +89,11 @@ from hugging_mac_sdk.schemas.segmentation import (
     SegmentationRequest,
     SegmentationResponse,
 )
+from hugging_mac_sdk.schemas.speech_enhancement import (
+    SpeechEnhancementRequest,
+    SpeechEnhancementResponse,
+    SpeechEnhancementTimings,
+)
 from hugging_mac_sdk.schemas.speech_synthesis import (
     SpeechSynthesisRequest,
     SpeechSynthesisResponse,
@@ -97,11 +104,22 @@ from hugging_mac_sdk.schemas.speech_understanding import (
     SpeechUnderstandingRequest,
     SpeechUnderstandingResponse,
 )
+from hugging_mac_sdk.schemas.streaming_transcription import (
+    StreamingTranscriptionRequest,
+    StreamingTranscriptionResponse,
+    StreamingTranscriptionSession,
+)
 from hugging_mac_sdk.schemas.transcription import (
     AudioInput,
     TranscriptionRequest,
     TranscriptionResponse,
     TranscriptionTimings,
+)
+from hugging_mac_sdk.schemas.voice_activity import (
+    SpeechSegment,
+    VoiceActivityRequest,
+    VoiceActivityResponse,
+    VoiceActivityTimings,
 )
 
 __all__ = [
@@ -116,6 +134,8 @@ __all__ = [
     "ChatResponse",
     "ChatStreamEvent",
     "ChatTimings",
+    "CompositeResource",
+    "CompositeSource",
     "ConversionRequest",
     "ConversionResult",
     "ConversionService",
@@ -184,12 +204,19 @@ __all__ = [
     "Segmentation",
     "SegmentationRequest",
     "SegmentationResponse",
+    "SpeechEnhancementRequest",
+    "SpeechEnhancementResponse",
+    "SpeechEnhancementTimings",
     "SpeechLanguage",
+    "SpeechSegment",
     "SpeechSynthesisRequest",
     "SpeechSynthesisResponse",
     "SpeechSynthesisTimings",
     "SpeechUnderstandingRequest",
     "SpeechUnderstandingResponse",
+    "StreamingTranscriptionRequest",
+    "StreamingTranscriptionResponse",
+    "StreamingTranscriptionSession",
     "TorchProvider",
     "TorchSession",
     "TranscriptionRequest",
@@ -201,6 +228,9 @@ __all__ = [
     "UrlArchiveSource",
     "UrlFileSource",
     "VariantSummary",
+    "VoiceActivityRequest",
+    "VoiceActivityResponse",
+    "VoiceActivityTimings",
     "create_default_runtime_registry",
     "load_model_config",
 ]

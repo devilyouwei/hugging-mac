@@ -27,6 +27,7 @@ from .config import (
     AUDIO8_ASR_MODEL_ID,
     AUDIO8_ASR_REQUIRED_FILES,
     AUDIO8_ASR_REVISION,
+    AUDIO8_ASR_TOKENIZER_REQUIRED_FILES,
     AUDIO8_ASR_VARIANT,
     AUDIO8_ASR_WEIGHT_SHA256,
     Audio8AsrInstanceConfig,
@@ -40,10 +41,12 @@ class Audio8AsrResourceResolver:
         source: HuggingFaceSource,
         config: Audio8AsrInstanceConfig,
         *,
+        tokenizer_source: HuggingFaceSource | None = None,
         downloader: ResourceDownloader | None = None,
         converter: Audio8AsrConverter | None = None,
     ) -> None:
         self._source = source
+        self._tokenizer_source = tokenizer_source or source
         self._config = config
         self._downloader = downloader or ResourceDownloader()
         self._converter = converter or Audio8AsrConverter()
@@ -58,16 +61,52 @@ class Audio8AsrResourceResolver:
             size_bytes=directory_size(path),
         )
 
+    @property
+    def tokenizer_path(self) -> Path:
+        return (
+            self._config.tokenizer_path
+            or self._config.model_home
+            / "audio8"
+            / "audio8-asr"
+            / "shared"
+            / "tokenizer"
+            / "778bac55980c1bfbaf79cf4d27ec9bb13682afb8"
+        )
+
+    async def resolve_tokenizer(self) -> ResolvedResource:
+        missing = [
+            name
+            for name in AUDIO8_ASR_TOKENIZER_REQUIRED_FILES
+            if not (self.tokenizer_path / name).is_file()
+        ]
+        if missing:
+            raise ResourceNotFoundError(
+                "Audio8-ASR shared tokenizer is incomplete",
+                details={"model_id": AUDIO8_ASR_MODEL_ID, "missing": missing},
+            )
+        return ResolvedResource(
+            path=self.tokenizer_path,
+            source=self._tokenizer_source,
+            size_bytes=directory_size(self.tokenizer_path),
+        )
+
     async def download_source(self, *, overwrite: bool = False) -> ResolvedResource:
         path = self._config.source_path or self._default_source_path()
-        if path.exists() and not overwrite:
-            return await self.resolve_source()
-        await self._downloader.download(
-            self._source,
-            path,
-            overwrite=overwrite,
-            token=self._config.hf_token,
-        )
+        if overwrite or not path.exists():
+            await self._downloader.download(
+                self._source,
+                path,
+                overwrite=overwrite,
+                token=self._config.hf_token,
+            )
+        if overwrite or not self.tokenizer_path.exists():
+            await self._downloader.download(
+                self._tokenizer_source,
+                self.tokenizer_path,
+                overwrite=overwrite,
+                token=self._config.hf_token,
+            )
+        await self.resolve_tokenizer()
         return await self.resolve_source()
 
     async def resolve_coreml(self) -> ResolvedResource:
@@ -125,6 +164,10 @@ class Audio8AsrResourceResolver:
         available = self._snapshot_files_exist(path)
         coreml_path = self._config.artifact_path or self._default_coreml_path()
         coreml_available = self._coreml_files_exist(coreml_path)
+        tokenizer_available = all(
+            (self.tokenizer_path / name).is_file()
+            for name in AUDIO8_ASR_TOKENIZER_REQUIRED_FILES
+        )
         return ModelResourceStatus(
             model_id=AUDIO8_ASR_MODEL_ID,
             revision=AUDIO8_ASR_REVISION,
@@ -136,6 +179,16 @@ class Audio8AsrResourceResolver:
                     runtime="pytorch-mps",
                     available=available,
                     size_bytes=directory_size(path) if available else None,
+                ),
+                ModelArtifactStatus(
+                    artifact_id="tokenizer",
+                    format=ArtifactFormat.TOKENIZER.value,
+                    runtime=None,
+                    shared=True,
+                    available=tokenizer_available,
+                    size_bytes=(
+                        directory_size(self.tokenizer_path) if tokenizer_available else None
+                    ),
                 ),
                 ModelArtifactStatus(
                     artifact_id="coreml",
@@ -158,7 +211,7 @@ class Audio8AsrResourceResolver:
         return (
             self._config.model_home
             / "audio8"
-            / "audio8-asr-0.1b"
+            / "audio8-asr"
             / self._source.revision
             / self._config.variant
         )
@@ -175,8 +228,6 @@ class Audio8AsrResourceResolver:
             "projector.safetensors",
             "config.json",
             "preprocessor_config.json",
-            "tokenizer.json",
-            "tokenizer_config.json",
             "conversion.json",
         )
         return path.is_dir() and all((path / name).exists() for name in required)
@@ -237,8 +288,13 @@ class Audio8AsrResourceResolver:
 
 
 class Audio8AsrResourceProvider:
-    def __init__(self, source: HuggingFaceSource) -> None:
+    def __init__(
+        self,
+        source: HuggingFaceSource,
+        tokenizer_source: HuggingFaceSource | None = None,
+    ) -> None:
         self._source = source
+        self._tokenizer_source = tokenizer_source or source
 
     async def status(
         self,
@@ -312,4 +368,6 @@ class Audio8AsrResourceProvider:
                 details={"variant": variant, "options_variant": option_variant},
             )
         config = Audio8AsrInstanceConfig.model_validate(normalized | {"variant": variant})
-        return Audio8AsrResourceResolver(self._source, config)
+        return Audio8AsrResourceResolver(
+            self._source, config, tokenizer_source=self._tokenizer_source
+        )

@@ -10,6 +10,10 @@ from dataclasses import dataclass
 from hugging_mac_sdk.errors import UnsupportedRuntimeError
 from hugging_mac_sdk.schemas.manifest import ModelManifest, RuntimeSpec
 
+_RUNTIME_ALIASES = {
+    "mps": "pytorch-mps",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeAvailability:
@@ -21,7 +25,11 @@ class RuntimePolicy:
     """Select a declared runtime using ordered machine preferences."""
 
     def __init__(self, preferences: tuple[str, ...] = ()) -> None:
-        self._preferences = preferences
+        self._preferences = tuple(
+            _RUNTIME_ALIASES.get(preference.strip().lower(), preference.strip().lower())
+            for preference in preferences
+            if preference.strip()
+        )
 
     def candidates(self, manifest: ModelManifest) -> tuple[str, ...]:
         """Return compatible runtimes in deterministic preference order."""

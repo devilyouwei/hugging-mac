@@ -22,6 +22,7 @@ class ArtifactFormat(StrEnum):
     RKNN = "rknn"
     TFLITE = "tflite"
     OPENVINO = "openvino"
+    TOKENIZER = "tokenizer"
 
 
 class ConversionRequest(BaseModel):

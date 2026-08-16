@@ -41,7 +41,9 @@ class TorchAudio8AsrEngine:
         return self._device
 
     async def resolve(self) -> Path:
-        return (await self._resources.resolve_source()).path
+        artifact = await self._resources.resolve_source()
+        await self._resources.resolve_tokenizer()
+        return artifact.path
 
     async def load(self, artifact: Path) -> None:
         provider = TorchProvider()
@@ -84,7 +86,7 @@ class TorchAudio8AsrEngine:
 
         dtype = self._resolve_dtype(torch)
         tokenizer = transformers.Qwen2TokenizerFast.from_pretrained(
-            artifact,
+            self._resources.tokenizer_path,
             local_files_only=True,
             fix_mistral_regex=True,
         )

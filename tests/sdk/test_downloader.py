@@ -11,6 +11,8 @@ from hugging_mac_sdk.errors import DownloadError, ResourceIntegrityError
 from hugging_mac_sdk.resources import downloader as downloader_module
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.schemas.resources import (
+    CompositeResource,
+    CompositeSource,
     HuggingFaceSource,
     UrlArchiveSource,
     UrlFileSource,
@@ -46,6 +48,65 @@ async def test_downloads_url_file_atomically(tmp_path: Path) -> None:
     assert destination.read_bytes() == content
     assert result.digest == digest
     assert result.size_bytes == len(content)
+    assert not tuple(tmp_path.glob("*.partial-*"))
+
+
+async def test_downloads_composite_resource_as_one_atomic_directory(tmp_path: Path) -> None:
+    payloads = {
+        "/coreml": b"compiled graph",
+        "/tokenizer": b'{"tokenizer_class":"Qwen2Tokenizer"}',
+    }
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=payloads[request.url.path], request=request)
+
+    source = CompositeSource(
+        resources=(
+            CompositeResource(
+                path="coreml/model/model.mil",
+                source=UrlFileSource(url="https://models.example/coreml"),
+            ),
+            CompositeResource(
+                path="tokenizer/tokenizer_config.json",
+                source=UrlFileSource(url="https://models.example/tokenizer"),
+            ),
+        )
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        destination = tmp_path / "qwen3-asr"
+        result = await ResourceDownloader(client=client).download(source, destination)
+
+    assert (destination / "coreml/model/model.mil").read_bytes() == b"compiled graph"
+    assert (destination / "tokenizer/tokenizer_config.json").read_bytes() == payloads["/tokenizer"]
+    assert result.size_bytes == sum(map(len, payloads.values()))
+    assert result.digest is not None
+    assert not tuple(tmp_path.glob("*.partial-*"))
+
+
+async def test_composite_download_failure_does_not_commit_partial_bundle(tmp_path: Path) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/coreml":
+            return httpx.Response(200, content=b"compiled graph", request=request)
+        return httpx.Response(500, content=b"failed", request=request)
+
+    source = CompositeSource(
+        resources=(
+            CompositeResource(
+                path="coreml/model/model.mil",
+                source=UrlFileSource(url="https://models.example/coreml"),
+            ),
+            CompositeResource(
+                path="tokenizer/tokenizer_config.json",
+                source=UrlFileSource(url="https://models.example/tokenizer"),
+            ),
+        )
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        destination = tmp_path / "qwen3-asr"
+        with pytest.raises(DownloadError):
+            await ResourceDownloader(client=client).download(source, destination)
+
+    assert not destination.exists()
     assert not tuple(tmp_path.glob("*.partial-*"))
 
 

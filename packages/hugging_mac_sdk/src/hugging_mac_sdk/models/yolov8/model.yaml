@@ -78,12 +78,13 @@ artifacts:
       expected_sha256: 31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95
     expected_sha256: 31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95
   - artifact_id: coreml
+    convert: true
     variant: n
     runtime: coreml
     format: coreml
     path: ultralytics/yolov8/8a9e1a5/n/coreml/yolov8n.mlpackage
     kind: directory
-  - {artifact_id: onnx, variant: n, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/n/onnx/yolov8n.onnx, kind: file}
+  - {artifact_id: onnx, variant: n, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/n/onnx/yolov8n.onnx, kind: file, convert: true}
   - artifact_id: source
     variant: s
     runtime: pytorch-mps
@@ -98,12 +99,13 @@ artifacts:
       expected_sha256: 268e5bb54c640c96c3510224833bc2eeacab4135c6deb41502156e39986b562d
     expected_sha256: 268e5bb54c640c96c3510224833bc2eeacab4135c6deb41502156e39986b562d
   - artifact_id: coreml
+    convert: true
     variant: s
     runtime: coreml
     format: coreml
     path: ultralytics/yolov8/8a9e1a5/s/coreml/yolov8s.mlpackage
     kind: directory
-  - {artifact_id: onnx, variant: s, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/s/onnx/yolov8s.onnx, kind: file}
+  - {artifact_id: onnx, variant: s, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/s/onnx/yolov8s.onnx, kind: file, convert: true}
   - artifact_id: source
     variant: m
     runtime: pytorch-mps
@@ -118,9 +120,10 @@ artifacts:
       expected_sha256: 6c25b0b63b1a433843f06d821a9ac1deb8d5805f74f0f38772c7308c5adc55a5
     expected_sha256: 6c25b0b63b1a433843f06d821a9ac1deb8d5805f74f0f38772c7308c5adc55a5
   - artifact_id: coreml
+    convert: true
     variant: m
     runtime: coreml
     format: coreml
     path: ultralytics/yolov8/8a9e1a5/m/coreml/yolov8m.mlpackage
     kind: directory
-  - {artifact_id: onnx, variant: m, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/m/onnx/yolov8m.onnx, kind: file}
+  - {artifact_id: onnx, variant: m, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/m/onnx/yolov8m.onnx, kind: file, convert: true}

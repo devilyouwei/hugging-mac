@@ -1,0 +1,63 @@
+manifest:
+  schema_version: "1"
+  model_id: qwen/qwen3-asr
+  revision: 8c6bc87b87856930b435550e94ce47de710ce4ed
+  display_name: Qwen3-ASR
+  description: Qwen3-ASR 0.6B 的预编译 Core ML encoder、embedding 与有状态分片 decoder。
+  tags: [audio, asr, multilingual, coreml, int8, ane, stateful]
+  family: qwen3-asr
+  capabilities: [speech-transcription]
+  runtimes:
+    - name: coreml
+      devices: [ane, gpu, cpu]
+      dtypes: [int8, float16, float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [coremltools, numpy, transformers]
+  variants:
+    - name: 0.6b
+      display_name: Qwen3-ASR 0.6B INT8 Core ML
+      metadata:
+        parameters_millions: 600
+        sample_rate: 16000
+        max_audio_seconds: 30
+        decoder_context: 1024
+        minimum_macos: "15.0"
+      resources:
+        - kind: huggingface
+          repo_id: aufklarer/Qwen3-ASR-CoreML
+          revision: 8c6bc87b87856930b435550e94ce47de710ce4ed
+          allow_patterns: [encoder.mlmodelc/**, embedding.mlmodelc/**, decoder_part1.mlmodelc/**, decoder_part2.mlmodelc/**, config.json]
+        - kind: huggingface
+          repo_id: Qwen/Qwen3-ASR-0.6B
+          revision: 5eb144179a02acc5e5ba31e748d22b0cf3e303b0
+          allow_patterns: [vocab.json, merges.txt, tokenizer_config.json]
+  default_variant: 0.6b
+  license: Apache-2.0
+  source_url: https://huggingface.co/aufklarer/Qwen3-ASR-CoreML
+  default_runtime: coreml
+
+artifacts:
+  - artifact_id: coreml-int8
+    variant: 0.6b
+    runtime: coreml
+    format: coreml
+    path: qwen/qwen3-asr/8c6bc87b87856930b435550e94ce47de710ce4ed/0.6b/coreml/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: aufklarer/Qwen3-ASR-CoreML
+      revision: 8c6bc87b87856930b435550e94ce47de710ce4ed
+      allow_patterns: [encoder.mlmodelc/**, embedding.mlmodelc/**, decoder_part1.mlmodelc/**, decoder_part2.mlmodelc/**, config.json]
+  - artifact_id: tokenizer
+    variant: 0.6b
+    runtime: coreml
+    format: tokenizer
+    path: qwen/qwen3-asr/shared/tokenizer/5eb144179a02acc5e5ba31e748d22b0cf3e303b0
+    kind: directory
+    shared: true
+    source:
+      kind: huggingface
+      repo_id: Qwen/Qwen3-ASR-0.6B
+      revision: 5eb144179a02acc5e5ba31e748d22b0cf3e303b0
+      allow_patterns: [vocab.json, merges.txt, tokenizer_config.json]

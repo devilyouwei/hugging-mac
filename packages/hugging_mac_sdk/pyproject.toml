@@ -29,9 +29,16 @@ asr = [
   "scipy>=1.15,<2",
   "sentencepiece>=0.2,<1",
   "soundfile>=0.13,<1",
-  "torch>=2.7,<3",
-  "torchaudio>=2.7,<3",
+  "torch==2.7.0",
+  "torchaudio==2.7.0",
   "transformers>=4.57.3,<6",
+]
+vad = [
+  "coremltools>=8,<10; sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "numpy>=2,<2.4",
+  "onnxruntime>=1.22,<2",
+  "scipy>=1.15,<2",
+  "soundfile>=0.13,<1",
 ]
 yolo = [
   "coremltools>=8,<10; sys_platform == 'darwin' and platform_machine == 'arm64'",
@@ -39,17 +46,19 @@ yolo = [
   "onnx>=1.18,<2",
   "onnxruntime>=1.22,<2",
   "opencv-python>=4.11,<5",
-  "torch>=2.7,<3",
+  "torch==2.7.0",
 ]
 tts = [
+  "coremltools>=8,<10; sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "kokoro==0.9.4",
   "mlx-audio; sys_platform == 'darwin' and platform_machine == 'arm64'",
   "misaki[en,ja,zh]>=0.9.4,<1",
   "numpy>=2,<2.4",
   "safetensors>=0.5,<1",
   "soundfile>=0.13,<1",
   "scipy>=1.15,<2",
-  "torch>=2.7,<3",
-  "torchaudio>=2.7,<3",
+  "torch==2.7.0",
+  "torchaudio==2.7.0",
   "transformers>=4.57.3,<6",
 ]
 

@@ -13,6 +13,10 @@ from hugging_mac_sdk.schemas.chat import ChatRequest, ChatResponse, ChatStreamEv
 from hugging_mac_sdk.schemas.detection import DetectionRequest, DetectionResponse
 from hugging_mac_sdk.schemas.pose import PoseEstimationResponse, PoseRequest
 from hugging_mac_sdk.schemas.segmentation import SegmentationRequest, SegmentationResponse
+from hugging_mac_sdk.schemas.speech_enhancement import (
+    SpeechEnhancementRequest,
+    SpeechEnhancementResponse,
+)
 from hugging_mac_sdk.schemas.speech_synthesis import (
     SpeechSynthesisRequest,
     SpeechSynthesisResponse,
@@ -21,10 +25,16 @@ from hugging_mac_sdk.schemas.speech_understanding import (
     SpeechUnderstandingRequest,
     SpeechUnderstandingResponse,
 )
+from hugging_mac_sdk.schemas.streaming_transcription import (
+    StreamingTranscriptionRequest,
+    StreamingTranscriptionResponse,
+    StreamingTranscriptionSession,
+)
 from hugging_mac_sdk.schemas.transcription import (
     TranscriptionRequest,
     TranscriptionResponse,
 )
+from hugging_mac_sdk.schemas.voice_activity import VoiceActivityRequest, VoiceActivityResponse
 
 RequestT = TypeVar("RequestT", contravariant=True)
 ResponseT = TypeVar("ResponseT", covariant=True)
@@ -62,6 +72,28 @@ class SpeechTranscription(Protocol):
     async def transcribe(self, request: TranscriptionRequest) -> TranscriptionResponse: ...
 
 
+class StreamingSpeechTranscription(Protocol):
+    """Maintain decoder state while accepting consecutive audio chunks."""
+
+    async def start_stream(self) -> StreamingTranscriptionSession: ...
+
+    async def transcribe_stream(
+        self, request: StreamingTranscriptionRequest
+    ) -> StreamingTranscriptionResponse: ...
+
+    async def finish_stream(self, session_id: str) -> StreamingTranscriptionResponse: ...
+
+    async def cancel_stream(self, session_id: str) -> None: ...
+
+
+class SpeechEnhancement(Protocol):
+    """Remove background noise from speech audio."""
+
+    async def enhance_speech(
+        self, request: SpeechEnhancementRequest
+    ) -> SpeechEnhancementResponse: ...
+
+
 class SpeechSynthesis(Protocol):
     """Synthesize speech from text, optionally cloning a reference voice."""
 
@@ -78,6 +110,14 @@ class SpeechUnderstanding(Protocol):
         self,
         request: SpeechUnderstandingRequest,
     ) -> SpeechUnderstandingResponse: ...
+
+
+class VoiceActivityDetection(Protocol):
+    """Detect speech intervals in audio."""
+
+    async def detect_voice_activity(
+        self, request: VoiceActivityRequest
+    ) -> VoiceActivityResponse: ...
 
 
 class ImageEmbedding(Protocol[RequestT, ResponseT]):

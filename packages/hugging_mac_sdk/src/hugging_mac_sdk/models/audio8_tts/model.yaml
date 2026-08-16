@@ -1,8 +1,8 @@
 manifest:
   schema_version: "1"
-  model_id: audio8/audio8-tts-preview-0.6b
+  model_id: audio8/audio8-tts-preview
   revision: 1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17
-  display_name: Audio8 TTS Preview 0.6B
+  display_name: Audio8 TTS Preview
   description: 支持 11 种推荐语言和零样本声音克隆的 0.6B 多语言语音合成模型；默认使用 CPU FP32 以保证生成稳定性。
   tags: [audio, tts, voice-cloning, zero-shot, multilingual, arktts]
   family: audio8-tts
@@ -14,8 +14,14 @@ manifest:
       platforms: [darwin]
       architectures: [arm64]
       required_modules: [torch, torchaudio, transformers, safetensors, numpy, soundfile]
+    - name: mlx
+      devices: [gpu]
+      dtypes: [bfloat16, float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [mlx, mlx_audio, numpy]
   variants:
-    - name: preview
+    - name: 0.6b-preview
       display_name: Audio8 TTS Preview 0.6B
       description: 包含 0.6B DualAR 主模型与 44.1 kHz 神经音频 codec 的 BF16 预览权重。
       metadata:
@@ -30,28 +36,61 @@ manifest:
           repo_id: Audio8/Audio8-TTS-Preview-0.6b
           revision: 1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17
           allow_patterns:
-            - "*.json"
+            - config.json
+            - generation_config.json
+            - preprocessor_config.json
+            - processor_config.json
             - "*.py"
             - "*.pth"
             - "*.safetensors"
-  default_variant: preview
+        - kind: huggingface
+          repo_id: mlx-community/Audio8-TTS-Preview-0.6b-bf16
+          revision: f7be312aaaed724b6ecb8e916b21c9fd0842db02
+          allow_patterns: [config.json, generation_config.json, codec.safetensors, model.safetensors]
+  default_variant: 0.6b-preview
   license: Apache-2.0
   source_url: https://huggingface.co/Audio8/Audio8-TTS-Preview-0.6b
   default_runtime: pytorch
 
 artifacts:
   - artifact_id: source
-    variant: preview
+    variant: 0.6b-preview
     runtime: pytorch
     format: safetensors
-    path: audio8/audio8-tts-preview-0.6b/1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17/preview/pytorch/model
+    path: audio8/audio8-tts-preview/1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17/0.6b-preview/pytorch/model
     kind: directory
     source:
       kind: huggingface
       repo_id: Audio8/Audio8-TTS-Preview-0.6b
       revision: 1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17
       allow_patterns:
-        - "*.json"
+        - config.json
+        - generation_config.json
+        - preprocessor_config.json
+        - processor_config.json
         - "*.py"
         - "*.pth"
         - "*.safetensors"
+  - artifact_id: mlx-bf16
+    variant: 0.6b-preview
+    runtime: mlx
+    format: mlx
+    path: audio8/audio8-tts-preview/1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17/0.6b-preview/mlx/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: mlx-community/Audio8-TTS-Preview-0.6b-bf16
+      revision: f7be312aaaed724b6ecb8e916b21c9fd0842db02
+      allow_patterns: [config.json, generation_config.json, codec.safetensors, model.safetensors]
+  - artifact_id: tokenizer
+    variant: 0.6b-preview
+    runtime: pytorch
+    format: tokenizer
+    path: audio8/audio8-tts-preview/shared/tokenizer/afa762738efa064eb11720c934271b739b02cf97
+    kind: directory
+    shared: true
+    source:
+      kind: huggingface
+      repo_id: Audio8/Audio8-TTS-Preview-0.6b
+      revision: 1b17c91db5f4dccb6914aa4aa5cb0e56661a6c17
+      allow_patterns: [special_tokens_map.json, tokenizer.json, tokenizer_config.json]

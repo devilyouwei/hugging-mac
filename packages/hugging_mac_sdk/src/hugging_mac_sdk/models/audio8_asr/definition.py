@@ -21,15 +21,24 @@ AUDIO8_ASR_MANIFEST = AUDIO8_ASR_CONFIG.manifest
 
 
 def _source() -> HuggingFaceSource:
-    resources = AUDIO8_ASR_MANIFEST.get_variant("base").resources
+    resources = AUDIO8_ASR_MANIFEST.get_variant("0.1b").resources
     if len(resources) != 1 or not isinstance(resources[0], HuggingFaceSource):
         raise TypeError("Audio8-ASR needs one Hugging Face snapshot source")
     return resources[0]
 
 
+def _tokenizer_source() -> HuggingFaceSource:
+    shared = AUDIO8_ASR_CONFIG.artifacts[-1]
+    if not shared.shared or not isinstance(shared.source, HuggingFaceSource):
+        raise TypeError("Audio8-ASR needs one shared tokenizer source")
+    return shared.source
+
+
 def _create_pytorch_mps(options: dict[str, object]) -> Audio8AsrInstance:
     config = Audio8AsrInstanceConfig.model_validate(options | {"runtime": "pytorch-mps"})
-    resources = Audio8AsrResourceResolver(_source(), config)
+    resources = Audio8AsrResourceResolver(
+        _source(), config, tokenizer_source=_tokenizer_source()
+    )
     return Audio8AsrInstance(config, TorchAudio8AsrEngine(config, resources))
 
 
@@ -39,7 +48,9 @@ def _create_coreml(options: dict[str, object]) -> Audio8AsrInstance:
     if requested_device is not None:
         normalized["compute_units"] = requested_device
     config = Audio8AsrInstanceConfig.model_validate(normalized | {"runtime": "coreml"})
-    resources = Audio8AsrResourceResolver(_source(), config)
+    resources = Audio8AsrResourceResolver(
+        _source(), config, tokenizer_source=_tokenizer_source()
+    )
     return Audio8AsrInstance(config, CoreMlAudio8AsrEngine(config, resources))
 
 
@@ -51,7 +62,7 @@ AUDIO8_ASR_DEFINITION = ModelDefinition(
     },
     artifacts=AUDIO8_ASR_CONFIG.artifacts,
     converter_ids=("audio8.audio8-asr-0.1b",),
-    resource_provider=Audio8AsrResourceProvider(_source()),
+    resource_provider=Audio8AsrResourceProvider(_source(), _tokenizer_source()),
 )
 
 

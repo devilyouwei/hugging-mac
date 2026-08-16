@@ -56,11 +56,11 @@ manifest:
 
 artifacts:
   - {artifact_id: source, variant: n, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-seg/v8.2.0/n/source/yolov8n-seg.pt, kind: file}
-  - {artifact_id: coreml, variant: n, runtime: coreml, format: coreml, path: ultralytics/yolov8-seg/v8.2.0/n/coreml/yolov8n-seg.mlpackage, kind: directory}
-  - {artifact_id: onnx, variant: n, runtime: onnx, format: onnx, path: ultralytics/yolov8-seg/v8.2.0/n/onnx/yolov8n-seg.onnx, kind: file}
+  - {artifact_id: coreml, variant: n, runtime: coreml, format: coreml, path: ultralytics/yolov8-seg/v8.2.0/n/coreml/yolov8n-seg.mlpackage, kind: directory, convert: true}
+  - {artifact_id: onnx, variant: n, runtime: onnx, format: onnx, path: ultralytics/yolov8-seg/v8.2.0/n/onnx/yolov8n-seg.onnx, kind: file, convert: true}
   - {artifact_id: source, variant: s, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-seg/v8.2.0/s/source/yolov8s-seg.pt, kind: file}
-  - {artifact_id: coreml, variant: s, runtime: coreml, format: coreml, path: ultralytics/yolov8-seg/v8.2.0/s/coreml/yolov8s-seg.mlpackage, kind: directory}
-  - {artifact_id: onnx, variant: s, runtime: onnx, format: onnx, path: ultralytics/yolov8-seg/v8.2.0/s/onnx/yolov8s-seg.onnx, kind: file}
+  - {artifact_id: coreml, variant: s, runtime: coreml, format: coreml, path: ultralytics/yolov8-seg/v8.2.0/s/coreml/yolov8s-seg.mlpackage, kind: directory, convert: true}
+  - {artifact_id: onnx, variant: s, runtime: onnx, format: onnx, path: ultralytics/yolov8-seg/v8.2.0/s/onnx/yolov8s-seg.onnx, kind: file, convert: true}
   - {artifact_id: source, variant: m, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-seg/v8.2.0/m/source/yolov8m-seg.pt, kind: file}
-  - {artifact_id: coreml, variant: m, runtime: coreml, format: coreml, path: ultralytics/yolov8-seg/v8.2.0/m/coreml/yolov8m-seg.mlpackage, kind: directory}
-  - {artifact_id: onnx, variant: m, runtime: onnx, format: onnx, path: ultralytics/yolov8-seg/v8.2.0/m/onnx/yolov8m-seg.onnx, kind: file}
+  - {artifact_id: coreml, variant: m, runtime: coreml, format: coreml, path: ultralytics/yolov8-seg/v8.2.0/m/coreml/yolov8m-seg.mlpackage, kind: directory, convert: true}
+  - {artifact_id: onnx, variant: m, runtime: onnx, format: onnx, path: ultralytics/yolov8-seg/v8.2.0/m/onnx/yolov8m-seg.onnx, kind: file, convert: true}

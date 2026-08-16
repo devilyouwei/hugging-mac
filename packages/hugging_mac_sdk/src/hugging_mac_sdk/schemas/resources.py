@@ -44,8 +44,50 @@ class UrlArchiveSource(BaseModel):
     expected_sha256: Sha256 | None = None
 
 
-ResourceSource = Annotated[
+LeafResourceSource = Annotated[
     HuggingFaceSource | UrlFileSource | UrlArchiveSource,
+    Field(discriminator="kind"),
+]
+
+
+class CompositeResource(BaseModel):
+    """One resource placed at a relative path inside a composite artifact."""
+
+    model_config = ConfigDict(frozen=True)
+
+    path: Path
+    source: LeafResourceSource
+
+    @model_validator(mode="after")
+    def validate_path(self) -> CompositeResource:
+        if self.path.is_absolute() or not self.path.parts or self.path == Path("."):
+            raise ValueError("Composite resource path must be a non-empty relative path")
+        if ".." in self.path.parts:
+            raise ValueError("Composite resource path must not contain '..'")
+        return self
+
+
+class CompositeSource(BaseModel):
+    """Multiple independently hosted resources installed as one atomic artifact."""
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["composite"] = "composite"
+    resources: tuple[CompositeResource, ...] = Field(min_length=1)
+    expected_sha256: Sha256 | None = None
+
+    @model_validator(mode="after")
+    def validate_resource_paths(self) -> CompositeSource:
+        paths = tuple(resource.path for resource in self.resources)
+        for index, path in enumerate(paths):
+            for other in paths[index + 1 :]:
+                if path == other or path.is_relative_to(other) or other.is_relative_to(path):
+                    raise ValueError("Composite resource paths must not overlap")
+        return self
+
+
+ResourceSource = Annotated[
+    HuggingFaceSource | UrlFileSource | UrlArchiveSource | CompositeSource,
     Field(discriminator="kind"),
 ]
 
@@ -68,6 +110,7 @@ class ModelArtifactStatus(BaseModel):
     format: str
     runtime: str | None = None
     provisioning: Literal["download", "convert"] = "download"
+    shared: bool = Field(default=False, exclude=True)
     available: bool
     size_bytes: int | None = Field(default=None, ge=0)
 
@@ -108,16 +151,19 @@ class ModelResourceStatus(BaseModel):
 
     @model_validator(mode="after")
     def aggregate_sizes(self) -> ModelResourceStatus:
+        shared = [artifact for artifact in self.artifacts if artifact.shared]
         grouped: dict[str, list[ModelArtifactStatus]] = {}
         for artifact in self.artifacts:
-            if artifact.runtime is not None:
+            if not artifact.shared and artifact.runtime is not None:
                 grouped.setdefault(artifact.runtime, []).append(artifact)
         runtimes = tuple(
             RuntimeResourceStatus(
                 runtime=runtime,
-                available=all(artifact.available for artifact in artifacts),
-                size_bytes=sum(artifact.size_bytes or 0 for artifact in artifacts),
-                artifact_ids=tuple(artifact.artifact_id for artifact in artifacts),
+                available=all(artifact.available for artifact in (*artifacts, *shared)),
+                size_bytes=sum(artifact.size_bytes or 0 for artifact in (*artifacts, *shared)),
+                artifact_ids=tuple(
+                    artifact.artifact_id for artifact in (*artifacts, *shared)
+                ),
             )
             for runtime, artifacts in grouped.items()
         )

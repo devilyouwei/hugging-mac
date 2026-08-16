@@ -27,6 +27,7 @@ from hugging_mac_sdk.resources.hashing import (
     file_sha256,
 )
 from hugging_mac_sdk.schemas.resources import (
+    CompositeSource,
     HuggingFaceSource,
     ResolvedResource,
     ResourceSource,
@@ -57,9 +58,11 @@ class ResourceDownloader:
         *,
         client: httpx.AsyncClient | None = None,
         timeout: float = 300.0,
+        max_workers: int = 8,
     ) -> None:
         self._client = client
         self._timeout = timeout
+        self._max_workers = max_workers
 
     async def download(
         self,
@@ -102,7 +105,51 @@ class ResourceDownloader:
                 overwrite=overwrite,
                 progress=progress,
             )
+        if isinstance(source, CompositeSource):
+            return await self._download_composite(
+                source,
+                destination,
+                overwrite=overwrite,
+                token=token,
+                progress=progress,
+            )
         raise TypeError(f"Unsupported resource source: {type(source)!r}")
+
+    async def _download_composite(
+        self,
+        source: CompositeSource,
+        destination: Path,
+        *,
+        overwrite: bool,
+        token: str | None,
+        progress: ProgressCallback | None,
+    ) -> ResolvedResource:
+        staging = _staging_path(destination)
+        try:
+            staging.mkdir(parents=True)
+            for resource in source.resources:
+                await self.download(
+                    resource.source,
+                    staging / resource.path,
+                    token=token,
+                    progress=progress,
+                )
+            digest = await asyncio.to_thread(directory_sha256, staging)
+            self._validate_digest(digest, source.expected_sha256, "composite resource")
+            size = directory_size(staging)
+            self._commit(staging, destination, overwrite)
+            return ResolvedResource(
+                path=destination,
+                source=source,
+                digest=digest,
+                size_bytes=size,
+            )
+        except (ResourceIntegrityError, ResourceNotFoundError, DownloadError):
+            raise
+        except Exception as error:
+            raise DownloadError("Failed to download composite resource", cause=error) from error
+        finally:
+            _remove_staging(staging)
 
     async def _download_url_file(
         self,
@@ -230,6 +277,7 @@ class ResourceDownloader:
                     allow_patterns=list(source.allow_patterns) or None,
                     ignore_patterns=list(source.ignore_patterns) or None,
                     token=token,
+                    max_workers=self._max_workers,
                 )
             )
             # ``local_dir`` snapshots contain Hub bookkeeping under ``.cache``.

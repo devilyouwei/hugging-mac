@@ -7,10 +7,13 @@ from hugging_mac_sdk.capabilities.protocols import (
     InstanceSegmentation,
     ObjectDetection,
     PoseEstimation,
+    SpeechEnhancement,
     SpeechSynthesis,
     SpeechTranscription,
     SpeechUnderstanding,
+    StreamingSpeechTranscription,
     TextEmbedding,
+    VoiceActivityDetection,
 )
 
 __all__ = [
@@ -20,8 +23,11 @@ __all__ = [
     "InstanceSegmentation",
     "ObjectDetection",
     "PoseEstimation",
+    "SpeechEnhancement",
     "SpeechSynthesis",
     "SpeechTranscription",
     "SpeechUnderstanding",
+    "StreamingSpeechTranscription",
     "TextEmbedding",
+    "VoiceActivityDetection",
 ]

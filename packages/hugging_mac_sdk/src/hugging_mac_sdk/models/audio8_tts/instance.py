@@ -16,7 +16,12 @@ from hugging_mac_sdk.schemas.speech_synthesis import (
     SpeechSynthesisTimings,
 )
 
-from .config import AUDIO8_TTS_MODEL_ID, AUDIO8_TTS_REVISION, Audio8TtsInstanceConfig
+from .config import (
+    AUDIO8_TTS_MODEL_ID,
+    AUDIO8_TTS_REVISION,
+    Audio8TtsInstanceConfig,
+    Audio8TtsMlxInstanceConfig,
+)
 from .utils.types import TtsEngineOutput
 
 
@@ -39,7 +44,9 @@ class Audio8TtsInstance(BaseModelInstance):
     """SpeechSynthesis capability composed with one runtime engine."""
 
     def __init__(
-        self, config: Audio8TtsInstanceConfig, engine: Audio8TtsEngine
+        self,
+        config: Audio8TtsInstanceConfig | Audio8TtsMlxInstanceConfig,
+        engine: Audio8TtsEngine,
     ) -> None:
         super().__init__(
             model_id=AUDIO8_TTS_MODEL_ID,
@@ -69,7 +76,11 @@ class Audio8TtsInstance(BaseModelInstance):
             except asyncio.CancelledError:
                 raise
             except Exception as error:
-                raise InferenceError("Audio8-TTS synthesis failed", cause=error) from error
+                raise InferenceError(
+                    "Audio8-TTS synthesis failed",
+                    details={"reason": str(error)},
+                    cause=error,
+                ) from error
             inference_ms = (perf_counter() - inference_started) * 1000
         postprocess_started = perf_counter()
         response = SpeechSynthesisResponse(

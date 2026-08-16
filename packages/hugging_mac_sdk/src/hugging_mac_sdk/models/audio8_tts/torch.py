@@ -6,10 +6,12 @@ import asyncio
 import gc
 import importlib
 import tempfile
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
 
 from hugging_mac_sdk.errors import UnsupportedRuntimeError
+from hugging_mac_sdk.resources.views import merged_directory_view
 from hugging_mac_sdk.runtime.torch import TorchProvider
 from hugging_mac_sdk.schemas.speech_synthesis import SpeechSynthesisRequest
 
@@ -70,13 +72,16 @@ class TorchAudio8TtsEngine:
         self._model: Any | None = None
         self._processor: Any | None = None
         self._dtype: Any | None = None
+        self._model_view: AbstractContextManager[Path] | None = None
 
     @property
     def device(self) -> str:
         return self._device
 
     async def resolve(self) -> Path:
-        return (await self._resources.resolve_source()).path
+        artifact = await self._resources.resolve_source()
+        await self._resources.resolve_tokenizer()
+        return artifact.path
 
     async def load(self, artifact: Path) -> None:
         provider = TorchProvider()
@@ -99,6 +104,9 @@ class TorchAudio8TtsEngine:
         had_model = self._model is not None
         self._model = None
         self._processor = None
+        model_view, self._model_view = self._model_view, None
+        if model_view is not None:
+            await asyncio.to_thread(model_view.__exit__, None, None, None)
         if not had_model:
             return
         await asyncio.to_thread(gc.collect)
@@ -109,27 +117,36 @@ class TorchAudio8TtsEngine:
         torch = importlib.import_module("torch")
         transformers = importlib.import_module("transformers")
         dtype = self._resolve_dtype(torch)
-        processor = transformers.AutoProcessor.from_pretrained(
-            artifact,
-            trust_remote_code=True,
-            local_files_only=True,
+        model_view = merged_directory_view(
+            artifact, (self._resources.tokenizer_path,)
         )
-        model = transformers.AutoModel.from_pretrained(
-            artifact,
-            trust_remote_code=True,
-            local_files_only=True,
-            dtype=dtype,
-        ).eval().to(self._device)
-        # Transformers 5 guards tensor initialization while constructing custom
-        # models. ArkTTS creates its non-persistent RoPE buffers in __init__, so
-        # that guard leaves them as uninitialized memory (often NaN). Rebuild
-        # them after loading; otherwise generation never emits EOS and the codec
-        # receives invalid frames, producing a fixed-length noise waveform.
-        _restore_rope_buffers(torch, model)
+        path = model_view.__enter__()
+        try:
+            processor = transformers.AutoProcessor.from_pretrained(
+                path,
+                trust_remote_code=True,
+                local_files_only=True,
+            )
+            model = transformers.AutoModel.from_pretrained(
+                path,
+                trust_remote_code=True,
+                local_files_only=True,
+                dtype=dtype,
+            ).eval().to(self._device)
+            # Transformers 5 guards tensor initialization while constructing custom
+            # models. ArkTTS creates its non-persistent RoPE buffers in __init__, so
+            # that guard leaves them as uninitialized memory (often NaN). Rebuild
+            # them after loading; otherwise generation never emits EOS and the codec
+            # receives invalid frames, producing a fixed-length noise waveform.
+            _restore_rope_buffers(torch, model)
+        except BaseException:
+            model_view.__exit__(None, None, None)
+            raise
         self._torch = torch
         self._dtype = dtype
         self._processor = processor
         self._model = model
+        self._model_view = model_view
 
     def _infer_sync(self, request: SpeechSynthesisRequest) -> TtsEngineOutput:
         torch = self._torch

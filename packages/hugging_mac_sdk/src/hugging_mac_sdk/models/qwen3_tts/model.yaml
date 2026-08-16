@@ -1,0 +1,98 @@
+manifest:
+  schema_version: "1"
+  model_id: qwen/qwen3-tts-12hz
+  revision: 0d6bb6f
+  display_name: Qwen3-TTS
+  description: Qwen3-TTS Base 的 MLX 4-bit 与预编译 Core ML 实现。
+  tags: [audio, tts, voice-cloning, multilingual, qwen3-tts, mlx, coreml, 4bit]
+  family: qwen3-tts
+  capabilities: [speech-synthesis]
+  runtimes:
+    - name: mlx
+      devices: [gpu]
+      dtypes: [uint4, bfloat16]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [mlx, mlx_audio, numpy]
+    - name: coreml
+      devices: [ane, gpu, cpu]
+      dtypes: [int8, float16, float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [coremltools, numpy, transformers]
+  variants:
+    - name: 0.6b-base
+      display_name: Qwen3-TTS 0.6B Base MLX 4-bit
+      description: 0.6B Base 模型的 4-bit MLX 权重，包含 12.5 Hz speech tokenizer。
+      metadata:
+        parameters_millions: 600
+        sample_rate: 24000
+        codec_rate_hz: 12.5
+        voice_cloning: true
+      resources:
+        - kind: huggingface
+          repo_id: mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
+          revision: 0d6bb6f
+          allow_patterns:
+            - config.json
+            - generation_config.json
+            - model.safetensors
+            - model.safetensors.index.json
+        - kind: huggingface
+          repo_id: FluidInference/qwen3-tts-coreml
+          revision: 7bb6c4e5c425ddecc0aa2339f125398623d2da36
+          allow_patterns:
+            - "*.mlmodelc/**"
+            - "*.npy"
+  default_variant: 0.6b-base
+  license: Apache-2.0
+  source_url: https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
+  default_runtime: mlx
+
+artifacts:
+  - artifact_id: mlx-4bit
+    variant: 0.6b-base
+    runtime: mlx
+    format: mlx
+    path: qwen/qwen3-tts-12hz/0d6bb6f/0.6b-base/mlx/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
+      revision: 0d6bb6f
+      allow_patterns:
+        - config.json
+        - generation_config.json
+        - model.safetensors
+        - model.safetensors.index.json
+  - artifact_id: tokenizers
+    variant: 0.6b-base
+    runtime: mlx
+    format: tokenizer
+    path: qwen/qwen3-tts-12hz/shared/tokenizers/0d6bb6f
+    kind: directory
+    shared: true
+    source:
+      kind: huggingface
+      repo_id: mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
+      revision: 0d6bb6f
+      allow_patterns:
+        - merges.txt
+        - preprocessor_config.json
+        - tokenizer_config.json
+        - vocab.json
+        - "speech_tokenizer/*.json"
+        - "speech_tokenizer/*.safetensors"
+  - artifact_id: coreml-w8a16
+    variant: 0.6b-base
+    runtime: coreml
+    format: coreml
+    path: qwen/qwen3-tts-12hz/7bb6c4e5c425ddecc0aa2339f125398623d2da36/0.6b-base/coreml/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: FluidInference/qwen3-tts-coreml
+      revision: 7bb6c4e5c425ddecc0aa2339f125398623d2da36
+      allow_patterns:
+        - "*.mlmodelc/**"
+        - "*.npy"
