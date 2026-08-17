@@ -68,6 +68,10 @@ function stopAnalysis() {
   activeRequest?.abort()
   activeRequest = null
   video.value?.pause()
+  result.value = null
+  completedFrames.value = 0
+  currentTimestamp.value = 0
+  pipelineMs.value = 0
 }
 
 async function analyzeVideo() {

@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import VisionAppPage from "@/vision/components/VisionAppPage.vue"
-import { estimatePoses, fetchResourceStatus } from "./api"
+import {
+  estimatePoses,
+  fetchFaceResourceStatus,
+  fetchHandResourceStatus,
+  fetchResourceStatus,
+} from "./api"
 import PoseResultsPanel from "./components/PoseResultsPanel.vue"
 import PoseSkeletonLayer from "./components/PoseSkeletonLayer.vue"
 </script>
@@ -11,7 +16,7 @@ import PoseSkeletonLayer from "./components/PoseSkeletonLayer.vue"
     kicker="HUMAN POSE"
     title-top="Pose"
     title-bottom="Estimation"
-    description="使用图片、浏览器摄像头或本地视频运行 YOLOv8 Pose。17 点人体骨架会直接叠加在本机推理画面上。"
+    description="使用图片、浏览器摄像头或本地视频并行运行 YOLOv8 Pose、RetinaFace 与 MediaPipe Hand Detection，叠加人体骨架、人脸与手部框。"
     model-label="YOLOv8 Pose"
     action-label="Estimate poses"
     action-noun="pose estimation"
@@ -20,5 +25,12 @@ import PoseSkeletonLayer from "./components/PoseSkeletonLayer.vue"
     :results="PoseResultsPanel"
     :infer="estimatePoses"
     :fetch-status="fetchResourceStatus"
+    secondary-model-label="RetinaFace"
+    :fetch-secondary-status="fetchFaceResourceStatus"
+    tertiary-model-label="MediaPipe Hand Detection"
+    :fetch-tertiary-status="fetchHandResourceStatus"
+    :default-confidence="0.65"
+    :default-secondary-confidence="0.9"
+    :default-tertiary-confidence="0.85"
   />
 </template>

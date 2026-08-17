@@ -25,9 +25,12 @@ import type {
 import { encodeWave } from "./wav"
 
 const SILENCE_SECONDS = 0.65
-const MIN_UTTERANCE_SECONDS = 0.35
+const MIN_UTTERANCE_SECONDS = 0.15
 const MAX_UTTERANCE_SECONDS = 25
-const PRE_ROLL_SECONDS = 0.18
+// Keep enough audio to cover the asynchronous Silero VAD round trip. A single
+// 180 ms window is not sufficient: its beginning can be discarded before the
+// server confirms speech, clipping short words such as "hi" and "hello".
+const PRE_ROLL_SECONDS = 0.75
 const VAD_WINDOW_SECONDS = 0.18
 const ENERGY_THRESHOLD_MIN = 0.006
 const ENERGY_THRESHOLD_MAX = 0.035

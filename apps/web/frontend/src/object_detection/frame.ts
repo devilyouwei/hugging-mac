@@ -5,9 +5,11 @@ export async function captureVideoFrame(
   {
     maxDimension = 640,
     quality = 0.82,
+    mirror = false,
   }: {
     maxDimension?: number
     quality?: number
+    mirror?: boolean
   } = {},
 ): Promise<File> {
   if (!video.videoWidth || !video.videoHeight) {
@@ -24,7 +26,15 @@ export async function captureVideoFrame(
     desynchronized: true,
   })
   if (!context) throw new Error("浏览器无法创建视频帧画布")
+  context.save()
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  context.clearRect(0, 0, width, height)
+  if (mirror) {
+    context.translate(width, 0)
+    context.scale(-1, 1)
+  }
   context.drawImage(video, 0, 0, width, height)
+  context.restore()
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(

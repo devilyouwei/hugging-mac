@@ -6,6 +6,14 @@ export interface VisionOptions {
   confidence: number
   iouThreshold: number
   maxDetections: number
+  poseEnabled?: boolean
+  faceEnabled?: boolean
+  faceConfidence?: number
+  handEnabled?: boolean
+  handConfidence?: number
+  handLandmarksEnabled?: boolean
+  handLandmarkConfidence?: number
+  handInputMirrored?: boolean
 }
 
 export interface VisionResultBase {

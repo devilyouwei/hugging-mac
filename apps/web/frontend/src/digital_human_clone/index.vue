@@ -88,9 +88,10 @@ const KOKORO_LANGUAGES = [
   { code: "z", name: "Chinese" },
 ]
 const SILENCE_SECONDS = 0.7
-const MIN_SPEECH_SECONDS = 0.35
+const MIN_SPEECH_SECONDS = 0.15
 const MAX_SPEECH_SECONDS = 20
 const MAX_HISTORY_MESSAGES = 15
+const STREAMING_PRE_ROLL_SECONDS = 0.5
 
 interface TtsTiming {
   index: number
@@ -125,7 +126,8 @@ interface ActiveAsrStream {
 const models = ref<ModelState[]>([])
 const asrModels = ref<AsrModelOption[]>([])
 const asrModelId = ref("")
-const llmVariants = ref<Array<{ name: string; display_name: string; description: string }>>([])
+const llmVariants = ref<Array<{ model_id: string; name: string; display_name: string; description: string }>>([])
+const llmModelId = ref("")
 const llmVariant = ref("")
 const loaded = ref<LoadedModels | null>(null)
 const loadingModels = ref(false)
@@ -168,9 +170,19 @@ let utteranceSequence = 0
 let latestUtterance = 0
 let activeAsrStream: ActiveAsrStream | null = null
 let asrSocket: DigitalHumanAsrSocket | null = null
+let streamingPreRoll: Float32Array[] = []
+let streamingPreRollSamples = 0
 
 const modelsReady = computed(() => Boolean(loaded.value))
 const selectedAsr = computed(() => asrModels.value.find((item) => item.model_id === asrModelId.value))
+const llmSelection = computed({
+  get: () => `${llmModelId.value}::${llmVariant.value}`,
+  set: (value: string) => {
+    const [modelId, variant] = value.split("::", 2)
+    llmModelId.value = modelId ?? ""
+    llmVariant.value = variant ?? ""
+  },
+})
 const resourcesReady = computed(() => models.value.length === 3 && models.value.every((item) => item.resources_ready))
 const availableVoices = computed(() =>
   KOKORO_VOICES.filter((voice) => voice.startsWith(language.value)),
@@ -196,11 +208,16 @@ function formatTime(value: number | null): string {
 
 async function refreshSetup() {
   try {
-    const setup = await fetchSetup(llmVariant.value || undefined, asrModelId.value || undefined)
+    const setup = await fetchSetup(
+      llmVariant.value || undefined,
+      asrModelId.value || undefined,
+      llmModelId.value || undefined,
+    )
     models.value = setup.models
     asrModels.value = setup.asr_models
     asrModelId.value = setup.selected_asr_model_id
     llmVariants.value = setup.llm_variants
+    llmModelId.value = setup.selected_llm_model_id
     llmVariant.value = setup.selected_llm_variant
     const byRole = Object.fromEntries(setup.models.map((model) => [model.role, model]))
     if (byRole.asr?.ready_instance_id && byRole.llm?.ready_instance_id && byRole.tts?.ready_instance_id) {
@@ -227,7 +244,7 @@ async function loadAllModels(): Promise<boolean> {
   error.value = ""
   lifecycleMessages.value = {}
   try {
-    loaded.value = await loadDigitalHumanModels(llmVariant.value, asrModelId.value)
+    loaded.value = await loadDigitalHumanModels(llmVariant.value, asrModelId.value, llmModelId.value)
     phase.value = "Models ready"
     await refreshSetup()
     return true
@@ -248,13 +265,12 @@ async function toggleModel(role: ModelState["role"]) {
   try {
     if (selected?.ready_instance_id) {
       await unloadModel(selected.ready_instance_id)
-      lifecycleMessages.value[role] = { type: "success", text: "卸载成功" }
     } else {
-      await loadDigitalHumanModel(role, llmVariant.value, asrModelId.value)
+      await loadDigitalHumanModel(role, llmVariant.value, asrModelId.value, llmModelId.value)
     }
     await refreshSetup()
   } catch (caught) {
-    lifecycleMessages.value[role] = { type: "error", text: errorMessage(caught, "模型操作失败") }
+    showError(caught, "模型操作失败")
   } finally {
     loadingRole.value = null
   }
@@ -363,14 +379,16 @@ function beginStreamingUtterance() {
   const stream: ActiveAsrStream = {
     utteranceId,
     controller,
-    chunks: [],
-    sampleCount: 0,
+    chunks: streamingPreRoll,
+    sampleCount: streamingPreRollSamples,
     sampleRate: audioContext.sampleRate,
     inferenceMs: 0,
     transcript,
     resolve,
     reject,
   }
+  streamingPreRoll = []
+  streamingPreRollSamples = 0
   activeAsrStream = stream
   speechStartedAt = performance.now()
   silenceStartedAt = 0
@@ -405,9 +423,19 @@ function beginStreamingUtterance() {
 }
 
 function captureStreamingAudio(event: AudioProcessingEvent) {
-  const stream = activeAsrStream
-  if (!stream || !speaking.value || stream.controller.signal.aborted) return
   const chunk = new Float32Array(event.inputBuffer.getChannelData(0))
+  const stream = activeAsrStream
+  if (!stream) {
+    if (!active.value || !selectedAsr.value?.streaming) return
+    streamingPreRoll.push(chunk)
+    streamingPreRollSamples += chunk.length
+    const limit = event.inputBuffer.sampleRate * STREAMING_PRE_ROLL_SECONDS
+    while (streamingPreRollSamples > limit && streamingPreRoll.length > 1) {
+      streamingPreRollSamples -= streamingPreRoll.shift()!.length
+    }
+    return
+  }
+  if (!speaking.value || stream.controller.signal.aborted) return
   stream.chunks.push(chunk)
   stream.sampleCount += chunk.length
   const chunkSeconds = selectedAsr.value?.streaming_chunk_seconds ?? 2.24
@@ -469,6 +497,8 @@ async function submitRecordedUtterance() {
   const encodedAudio = new Blob(recorderChunks, { type })
   recorder = null
   recorderChunks = []
+  streamingPreRoll = []
+  streamingPreRollSamples = 0
   speechStartedAt = 0
   silenceStartedAt = 0
   if (!active.value || duration < MIN_SPEECH_SECONDS || !encodedAudio.size) {
@@ -840,6 +870,8 @@ function stopAudioGraph() {
   silentGain = null
   recorder = null
   recorderChunks = []
+  streamingPreRoll = []
+  streamingPreRollSamples = 0
   speechStartedAt = 0
   silenceStartedAt = 0
   inputLevel.value = 0
@@ -923,14 +955,14 @@ onBeforeUnmount(() => {
               </select>
               <select
                 v-else-if="model.role === 'llm'"
-                v-model="llmVariant"
+                v-model="llmSelection"
                 class="mini-model-select"
                 aria-label="Language model variant"
                 :disabled="active"
                 @change="refreshSetup"
               >
-                <option v-for="item in llmVariants" :key="item.name" :value="item.name">
-                  {{ item.display_name }}
+                <option v-for="item in llmVariants" :key="`${item.model_id}-${item.name}`" :value="`${item.model_id}::${item.name}`">
+                  {{ item.model_id === 'google/gemma-4' ? 'Gemma 4' : 'Qwen3.5' }} · {{ item.display_name }}
                 </option>
               </select>
               <span v-else>{{ model.model_id.split('/').at(-1) }}</span>
@@ -943,14 +975,13 @@ onBeforeUnmount(() => {
               >
                 {{ loadingRole === model.role ? "Wait…" : model.ready_instance_id ? "Unload" : "Load" }}
               </button>
-              <small v-if="lifecycleMessages[model.role]" :class="`lifecycle-${lifecycleMessages[model.role]?.type}`">{{ lifecycleMessages[model.role]?.text }}</small>
             </div>
           </div>
           <button class="action-button" type="button" :disabled="active || loadingModels || modelsReady" @click="loadAllModels">
             {{ loadingModels ? "Loading all models…" : modelsReady ? "All models loaded" : "Load all models" }}
           </button>
           <small v-if="lifecycleMessages.all" :class="`lifecycle-${lifecycleMessages.all?.type}`">{{ lifecycleMessages.all?.text }}</small>
-          <p v-if="!modelsReady" class="error-copy">Models must be downloaded in Models before they can be loaded here.</p>
+          <p v-if="!resourcesReady" class="error-copy">Models must be downloaded in Models before they can be loaded here.</p>
         </div>
         <div class="setup-block voice-block">
           <div class="step-heading"><span>02</span><h2>Kokoro speech</h2></div>
@@ -1097,7 +1128,6 @@ button:disabled { cursor: not-allowed; opacity: .38; }
 .stage-controls { align-items: center; display: grid; gap: 1rem; grid-template-columns: 14rem 1fr; margin: 1rem auto 0; max-width: 100rem; }
 .stage-controls p { color: var(--muted); font-size: .75rem; line-height: 1.5; margin: 0; }
 .start-button { background: var(--signal); }
-.mini-model > small { background: var(--paper-deep); grid-column: 2 / -1; overflow: hidden; position: absolute; right: 5.8rem; text-overflow: ellipsis; white-space: nowrap; }
 .lifecycle-success { color:#3c8b2f; font:.5rem var(--font-mono); }.lifecycle-error { color:#cf3f27; font:.5rem var(--font-mono); }
 .stop-button { background: var(--orange); }
 @media (max-width: 1050px) { .digital-human-header { grid-template-columns: 1fr; } .digital-human-header h1 { white-space:normal; } .setup-panel { border-left: 0; padding-left: 0; } .phase-pill { margin-top: 0; } }

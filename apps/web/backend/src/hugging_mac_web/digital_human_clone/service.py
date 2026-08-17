@@ -41,9 +41,11 @@ from hugging_mac_web.live_transcription.service import (
 )
 from hugging_mac_web.text_to_speech.audio import float32le_to_wav
 
-ASR_MODEL_ID = AUDIO8_PROFILE.model_id
 NEMOTRON_ASR_MODEL_ID = NEMOTRON_3_5_ASR_PROFILE.model_id
+ASR_MODEL_ID = NEMOTRON_ASR_MODEL_ID
 LLM_MODEL_ID = "qwen/qwen3.5"
+GEMMA_4_MODEL_ID = "google/gemma-4"
+LLM_MODEL_IDS = (LLM_MODEL_ID, GEMMA_4_MODEL_ID)
 TTS_MODEL_ID = "hexgrad/kokoro"
 
 type ModelRole = Literal["asr", "llm", "tts"]
@@ -59,14 +61,17 @@ class DigitalHumanService:
         self._settings = settings
 
     async def setup(
-        self, llm_variant: str | None = None, asr_model_id: str | None = None
+        self,
+        llm_variant: str | None = None,
+        asr_model_id: str | None = None,
+        llm_model_id: str | None = None,
     ) -> SetupView:
-        llm_variant = self._llm_variant(llm_variant)
+        selected_llm_model, llm_variant = self._llm_selection(llm_model_id, llm_variant)
         asr_profile = self._asr_profile(asr_model_id)
         snapshots = await self._context.models.instances.snapshots()
         models: list[ModelStateView] = []
         for role, model_id, variant, runtime in self._model_specs(
-            llm_variant, asr_profile.model_id
+            llm_variant, asr_profile.model_id, selected_llm_model
         ):
             status = await self._context.models.resources.status(
                 model_id,
@@ -101,6 +106,7 @@ class DigitalHumanService:
             asr_models=self._asr_models(),
             selected_asr_model_id=asr_profile.model_id,
             llm_variants=self._llm_variants(),
+            selected_llm_model_id=selected_llm_model,
             selected_llm_variant=llm_variant,
             vad_instance_id=self._ready_snapshot_id(snapshots, SILERO_MODEL_ID),
             enhancement_instance_id=self._ready_snapshot_id(
@@ -109,22 +115,32 @@ class DigitalHumanService:
         )
 
     async def load_models(
-        self, llm_variant: str | None = None, asr_model_id: str | None = None
+        self,
+        llm_variant: str | None = None,
+        asr_model_id: str | None = None,
+        llm_model_id: str | None = None,
     ) -> LoadedModelsView:
-        selected_variant = self._llm_variant(llm_variant)
+        selected_llm_model, selected_variant = self._llm_selection(
+            llm_model_id, llm_variant
+        )
         selected_asr = self._asr_profile(asr_model_id)
         asr, llm, tts = await asyncio.gather(
             *(
                 self._load(role, model_id, variant, runtime)
                 for role, model_id, variant, runtime in self._model_specs(
-                    selected_variant, selected_asr.model_id
+                    selected_variant, selected_asr.model_id, selected_llm_model
                 )
             )
         )
-        vad, enhancement = await asyncio.gather(
-            self._load_optional_pipeline_component("vad"),
-            self._load_optional_pipeline_component("enhancement"),
-        )
+        if selected_asr.streaming:
+            # Nemotron performs stateful chunk inference directly. The utterance-level
+            # VAD and enhancement pipeline is only relevant to non-streaming ASR.
+            vad, enhancement = None, None
+        else:
+            vad, enhancement = await asyncio.gather(
+                self._load_optional_pipeline_component("vad"),
+                self._load_optional_pipeline_component("enhancement"),
+            )
         return LoadedModelsView(
             asr_instance_id=asr,
             llm_instance_id=llm,
@@ -138,11 +154,14 @@ class DigitalHumanService:
         role: str,
         llm_variant: str | None = None,
         asr_model_id: str | None = None,
+        llm_model_id: str | None = None,
     ) -> str:
-        selected_variant = self._llm_variant(llm_variant)
+        selected_llm_model, selected_variant = self._llm_selection(
+            llm_model_id, llm_variant
+        )
         selected_asr = self._asr_profile(asr_model_id)
         for spec_role, model_id, variant, runtime in self._model_specs(
-            selected_variant, selected_asr.model_id
+            selected_variant, selected_asr.model_id, selected_llm_model
         ):
             if spec_role == role:
                 return await self._load(spec_role, model_id, variant, runtime)
@@ -261,7 +280,7 @@ class DigitalHumanService:
         history: tuple[ConversationMessage, ...],
         image_path: Path,
     ) -> AsyncIterator[ChatStreamEvent]:
-        instance = await self._ready_instance(instance_id, LLM_MODEL_ID)
+        instance = await self._ready_llm_instance(instance_id)
         capability = instance.require(Chat)  # type: ignore[type-abstract]
         recent = history[-self._settings.max_history_messages :]
         messages = [ChatMessage(role="system", content=self._settings.system_prompt)]
@@ -331,18 +350,31 @@ class DigitalHumanService:
             )
         return instance
 
+    async def _ready_llm_instance(self, instance_id: str) -> BaseModelInstance:
+        instance = await self._context.models.instances.require(instance_id)
+        info = instance.info()
+        if info.model_id not in LLM_MODEL_IDS or info.state is not ModelState.READY:
+            raise ResourceNotFoundError(
+                "The selected Digital Human LLM instance is not ready",
+                details={"instance_id": instance_id, "model_id": info.model_id},
+            )
+        return instance
+
     def _options(self, role: str) -> dict[str, object]:
         options: dict[str, object] = {"model_home": self._context.settings.model_home}
         return options
 
     def _model_specs(
-        self, llm_variant: str, asr_model_id: str = ASR_MODEL_ID
+        self,
+        llm_variant: str,
+        asr_model_id: str = ASR_MODEL_ID,
+        llm_model_id: str = LLM_MODEL_ID,
     ) -> tuple[ModelSpec, ...]:
         """Resolve every role through the shared WEB_RUNTIME_PREFERENCE policy."""
 
         selections = (
             ("asr", asr_model_id, self._asr_profile(asr_model_id).variant),
-            ("llm", LLM_MODEL_ID, llm_variant),
+            ("llm", llm_model_id, llm_variant),
             ("tts", TTS_MODEL_ID, "v1.0"),
         )
         return tuple(
@@ -358,14 +390,15 @@ class DigitalHumanService:
         )
 
     def _llm_variants(self) -> tuple[LlmVariantView, ...]:
-        manifest = self._context.models.registry.get(LLM_MODEL_ID).manifest
         return tuple(
             LlmVariantView(
+                model_id=model_id,
                 name=variant.name,
                 display_name=variant.display_name,
                 description=variant.description,
             )
-            for variant in manifest.variants
+            for model_id in LLM_MODEL_IDS
+            for variant in self._context.models.registry.get(model_id).manifest.variants
         )
 
     @staticmethod
@@ -396,12 +429,21 @@ class DigitalHumanService:
                 details={"model_id": selected, "supported_models": list(profiles)},
             ) from error
 
-    def _llm_variant(self, value: str | None) -> str:
-        variants = self._llm_variants()
-        selected = value or "4b"
-        if selected not in {variant.name for variant in variants}:
-            raise ResourceNotFoundError("The selected Qwen3.5 variant is not registered")
-        return selected
+    def _llm_selection(
+        self, model_id: str | None, variant: str | None
+    ) -> tuple[str, str]:
+        selected_model = model_id or LLM_MODEL_ID
+        if selected_model not in LLM_MODEL_IDS:
+            raise ResourceNotFoundError("The selected Digital Human LLM is not registered")
+        manifest = self._context.models.registry.get(selected_model).manifest
+        selected_variant = variant or manifest.default_variant
+        if selected_variant not in {item.name for item in manifest.variants}:
+            raise ResourceNotFoundError(
+                "The selected Digital Human LLM variant is not registered",
+                details={"model_id": selected_model, "variant": selected_variant},
+            )
+        assert selected_variant is not None
+        return selected_model, selected_variant
 
 
 def _clean_for_speech(text: str) -> str:

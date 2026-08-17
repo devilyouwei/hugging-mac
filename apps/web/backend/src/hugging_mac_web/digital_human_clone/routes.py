@@ -69,9 +69,10 @@ def create_router(settings: DigitalHumanSettings) -> APIRouter:
         context: ContextDependency,
         llm_variant: str | None = None,
         asr_model_id: str | None = None,
+        llm_model_id: str | None = None,
     ) -> ApiResponse[SetupView]:
         data = await DigitalHumanService(context, settings).setup(
-            llm_variant, asr_model_id
+            llm_variant, asr_model_id, llm_model_id
         )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
@@ -80,9 +81,10 @@ def create_router(settings: DigitalHumanSettings) -> APIRouter:
         context: ContextDependency,
         llm_variant: str | None = None,
         asr_model_id: str | None = None,
+        llm_model_id: str | None = None,
     ) -> ApiResponse[LoadedModelsView]:
         data = await DigitalHumanService(context, settings).load_models(
-            llm_variant, asr_model_id
+            llm_variant, asr_model_id, llm_model_id
         )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
@@ -92,9 +94,10 @@ def create_router(settings: DigitalHumanSettings) -> APIRouter:
         context: ContextDependency,
         llm_variant: str | None = None,
         asr_model_id: str | None = None,
+        llm_model_id: str | None = None,
     ) -> ApiResponse[str]:
         data = await DigitalHumanService(context, settings).load_model(
-            role, llm_variant, asr_model_id
+            role, llm_variant, asr_model_id, llm_model_id
         )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 

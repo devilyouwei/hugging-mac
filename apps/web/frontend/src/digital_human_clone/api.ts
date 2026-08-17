@@ -12,22 +12,27 @@ import type {
 const PREFIX = "/api/v1/games/digital-human"
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ""
 
-function setupQuery(llmVariant: string | undefined, asrModelId: string | undefined): string {
+function setupQuery(
+  llmVariant: string | undefined,
+  asrModelId: string | undefined,
+  llmModelId: string | undefined,
+): string {
   const query = new URLSearchParams()
   if (llmVariant) query.set("llm_variant", llmVariant)
   if (asrModelId) query.set("asr_model_id", asrModelId)
+  if (llmModelId) query.set("llm_model_id", llmModelId)
   const value = query.toString()
   return value ? `?${value}` : ""
 }
 
-export async function fetchSetup(llmVariant?: string, asrModelId?: string): Promise<Setup> {
-  return (await request<Setup>(`${PREFIX}/setup${setupQuery(llmVariant, asrModelId)}`)).data
+export async function fetchSetup(llmVariant?: string, asrModelId?: string, llmModelId?: string): Promise<Setup> {
+  return (await request<Setup>(`${PREFIX}/setup${setupQuery(llmVariant, asrModelId, llmModelId)}`)).data
 }
 
-export async function loadModels(llmVariant: string, asrModelId: string): Promise<LoadedModels> {
+export async function loadModels(llmVariant: string, asrModelId: string, llmModelId: string): Promise<LoadedModels> {
   return (
     await request<LoadedModels>(
-      `${PREFIX}/setup/load${setupQuery(llmVariant, asrModelId)}`,
+      `${PREFIX}/setup/load${setupQuery(llmVariant, asrModelId, llmModelId)}`,
       { method: "POST" },
     )
   ).data
@@ -37,10 +42,11 @@ export async function loadModel(
   role: "asr" | "llm" | "tts",
   llmVariant: string,
   asrModelId: string,
+  llmModelId: string,
 ): Promise<string> {
   return (
     await request<string>(
-      `${PREFIX}/setup/models/${role}/load${setupQuery(llmVariant, asrModelId)}`,
+      `${PREFIX}/setup/models/${role}/load${setupQuery(llmVariant, asrModelId, llmModelId)}`,
       { method: "POST" },
     )
   ).data

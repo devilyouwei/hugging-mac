@@ -10,7 +10,8 @@ export interface Setup {
   models: ModelState[]
   asr_models: AsrModelOption[]
   selected_asr_model_id: string
-  llm_variants: Array<{ name: string; display_name: string; description: string }>
+  llm_variants: Array<{ model_id: string; name: string; display_name: string; description: string }>
+  selected_llm_model_id: string
   selected_llm_variant: string
   vad_instance_id: string | null
   enhancement_instance_id: string | null

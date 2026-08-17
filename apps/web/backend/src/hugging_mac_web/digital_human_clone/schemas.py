@@ -22,6 +22,7 @@ class SetupView(BaseModel):
     asr_models: tuple["AsrModelOptionView", ...]
     selected_asr_model_id: str
     llm_variants: tuple["LlmVariantView", ...]
+    selected_llm_model_id: str
     selected_llm_variant: str
     vad_instance_id: str | None = None
     enhancement_instance_id: str | None = None
@@ -44,6 +45,7 @@ class LoadedModelsView(BaseModel):
 class LlmVariantView(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    model_id: str
     name: str
     display_name: str
     description: str

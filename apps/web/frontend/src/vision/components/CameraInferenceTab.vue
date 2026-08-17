@@ -32,6 +32,7 @@ const detecting = ref(false)
 type AnalysisRate = "max" | "1" | "2" | "5"
 
 const analysisRate = ref<AnalysisRate>("max")
+const mirrorPreview = ref(true)
 const result = ref<VisionResultBase | null>(null)
 const error = ref("")
 const frameNumber = ref(0)
@@ -75,6 +76,9 @@ function stopInference() {
   detecting.value = false
   activeRequest?.abort()
   activeRequest = null
+  result.value = null
+  frameNumber.value = 0
+  pipelineMs.value = 0
 }
 
 function stopCamera() {
@@ -101,10 +105,15 @@ async function runInferenceLoop() {
         await waitForNextVideoFrame(video.value)
       }
       lastCapturedMediaTime = video.value.currentTime
-      const frame = await captureVideoFrame(video.value, canvas, "camera-latest-frame.jpg")
+      const frame = await captureVideoFrame(video.value, canvas, "camera-latest-frame.jpg", {
+        mirror: mirrorPreview.value,
+      })
       const request = new AbortController()
       activeRequest = request
-      const nextResult = await props.infer(frame, props.options, {
+      const nextResult = await props.infer(frame, {
+        ...props.options,
+        handInputMirrored: mirrorPreview.value,
+      }, {
         signal: request.signal,
         cacheInput: false,
       })
@@ -152,6 +161,13 @@ onBeforeUnmount(stopCamera)
           <option value="5">5 FPS</option>
         </select>
       </label>
+      <label class="compact-field mirror-field">
+        <span>摄像头预览</span>
+        <span class="mirror-control">
+          <input v-model="mirrorPreview" type="checkbox" :disabled="detecting" />
+          镜像
+        </span>
+      </label>
     </div>
 
     <div
@@ -159,7 +175,13 @@ onBeforeUnmount(stopCamera)
       :class="{ 'media-stage--empty': !cameraReady, 'camera-stage--ready': cameraReady }"
       :style="cameraReady ? { aspectRatio: cameraAspectRatio } : undefined"
     >
-      <video ref="video" autoplay muted playsinline></video>
+      <video
+        ref="video"
+        autoplay
+        muted
+        playsinline
+        :class="{ 'camera-video--mirrored': mirrorPreview }"
+      ></video>
       <component :is="overlay" :result="cameraReady ? result : null" />
       <div v-if="detecting" class="live-indicator">
         <span></span>
@@ -213,5 +235,24 @@ onBeforeUnmount(stopCamera)
   object-fit: fill;
   position: absolute;
   width: 100%;
+}
+
+.camera-video--mirrored {
+  transform: scaleX(-1);
+}
+
+.mirror-control {
+  align-items: center;
+  border: 1px solid var(--ink);
+  color: var(--ink) !important;
+  display: flex;
+  gap: 0.45rem;
+  min-height: 2.4rem;
+  padding: 0 0.65rem;
+}
+
+.mirror-control input {
+  accent-color: var(--accent);
+  margin: 0;
 }
 </style>

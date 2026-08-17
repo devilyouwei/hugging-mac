@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -25,8 +26,13 @@ from hugging_mac_sdk.schemas.detection import (
     Detection,
     DetectionResponse,
     DetectionTimings,
+    FaceDetection,
+    FaceDetectionResponse,
+    FaceLandmarks5,
     ImageSize,
+    Point2D,
 )
+from hugging_mac_sdk.schemas.hand import HandDetectionResponse, HandResult
 from hugging_mac_sdk.schemas.pose import Keypoint, Pose, PoseEstimationResponse
 from hugging_mac_sdk.schemas.resources import ResolvedResource
 from hugging_mac_sdk.schemas.segmentation import (
@@ -174,9 +180,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert asr_model_views[AUDIO8_PROFILE.model_id]["runtime"] == "coreml"
     assert asr_model_views[SENSEVOICE_PROFILE.model_id]["runtime"] == "coreml"
     assert asr_model_views[NEMOTRON_3_5_ASR_PROFILE.model_id]["streaming"]
-    assert asr_model_views[NEMOTRON_3_5_ASR_PROFILE.model_id][
-        "streaming_chunk_seconds"
-    ] == 2.24
+    assert asr_model_views[NEMOTRON_3_5_ASR_PROFILE.model_id]["streaming_chunk_seconds"] == 2.24
     assert {item["model_id"] for item in tts_models.json()["data"]} == {
         "audio8/audio8-tts-preview",
         "hexgrad/kokoro",
@@ -265,6 +269,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     deepfilternet = next(
         item for item in models.json()["data"] if item["model_id"] == "deepfilternet/deepfilternet3"
     )
+    gemma4 = next(item for item in models.json()["data"] if item["model_id"] == "google/gemma-4")
     qwen3_asr = next(item for item in models.json()["data"] if item["model_id"] == "qwen/qwen3-asr")
     assert {item["model_id"] for item in models.json()["data"]} >= {
         "audio8/audio8-asr",
@@ -272,6 +277,8 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         "hexgrad/kokoro",
         "deepfilternet/deepfilternet3",
         "funaudiollm/sensevoice",
+        "py-feat/retinaface",
+        "google/gemma-4",
         "qwen/qwen3.5",
         "qwen/qwen3-asr",
         NEMOTRON_3_5_ASR_PROFILE.model_id,
@@ -281,6 +288,10 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         "ultralytics/yolov8-seg",
     }
     assert model["model_id"] == "ultralytics/yolov8"
+    assert [variant["name"] for variant in gemma4["variants"]] == ["e4b", "e2b"]
+    assert gemma4["default_variant"] == "e4b"
+    assert {runtime["name"] for runtime in gemma4["runtimes"]} == {"mlx"}
+    assert gemma4["capabilities"] == ["chat"]
     assert [variant["name"] for variant in model["variants"]] == ["n", "s", "m"]
     assert model["variants"][0]["default"]
     assert model["default_variant"] == "n"
@@ -565,8 +576,7 @@ def test_models_catalog_exposes_all_nemotron_download_variants(tmp_path: Path) -
 
     with TestClient(app) as client:
         inventory = client.get(
-            "/api/v1/catalog/models/"
-            "nvidia/nemotron-3.5-asr-streaming-0.6b/inventory"
+            "/api/v1/catalog/models/nvidia/nemotron-3.5-asr-streaming-0.6b/inventory"
         )
 
     assert inventory.status_code == 200
@@ -596,9 +606,7 @@ def test_live_transcription_exposes_stateful_streaming_routes(
             sample_rate=16000,
         )
 
-    async def fake_chunk(
-        _: object, audio: bytes, **kwargs: object
-    ) -> StreamingTranscriptionView:
+    async def fake_chunk(_: object, audio: bytes, **kwargs: object) -> StreamingTranscriptionView:
         assert audio == b"RIFF-stream"
         assert kwargs["session_id"] == "stream-1"
         assert "enhancement_instance_id" not in kwargs
@@ -679,9 +687,7 @@ def test_digital_human_streams_nemotron_over_websocket(
             sample_rate=16000,
         )
 
-    async def fake_chunk(
-        _: object, audio: bytes, **__: object
-    ) -> StreamingTranscriptionView:
+    async def fake_chunk(_: object, audio: bytes, **__: object) -> StreamingTranscriptionView:
         assert audio.startswith(b"RIFF")
         assert b"\0\0" * 160 in audio
         return _streaming_view(is_final=False, delta="hello")
@@ -823,6 +829,12 @@ def test_digital_human_uses_runtime_preference_and_declared_kokoro_variant(
     context = create_context(_settings(tmp_path))
     specs = DigitalHumanService(context, DigitalHumanSettings())._model_specs("4b")
 
+    assert specs[0] == (
+        "asr",
+        "nvidia/nemotron-3.5-asr-streaming-0.6b",
+        "multilingual-2240ms",
+        "coreml",
+    )
     assert specs[2] == (
         "tts",
         "hexgrad/kokoro",
@@ -847,6 +859,21 @@ def test_digital_human_supports_nemotron_streaming_asr(tmp_path: Path) -> None:
     )
     assert options[model_id].streaming is True
     assert options[model_id].streaming_chunk_seconds == 2.24
+
+
+def test_digital_human_supports_gemma_4_llm(tmp_path: Path) -> None:
+    context = create_context(_settings(tmp_path))
+    service = DigitalHumanService(context, DigitalHumanSettings())
+
+    specs = service._model_specs(
+        "e4b",
+        llm_model_id="google/gemma-4",
+    )
+    variants = {(item.model_id, item.name) for item in service._llm_variants()}
+
+    assert specs[1] == ("llm", "google/gemma-4", "e4b", "mlx")
+    assert ("google/gemma-4", "e4b") in variants
+    assert ("google/gemma-4", "e2b") in variants
 
 
 def test_text_to_speech_returns_actionable_inference_reason(
@@ -1302,7 +1329,16 @@ def test_object_detection_app_maps_sdk_result(tmp_path: Path) -> None:
 
 
 class FakePoseEstimator:
+    events: list[str] | None = None
+    requests: list[Any] | None = None
+
     async def estimate_pose(self, request: Any) -> PoseEstimationResponse:
+        if self.events is not None:
+            self.events.append("pose:start")
+            await asyncio.sleep(0)
+            self.events.append("pose:end")
+        if self.requests is not None:
+            self.requests.append(request)
         return PoseEstimationResponse(
             model_id="ultralytics/yolov8-pose",
             instance_id="fake-pose-instance",
@@ -1322,6 +1358,68 @@ class FakePoseEstimator:
                 ),
             ),
             timings=DetectionTimings(inference_ms=3.5),
+        )
+
+
+class FakeFaceDetector:
+    events: list[str] | None = None
+    requests: list[Any] | None = None
+
+    async def detect_faces(self, request: Any) -> FaceDetectionResponse:
+        if self.events is not None:
+            self.events.append("face:start")
+            await asyncio.sleep(0)
+            self.events.append("face:end")
+        if self.requests is not None:
+            self.requests.append(request)
+        return FaceDetectionResponse(
+            model_id="py-feat/retinaface",
+            instance_id="fake-face-instance",
+            runtime="coreml",
+            device="all",
+            image_size=ImageSize(width=8, height=6),
+            faces=(
+                FaceDetection(
+                    box=BoundingBox(x1=2, y1=1, x2=6, y2=5),
+                    confidence=0.97,
+                    landmarks=FaceLandmarks5(
+                        left_eye=Point2D(x=3, y=2),
+                        right_eye=Point2D(x=5, y=2),
+                        nose=Point2D(x=4, y=3),
+                        left_mouth=Point2D(x=3, y=4),
+                        right_mouth=Point2D(x=5, y=4),
+                    ),
+                ),
+            ),
+            timings=DetectionTimings(inference_ms=2.5),
+        )
+
+
+class FakeHandDetector:
+    events: list[str] | None = None
+    requests: list[Any] | None = None
+
+    async def detect_hands(self, request: Any) -> HandDetectionResponse:
+        if self.events is not None:
+            self.events.append("hand:start")
+            await asyncio.sleep(0)
+            self.events.append("hand:end")
+        if self.requests is not None:
+            self.requests.append(request)
+        return HandDetectionResponse(
+            model_id="qualcomm/mediapipe-hand-detection",
+            instance_id="fake-hand-instance",
+            runtime="coreml",
+            device="cpu-and-neural-engine",
+            image_size=ImageSize(width=8, height=6),
+            hands=(
+                HandResult(
+                    box=BoundingBox(x1=1, y1=1, x2=4, y2=5),
+                    confidence=0.91,
+                ),
+            ),
+            landmarks_enabled=request.include_landmarks,
+            timings=DetectionTimings(inference_ms=1.5),
         )
 
 
@@ -1368,23 +1466,51 @@ class FakeCapabilityHandle:
 
 def test_pose_and_segmentation_apps_map_sdk_results(tmp_path: Path) -> None:
     app = create_app(_settings(tmp_path))
+    inference_events: list[str] = []
+    pose_requests: list[Any] = []
+    face_requests: list[Any] = []
+    hand_requests: list[Any] = []
+    FakePoseEstimator.events = inference_events
+    FakeFaceDetector.events = inference_events
+    FakeHandDetector.events = inference_events
+    FakePoseEstimator.requests = pose_requests
+    FakeFaceDetector.requests = face_requests
+    FakeHandDetector.requests = hand_requests
 
     with TestClient(app) as client:
         acquired: list[tuple[str, str]] = []
+        acquired_runtimes: list[tuple[str, object]] = []
 
         async def fake_acquire(model_id: str, **kwargs: object) -> FakeCapabilityHandle:
             acquired.append((model_id, str(kwargs["variant"])))
-            capability: object = (
-                FakePoseEstimator() if model_id == "ultralytics/yolov8-pose" else FakeSegmenter()
-            )
+            acquired_runtimes.append((model_id, kwargs.get("runtime")))
+            capability: object
+            if model_id == "ultralytics/yolov8-pose":
+                capability = FakePoseEstimator()
+            elif model_id == "py-feat/retinaface":
+                capability = FakeFaceDetector()
+            elif model_id == "qualcomm/mediapipe-hand-detection":
+                capability = FakeHandDetector()
+            else:
+                capability = FakeSegmenter()
             return FakeCapabilityHandle(capability)
 
         app.state.context.models.acquire = fake_acquire
         pose_resources = client.get("/api/v1/apps/pose-estimation/resources?variant=s")
+        face_resources = client.get("/api/v1/apps/pose-estimation/resources/face")
+        hand_resources = client.get("/api/v1/apps/pose-estimation/resources/hand")
         pose_response = client.post(
             "/api/v1/apps/pose-estimation/estimate",
             files={"file": ("sample.png", _png(), "image/png")},
-            data={"runtime": "auto", "variant": "m"},
+            data={
+                "runtime": "auto",
+                "variant": "m",
+                "confidence": "0.61",
+                "face_confidence": "0.72",
+                "hand_confidence": "0.83",
+                "hand_landmarks_enabled": "true",
+                "hand_input_mirrored": "true",
+            },
         )
         seg_resources = client.get("/api/v1/apps/instance-segmentation/resources?variant=m")
         seg_response = client.post(
@@ -1392,9 +1518,31 @@ def test_pose_and_segmentation_apps_map_sdk_results(tmp_path: Path) -> None:
             content=_png(),
             headers={"Content-Type": "image/png"},
         )
+        face_only_response = client.post(
+            "/api/v1/apps/pose-estimation/estimate/frame"
+            "?pose_enabled=false&face_enabled=true&face_confidence=0.8&hand_enabled=false",
+            content=_png(),
+            headers={"Content-Type": "image/png"},
+        )
+        hand_only_response = client.post(
+            "/api/v1/apps/pose-estimation/estimate/frame"
+            "?pose_enabled=false&face_enabled=false&hand_enabled=true&hand_confidence=0.83",
+            content=_png(),
+            headers={"Content-Type": "image/png"},
+        )
+        disabled_response = client.post(
+            "/api/v1/apps/pose-estimation/estimate/frame"
+            "?pose_enabled=false&face_enabled=false&hand_enabled=false",
+            content=_png(),
+            headers={"Content-Type": "image/png"},
+        )
 
     assert pose_resources.status_code == 200
     assert pose_resources.json()["data"]["variant"] == "s"
+    assert face_resources.status_code == 200
+    assert face_resources.json()["data"]["model_id"] == "py-feat/retinaface"
+    assert hand_resources.status_code == 200
+    assert hand_resources.json()["data"]["model_id"] == "qualcomm/mediapipe-hand-detection"
     assert pose_response.status_code == 200
     pose_result = pose_response.json()["data"]
     assert pose_result["variant"] == "m"
@@ -1404,6 +1552,32 @@ def test_pose_and_segmentation_apps_map_sdk_results(tmp_path: Path) -> None:
         "confidence": 0.98,
     }
     assert pose_result["input_cache_id"].startswith("pose-estimation-inputs:")
+    assert pose_result["faces"][0]["landmarks"]["nose"] == {
+        "x": 4.0,
+        "y": 3.0,
+        "confidence": None,
+    }
+    assert pose_result["hands"][0] == {
+        "box": {"x1": 1.0, "y1": 1.0, "x2": 4.0, "y2": 5.0},
+        "confidence": 0.91,
+        "label": "hand",
+        "handedness": None,
+        "handedness_confidence": None,
+        "landmark_confidence": None,
+        "landmarks": [],
+    }
+    parallel_timings = pose_result["parallel_timings"]
+    assert parallel_timings["pose_ms"] >= 0
+    assert parallel_timings["face_ms"] >= 0
+    assert parallel_timings["hand_ms"] >= 0
+    assert parallel_timings["sum_ms"] == (
+        parallel_timings["pose_ms"] + parallel_timings["face_ms"] + parallel_timings["hand_ms"]
+    )
+    assert parallel_timings["round_ms"] >= max(
+        parallel_timings["pose_ms"],
+        parallel_timings["face_ms"],
+        parallel_timings["hand_ms"],
+    )
 
     assert seg_resources.status_code == 200
     assert seg_resources.json()["data"]["variant"] == "m"
@@ -1415,7 +1589,46 @@ def test_pose_and_segmentation_apps_map_sdk_results(tmp_path: Path) -> None:
         "y": 5.0,
     }
     assert seg_result["input_cache_id"] is None
+    assert face_only_response.status_code == 200
+    assert face_only_response.json()["data"]["poses"] == []
+    assert len(face_only_response.json()["data"]["faces"]) == 1
+    assert face_only_response.json()["data"]["parallel_timings"]["pose_ms"] is None
+    assert face_only_response.json()["data"]["parallel_timings"]["hand_ms"] is None
+    assert hand_only_response.status_code == 200
+    assert len(hand_only_response.json()["data"]["hands"]) == 1
+    assert hand_only_response.json()["data"]["parallel_timings"]["pose_ms"] is None
+    assert hand_only_response.json()["data"]["parallel_timings"]["face_ms"] is None
+    assert hand_requests[-1].confidence == 0.83
+    assert pose_requests[0].confidence == 0.61
+    assert face_requests[0].confidence == 0.72
+    assert hand_requests[0].confidence == 0.83
+    assert hand_requests[0].include_landmarks is True
+    assert hand_requests[0].input_mirrored is True
+    assert disabled_response.status_code == 422
+    assert inference_events[:6] == [
+        "pose:start",
+        "face:start",
+        "hand:start",
+        "pose:end",
+        "face:end",
+        "hand:end",
+    ]
     assert acquired == [
         ("ultralytics/yolov8-pose", "m"),
+        ("py-feat/retinaface", "mobilenet0.25"),
+        ("qualcomm/mediapipe-hand-detection", "float"),
         ("ultralytics/yolov8-seg", "s"),
+        ("py-feat/retinaface", "mobilenet0.25"),
+        ("qualcomm/mediapipe-hand-detection", "float"),
     ]
+    assert acquired_runtimes[:3] == [
+        ("ultralytics/yolov8-pose", None),
+        ("py-feat/retinaface", None),
+        ("qualcomm/mediapipe-hand-detection", None),
+    ]
+    FakePoseEstimator.events = None
+    FakeFaceDetector.events = None
+    FakeHandDetector.events = None
+    FakePoseEstimator.requests = None
+    FakeFaceDetector.requests = None
+    FakeHandDetector.requests = None

@@ -9,13 +9,16 @@ from hugging_mac_sdk.converters import ConverterRegistry
 from hugging_mac_sdk.models.audio8_asr import register_audio8_asr
 from hugging_mac_sdk.models.audio8_tts import register_audio8_tts
 from hugging_mac_sdk.models.deepfilternet3 import register_deepfilternet3
+from hugging_mac_sdk.models.gemma_4 import register_gemma_4
 from hugging_mac_sdk.models.kokoro import register_kokoro
+from hugging_mac_sdk.models.mediapipe_hand_detection import register_mediapipe_hand_detection
 from hugging_mac_sdk.models.nemotron_3_5_asr import register_nemotron_3_5_asr
 from hugging_mac_sdk.models.qwen3_5 import register_qwen3_5
 from hugging_mac_sdk.models.qwen3_asr import register_qwen3_asr
 from hugging_mac_sdk.models.qwen3_tts import (
     register_qwen3_tts,
 )
+from hugging_mac_sdk.models.retinaface import register_retinaface
 from hugging_mac_sdk.models.sensevoice import register_sensevoice
 from hugging_mac_sdk.models.silero import register_silero
 from hugging_mac_sdk.models.yolov8 import register_yolov8
@@ -51,11 +54,14 @@ def create_context(settings: WebSettings) -> PlatformContext:
     register_audio8_asr(models.registry, converters)
     register_audio8_tts(models.registry)
     register_deepfilternet3(models.registry)
+    register_gemma_4(models.registry)
     register_kokoro(models.registry)
+    register_mediapipe_hand_detection(models.registry, converters)
     register_nemotron_3_5_asr(models.registry)
     register_qwen3_asr(models.registry)
     register_qwen3_tts(models.registry)
     register_qwen3_5(models.registry)
+    register_retinaface(models.registry, converters)
     register_sensevoice(models.registry, converters)
     register_silero(models.registry)
     register_yolov8(models.registry, converters)

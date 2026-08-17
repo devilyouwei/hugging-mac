@@ -40,6 +40,30 @@ export function createVisionApi<Result extends VisionResultBase>(
           iou_threshold: String(options.iouThreshold),
           max_detections: String(options.maxDetections),
         })
+        if (options.poseEnabled !== undefined) {
+          query.set("pose_enabled", String(options.poseEnabled))
+        }
+        if (options.faceEnabled !== undefined) {
+          query.set("face_enabled", String(options.faceEnabled))
+        }
+        if (options.faceConfidence !== undefined) {
+          query.set("face_confidence", String(options.faceConfidence))
+        }
+        if (options.handEnabled !== undefined) {
+          query.set("hand_enabled", String(options.handEnabled))
+        }
+        if (options.handConfidence !== undefined) {
+          query.set("hand_confidence", String(options.handConfidence))
+        }
+        if (options.handLandmarksEnabled !== undefined) {
+          query.set("hand_landmarks_enabled", String(options.handLandmarksEnabled))
+        }
+        if (options.handLandmarkConfidence !== undefined) {
+          query.set("hand_landmark_confidence", String(options.handLandmarkConfidence))
+        }
+        if (options.handInputMirrored !== undefined) {
+          query.set("hand_input_mirrored", String(options.handInputMirrored))
+        }
         return (
           await request<Result>(`${apiPrefix}/${action}/frame?${query}`, {
             method: "POST",
@@ -58,6 +82,30 @@ export function createVisionApi<Result extends VisionResultBase>(
       body.append("iou_threshold", String(options.iouThreshold))
       body.append("max_detections", String(options.maxDetections))
       body.append("cache_input", "true")
+      if (options.poseEnabled !== undefined) {
+        body.append("pose_enabled", String(options.poseEnabled))
+      }
+      if (options.faceEnabled !== undefined) {
+        body.append("face_enabled", String(options.faceEnabled))
+      }
+      if (options.faceConfidence !== undefined) {
+        body.append("face_confidence", String(options.faceConfidence))
+      }
+      if (options.handEnabled !== undefined) {
+        body.append("hand_enabled", String(options.handEnabled))
+      }
+      if (options.handConfidence !== undefined) {
+        body.append("hand_confidence", String(options.handConfidence))
+      }
+      if (options.handLandmarksEnabled !== undefined) {
+        body.append("hand_landmarks_enabled", String(options.handLandmarksEnabled))
+      }
+      if (options.handLandmarkConfidence !== undefined) {
+        body.append("hand_landmark_confidence", String(options.handLandmarkConfidence))
+      }
+      if (options.handInputMirrored !== undefined) {
+        body.append("hand_input_mirrored", String(options.handInputMirrored))
+      }
 
       return (
         await request<Result>(`${apiPrefix}/${action}`, {
