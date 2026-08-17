@@ -29,6 +29,11 @@ const router = createRouter({
       component: () => import("./yolo_pose_follow/index.vue"),
     },
     {
+      path: "/games/yolo-fruit-slice",
+      name: "yolo-fruit-slice",
+      component: () => import("./yolo_fruit_slice/index.vue"),
+    },
+    {
       path: "/games/digital-human",
       name: "digital-human",
       component: () => import("./digital_human_clone/index.vue"),

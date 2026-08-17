@@ -200,7 +200,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert all(item["supports_images"] for item in chat_models.json()["data"])
     assert games.status_code == 200
     game_summaries = {item["manifest"]["app_id"]: item for item in games.json()["data"]}
-    assert set(game_summaries) == {"digital-human", "yolo-pose-follow"}
+    assert set(game_summaries) == {"digital-human", "yolo-fruit-slice", "yolo-pose-follow"}
     assert game_summaries["digital-human"]["manifest"]["category"] == "game"
     assert game_summaries["digital-human"]["status"] == "available"
     digital_human_models = {
@@ -210,6 +210,17 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert "mlx-community/audio8-tts-preview-0.6b-bf16" not in digital_human_models
     assert game_summaries["yolo-pose-follow"]["manifest"]["category"] == "game"
     assert game_summaries["yolo-pose-follow"]["status"] == "available"
+    fruit_slice = game_summaries["yolo-fruit-slice"]
+    assert fruit_slice["manifest"]["category"] == "game"
+    assert fruit_slice["status"] == "available"
+    assert fruit_slice["manifest"]["required_models"] == [
+        {
+            "model_id": "ultralytics/yolov8-pose",
+            "capabilities": ["pose-estimation"],
+            "preferred_runtime": None,
+            "required": True,
+        }
+    ]
     assert not any(item["available"] for item in resources.json()["data"]["artifacts"])
     assert "/api/v1/apps/object-detection/detect" in openapi.json()["paths"]
     assert "/api/v1/apps/pose-estimation/estimate" in openapi.json()["paths"]
@@ -240,6 +251,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     )
     assert "/api/v1/games/yolo-pose-follow/templates" in openapi.json()["paths"]
     assert "/api/v1/games/yolo-pose-follow/match" in openapi.json()["paths"]
+    assert "/api/v1/games/yolo-fruit-slice/status" in openapi.json()["paths"]
     assert "/api/v1/games/digital-human/setup" in openapi.json()["paths"]
     assert "/api/v1/games/digital-human/setup/load" in openapi.json()["paths"]
     assert "/api/v1/games/digital-human/setup/prepare" not in openapi.json()["paths"]

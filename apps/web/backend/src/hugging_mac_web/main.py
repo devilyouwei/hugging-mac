@@ -37,6 +37,7 @@ from hugging_mac_web.system import create_system_router
 from hugging_mac_web.text_to_speech import (
     create_blueprint as create_text_to_speech_blueprint,
 )
+from hugging_mac_web.yolo_fruit_slice import create_blueprint as create_fruit_slice_blueprint
 from hugging_mac_web.yolo_pose_follow import create_blueprint as create_pose_follow_blueprint
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,7 @@ def create_app(
             create_text_to_speech_blueprint(),
             create_chat_blueprint(),
             create_pose_follow_blueprint(),
+            create_fruit_slice_blueprint(),
             create_digital_human_blueprint(),
         )
     )

@@ -12,6 +12,7 @@ const icon = computed(() => {
     "pose-estimation": "🕺",
     "instance-segmentation": "🎨",
     "yolo-pose-follow": "🕺",
+    "yolo-fruit-slice": "🍉",
     "live-transcription": "🎙️",
     "text-to-speech": "🔊",
   }
