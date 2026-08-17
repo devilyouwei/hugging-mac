@@ -192,6 +192,7 @@ class CoreMlNemotronEngine:
             (state.pending_samples, np.asarray(incoming, dtype=np.float32))
         )
         complete_samples = samples.size - samples.size % chunk_samples
+        valid_samples = samples.size
         if final and samples.size > complete_samples:
             process_samples = np.pad(samples, (0, chunk_samples - samples.size % chunk_samples))
             state.pending_samples = np.empty((0,), dtype=np.float32)
@@ -200,8 +201,12 @@ class CoreMlNemotronEngine:
             state.pending_samples = samples[complete_samples:].copy()
         for start in range(0, process_samples.size, chunk_samples):
             chunk = process_samples[start : start + chunk_samples][None, :]
+            chunk_valid_samples = min(chunk_samples, max(0, valid_samples - start))
             prep = self._sessions["preprocessor"].run(
-                {"audio": chunk, "audio_length": np.asarray([chunk_samples], dtype=np.int32)}
+                {
+                    "audio": chunk,
+                    "audio_length": np.asarray([chunk_valid_samples], dtype=np.int32),
+                }
             )
             mel = np.asarray(_output(prep, "mel", "features", "processed_signal"), dtype=np.float32)
             mel = mel[..., :chunk_frames]

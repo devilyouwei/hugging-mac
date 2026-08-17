@@ -85,3 +85,44 @@ class DetectionResponse(BaseModel):
     image_size: ImageSize
     detections: tuple[Detection, ...]
     timings: DetectionTimings = DetectionTimings()
+
+
+class Point2D(BaseModel):
+    """A runtime-neutral point in source-image pixel coordinates."""
+
+    model_config = ConfigDict(frozen=True)
+
+    x: float
+    y: float
+
+
+class FaceLandmarks5(BaseModel):
+    """RetinaFace's canonical five landmarks, ordered by the subject's anatomy."""
+
+    model_config = ConfigDict(frozen=True)
+
+    left_eye: Point2D
+    right_eye: Point2D
+    nose: Point2D
+    left_mouth: Point2D
+    right_mouth: Point2D
+
+
+class FaceDetection(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    box: BoundingBox
+    confidence: float = Field(ge=0.0, le=1.0)
+    landmarks: FaceLandmarks5
+
+
+class FaceDetectionResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_id: str
+    instance_id: str
+    runtime: str
+    device: str
+    image_size: ImageSize
+    faces: tuple[FaceDetection, ...]
+    timings: DetectionTimings = DetectionTimings()

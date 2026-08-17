@@ -1317,6 +1317,7 @@ vad = [
 vision = [
     { name = "einops" },
     { name = "onnx" },
+    { name = "onnx2torch" },
     { name = "onnxruntime" },
     { name = "opencv-python" },
     { name = "timm" },
@@ -1367,6 +1368,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'tts'", specifier = ">=2.0,<2.4" },
     { name = "numpy", marker = "extra == 'vad'", specifier = ">=2,<2.4" },
     { name = "onnx", marker = "extra == 'vision'", specifier = ">=1.18,<2" },
+    { name = "onnx2torch", marker = "extra == 'vision'", specifier = ">=1.5,<2" },
     { name = "onnxruntime", marker = "extra == 'vad'", specifier = ">=1.22,<2" },
     { name = "onnxruntime", marker = "extra == 'vision'", specifier = ">=1.22,<2" },
     { name = "opencv-python", marker = "extra == 'vision'", specifier = ">=4.11,<5" },
@@ -2846,6 +2848,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b8/8a/da2a97ab46fe6e0cd9beb3ac14603a22f5be492f9ca347faf8233a07bb33/onnx-1.22.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:2632406b8f523ef2e2873c363f90b20a3d88c0fbcfac757d3addffccf8f452c2", size = 19110420, upload-time = "2026-06-15T12:49:57.665Z" },
     { url = "https://files.pythonhosted.org/packages/b9/a3/ce984063017518307ebfaa545782fc400e593dc2d7fdf4f23ce4be1ed197/onnx-1.22.0-cp314-cp314t-win_amd64.whl", hash = "sha256:a3a39fc4643867aecb33417fdddb11e308ee79d2d4a584b9d50cc7aec2091b13", size = 17237547, upload-time = "2026-06-15T12:50:00.382Z" },
     { url = "https://files.pythonhosted.org/packages/00/50/257a880384a1dd502d543b0067945074d63cd17d0840e958355bc8197da8/onnx-1.22.0-cp314-cp314t-win_arm64.whl", hash = "sha256:8e268cdc0547e3949799ffd4a44451dc2b9080b57d0824a2db680b6ec65506f0", size = 17231391, upload-time = "2026-06-15T12:50:03.047Z" },
+]
+
+[[package]]
+name = "onnx2torch"
+version = "1.5.15"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "onnx" },
+    { name = "torch" },
+    { name = "torchvision" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/06/51/bb56a5dfee431aa61f13a297e33f6ae0654e55d3ba93d62b88b673182af3/onnx2torch-1.5.15.tar.gz", hash = "sha256:d2a239cf0871cbbeec13d43e2a72ac2f8b3c8dcf80695e4d1040c3deed2b14a2", size = 49786, upload-time = "2024-08-07T14:04:01.076Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/84/80/cec13a9bcb7525cbd941958037ccb5cd499e8466915130f3d2ee3772d34f/onnx2torch-1.5.15-py3-none-any.whl", hash = "sha256:123258e0f147e07b259cf845c8113c5634b8260e52c5fb26b7d507226732d9e5", size = 80965, upload-time = "2024-08-07T14:04:09.985Z" },
 ]
 
 [[package]]

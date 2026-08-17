@@ -68,6 +68,12 @@ from hugging_mac_sdk.schemas.detection import (
     DetectionResponse,
     ImageInput,
 )
+from hugging_mac_sdk.schemas.hand import (
+    HandDetectionRequest,
+    HandDetectionResponse,
+    HandLandmark,
+    HandResult,
+)
 from hugging_mac_sdk.schemas.health import HealthReport, HealthStatus
 from hugging_mac_sdk.schemas.manifest import ModelManifest, ModelVariantSpec, RuntimeSpec
 from hugging_mac_sdk.schemas.pose import Keypoint, Pose, PoseEstimationResponse, PoseRequest
@@ -150,6 +156,10 @@ __all__ = [
     "DeviceKind",
     "DownloadError",
     "DownloadProgress",
+    "HandDetectionRequest",
+    "HandDetectionResponse",
+    "HandLandmark",
+    "HandResult",
     "HealthReport",
     "HealthStatus",
     "HuggingFaceSource",

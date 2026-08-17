@@ -10,7 +10,12 @@ from collections.abc import AsyncIterator
 from typing import Protocol, TypeVar
 
 from hugging_mac_sdk.schemas.chat import ChatRequest, ChatResponse, ChatStreamEvent
-from hugging_mac_sdk.schemas.detection import DetectionRequest, DetectionResponse
+from hugging_mac_sdk.schemas.detection import (
+    DetectionRequest,
+    DetectionResponse,
+    FaceDetectionResponse,
+)
+from hugging_mac_sdk.schemas.hand import HandDetectionRequest, HandDetectionResponse
 from hugging_mac_sdk.schemas.pose import PoseEstimationResponse, PoseRequest
 from hugging_mac_sdk.schemas.segmentation import SegmentationRequest, SegmentationResponse
 from hugging_mac_sdk.schemas.speech_enhancement import (
@@ -44,6 +49,18 @@ class ObjectDetection(Protocol):
     """Detect objects in an image or image batch."""
 
     async def detect(self, request: DetectionRequest) -> DetectionResponse: ...
+
+
+class FaceDetection(Protocol):
+    """Detect faces and their canonical five alignment landmarks."""
+
+    async def detect_faces(self, request: DetectionRequest) -> FaceDetectionResponse: ...
+
+
+class HandDetection(Protocol):
+    """Detect hands and optionally estimate 21 landmarks through one model interface."""
+
+    async def detect_hands(self, request: HandDetectionRequest) -> HandDetectionResponse: ...
 
 
 class PoseEstimation(Protocol):

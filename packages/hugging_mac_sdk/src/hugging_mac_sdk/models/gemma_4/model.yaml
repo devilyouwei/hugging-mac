@@ -1,0 +1,67 @@
+manifest:
+  schema_version: "1"
+  model_id: google/gemma-4
+  revision: variant-pinned
+  display_name: Gemma 4
+  description: Apple Silicon Gemma 4 multimodal chat models using QAT OptiQ mixed precision.
+  tags: [llm, vlm, chat, gemma-4, mlx, qat, optiq, 4bit]
+  family: gemma-4
+  capabilities: [chat]
+  runtimes:
+    - name: mlx
+      devices: [gpu]
+      dtypes: [uint4, uint8, bfloat16]
+      quantizations: [4bit]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [mlx, mlx_vlm]
+  variants:
+    - name: e4b
+      display_name: Gemma 4 E4B IT QAT OptiQ 4-bit
+      description: E4B instruction-tuned QAT checkpoint with OptiQ mixed precision and a vision sidecar.
+      metadata: {effective_parameter_count_billions: 4.5, total_parameter_count_billions: 8, quantization_bits: 4, bits_per_weight: 5.17, quantization_group_size: 64, disk_size_bytes: 8467311462, multimodal: true, quantization_method: optiq, quantization_aware_trained: true, mixed_precision_8bit_components: 221, mixed_precision_4bit_components: 122}
+      resources:
+        - kind: huggingface
+          repo_id: mlx-community/gemma-4-e4b-it-qat-OptiQ-4bit
+          revision: b5f52d33150fd5856c9de2d0b8c54438c266d28a
+          allow_patterns: [config.json, generation_config.json, model*.safetensors, model.safetensors.index.json, optiq_metadata.json, chat_template.jinja, "optiq/*.safetensors"]
+    - name: e2b
+      display_name: Gemma 4 E2B IT QAT OptiQ 4-bit
+      description: E2B instruction-tuned QAT checkpoint with OptiQ mixed precision and a vision sidecar.
+      metadata: {effective_parameter_count_billions: 2.3, total_parameter_count_billions: 5.1, quantization_bits: 4, quantization_group_size: 64, disk_size_bytes: 6205876170, multimodal: true, quantization_method: optiq, quantization_aware_trained: true}
+      resources:
+        - kind: huggingface
+          repo_id: mlx-community/gemma-4-e2b-it-qat-OptiQ-4bit
+          revision: b7a34a6d76bbebebe700ffe68b57c97a4e3c3622
+          allow_patterns: [config.json, generation_config.json, model*.safetensors, model.safetensors.index.json, optiq_metadata.json, chat_template.jinja, "optiq/*.safetensors"]
+  default_variant: e4b
+  license: Apache-2.0
+  source_url: https://huggingface.co/google/gemma-4-E4B-it
+  default_runtime: mlx
+artifacts:
+  - artifact_id: mlx-optiq-4bit
+    variant: e4b
+    runtime: mlx
+    format: mlx
+    path: google/gemma-4/e4b/b5f52d33150fd5856c9de2d0b8c54438c266d28a/mlx/model
+    kind: directory
+    source: {kind: huggingface, repo_id: mlx-community/gemma-4-e4b-it-qat-OptiQ-4bit, revision: b5f52d33150fd5856c9de2d0b8c54438c266d28a, allow_patterns: [config.json, generation_config.json, model*.safetensors, model.safetensors.index.json, optiq_metadata.json, chat_template.jinja, "optiq/*.safetensors"]}
+  - artifact_id: mlx-optiq-4bit
+    variant: e2b
+    runtime: mlx
+    format: mlx
+    path: google/gemma-4/e2b/b7a34a6d76bbebebe700ffe68b57c97a4e3c3622/mlx/model
+    kind: directory
+    source: {kind: huggingface, repo_id: mlx-community/gemma-4-e2b-it-qat-OptiQ-4bit, revision: b7a34a6d76bbebebe700ffe68b57c97a4e3c3622, allow_patterns: [config.json, generation_config.json, model*.safetensors, model.safetensors.index.json, optiq_metadata.json, chat_template.jinja, "optiq/*.safetensors"]}
+  - artifact_id: tokenizer
+    variant: e4b
+    runtime: mlx
+    format: tokenizer
+    path: google/gemma-4/shared/tokenizer/b5f52d33150fd5856c9de2d0b8c54438c266d28a
+    kind: directory
+    shared: true
+    source:
+      kind: huggingface
+      repo_id: mlx-community/gemma-4-e4b-it-qat-OptiQ-4bit
+      revision: b5f52d33150fd5856c9de2d0b8c54438c266d28a
+      allow_patterns: [tokenizer.json, tokenizer_config.json]

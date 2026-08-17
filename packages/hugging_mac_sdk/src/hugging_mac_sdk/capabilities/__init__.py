@@ -2,6 +2,8 @@
 
 from hugging_mac_sdk.capabilities.protocols import (
     Chat,
+    FaceDetection,
+    HandDetection,
     ImageEmbedding,
     ImageTextSimilarity,
     InstanceSegmentation,
@@ -18,6 +20,8 @@ from hugging_mac_sdk.capabilities.protocols import (
 
 __all__ = [
     "Chat",
+    "FaceDetection",
+    "HandDetection",
     "ImageEmbedding",
     "ImageTextSimilarity",
     "InstanceSegmentation",

@@ -123,6 +123,8 @@ async def test_instance_preserves_a_streaming_session_across_audio_chunks(
 async def test_coreml_engine_buffers_partial_chunks_and_keeps_decoder_state(
     tmp_path: Path,
 ) -> None:
+    audio_lengths: list[int] = []
+
     class FakeSession:
         def __init__(self, kind: str) -> None:
             self.kind = kind
@@ -130,6 +132,7 @@ async def test_coreml_engine_buffers_partial_chunks_and_keeps_decoder_state(
 
         def run(self, inputs: dict[str, object]) -> dict[str, np.ndarray]:
             if self.kind == "preprocessor":
+                audio_lengths.append(int(np.asarray(inputs["audio_length"])[0]))
                 return {"mel": np.zeros((1, 1, 1), dtype=np.float32)}
             if self.kind == "encoder":
                 return {
@@ -190,4 +193,14 @@ async def test_coreml_engine_buffers_partial_chunks_and_keeps_decoder_state(
     assert second.delta == "hello"
     assert final.text == "hello"
     assert final.delta == ""
+    assert audio_lengths == [160]
+
+    await engine.start_stream("short")
+    partial = await engine.infer_stream(
+        "short", PreparedAudio(np.zeros(80, dtype=np.float32), 16000, 0.005)
+    )
+    await engine.finish_stream("short")
+
+    assert partial.text == ""
+    assert audio_lengths[-1] == 80
     await engine.close()

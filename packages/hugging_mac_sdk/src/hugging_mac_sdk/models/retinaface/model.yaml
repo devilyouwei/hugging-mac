@@ -1,0 +1,56 @@
+manifest:
+  schema_version: "1"
+  model_id: py-feat/retinaface
+  revision: 31702389094fccc7060c15299e6ad712ee880de6
+  display_name: RetinaFace MobileNet0.25
+  description: py-feat 的轻量 RetinaFace，单次推理输出人脸框和五点关键点。
+  tags: [vision, face-detection, face-landmarks, pytorch, coreml, mobilenet]
+  family: retinaface
+  capabilities: [face-detection]
+  runtimes:
+    - name: pytorch-mps
+      devices: [mps, cpu]
+      dtypes: [float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [torch]
+    - name: coreml
+      devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
+      dtypes: [float16, float32]
+      platforms: [darwin]
+      architectures: [arm64]
+      required_modules: [coremltools, numpy]
+  variants:
+    - name: mobilenet0.25
+      display_name: MobileNet0.25
+      description: 约 43 万参数的轻量 RetinaFace，输入默认 640×640。
+      metadata: {parameters: 426608, landmarks: 5, input_size: 640}
+      resources:
+        - kind: huggingface
+          repo_id: py-feat/retinaface
+          revision: 31702389094fccc7060c15299e6ad712ee880de6
+          allow_patterns: [config.json, mobilenet0.25_Final.pth]
+  default_variant: mobilenet0.25
+  license: MIT
+  source_url: https://huggingface.co/py-feat/retinaface
+  default_runtime: coreml
+
+artifacts:
+  - artifact_id: source
+    variant: mobilenet0.25
+    runtime: pytorch-mps
+    format: pytorch
+    path: py-feat/retinaface/31702389094fccc7060c15299e6ad712ee880de6/mobilenet0.25/source/model
+    kind: directory
+    source:
+      kind: huggingface
+      repo_id: py-feat/retinaface
+      revision: 31702389094fccc7060c15299e6ad712ee880de6
+      allow_patterns: [config.json, mobilenet0.25_Final.pth]
+  - artifact_id: coreml-fp16
+    variant: mobilenet0.25
+    runtime: coreml
+    format: coreml
+    path: py-feat/retinaface/31702389094fccc7060c15299e6ad712ee880de6/mobilenet0.25/coreml/retinaface.mlpackage
+    kind: directory
+    convert: true
