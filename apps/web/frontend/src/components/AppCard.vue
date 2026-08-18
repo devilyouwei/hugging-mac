@@ -15,6 +15,7 @@ const icon = computed(() => {
     "yolo-fruit-slice": "🍉",
     "live-transcription": "🎙️",
     "text-to-speech": "🔊",
+    chat: "💬",
   }
   return icons[props.app.manifest.app_id] ?? "🧩"
 })
