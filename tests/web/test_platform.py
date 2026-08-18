@@ -42,9 +42,6 @@ from hugging_mac_sdk.schemas.segmentation import (
 )
 from hugging_mac_web.chat.schemas import ChatReplyView, ChatStreamEventView
 from hugging_mac_web.config import WebSettings
-from hugging_mac_web.context import create_context
-from hugging_mac_web.digital_human_clone.config import DigitalHumanSettings
-from hugging_mac_web.digital_human_clone.service import DigitalHumanService
 from hugging_mac_web.live_transcription.config import (
     AUDIO8_PROFILE,
     NEMOTRON_3_5_ASR_PROFILE,
@@ -213,14 +210,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert all(item["supports_images"] for item in chat_models.json()["data"])
     assert games.status_code == 200
     game_summaries = {item["manifest"]["app_id"]: item for item in games.json()["data"]}
-    assert set(game_summaries) == {"digital-human", "yolo-fruit-slice", "yolo-pose-follow"}
-    assert game_summaries["digital-human"]["manifest"]["category"] == "game"
-    assert game_summaries["digital-human"]["status"] == "available"
-    digital_human_models = {
-        item["model_id"] for item in game_summaries["digital-human"]["manifest"]["required_models"]
-    }
-    assert "hexgrad/kokoro" in digital_human_models
-    assert "mlx-community/audio8-tts-preview-0.6b-bf16" not in digital_human_models
+    assert set(game_summaries) == {"yolo-fruit-slice", "yolo-pose-follow"}
     assert game_summaries["yolo-pose-follow"]["manifest"]["category"] == "game"
     assert game_summaries["yolo-pose-follow"]["status"] == "available"
     fruit_slice = game_summaries["yolo-fruit-slice"]
@@ -265,12 +255,6 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert "/api/v1/games/yolo-pose-follow/templates" in openapi.json()["paths"]
     assert "/api/v1/games/yolo-pose-follow/match" in openapi.json()["paths"]
     assert "/api/v1/games/yolo-fruit-slice/status" in openapi.json()["paths"]
-    assert "/api/v1/games/digital-human/setup" in openapi.json()["paths"]
-    assert "/api/v1/games/digital-human/setup/load" in openapi.json()["paths"]
-    assert "/api/v1/games/digital-human/setup/prepare" not in openapi.json()["paths"]
-    assert "/api/v1/games/digital-human/voice/register" not in openapi.json()["paths"]
-    assert "/api/v1/games/digital-human/chat/stream" in openapi.json()["paths"]
-    assert "/api/v1/games/digital-human/synthesize" in openapi.json()["paths"]
     model = next(item for item in models.json()["data"] if item["model_id"] == "ultralytics/yolov8")
     silero = next(
         item for item in models.json()["data"] if item["model_id"] == "snakers4/silero-vad"
@@ -682,7 +666,7 @@ def _streaming_view(*, is_final: bool, delta: str) -> StreamingTranscriptionView
     )
 
 
-def test_digital_human_streams_nemotron_over_websocket(
+def test_chat_streams_nemotron_over_websocket(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
@@ -711,7 +695,7 @@ def test_digital_human_streams_nemotron_over_websocket(
 
     with (
         TestClient(app) as client,
-        client.websocket_connect("/api/v1/games/digital-human/asr/ws") as socket,
+        client.websocket_connect("/api/v1/apps/chat/asr/ws") as socket,
     ):
         socket.send_json(
             {
@@ -830,59 +814,6 @@ def test_text_to_speech_returns_playable_wave(
     assert response.headers["content-type"] == "audio/wav"
     assert response.headers["x-runtime"] == "pytorch-mps"
     assert response.content.startswith(b"RIFF")
-
-
-def test_digital_human_uses_runtime_preference_and_declared_kokoro_variant(
-    tmp_path: Path,
-) -> None:
-    context = create_context(_settings(tmp_path))
-    specs = DigitalHumanService(context, DigitalHumanSettings())._model_specs("4b")
-
-    assert specs[0] == (
-        "asr",
-        "nvidia/nemotron-3.5-asr-streaming-0.6b",
-        "multilingual-2240ms",
-        "coreml",
-    )
-    assert specs[2] == (
-        "tts",
-        "hexgrad/kokoro",
-        "v1.0",
-        "coreml",
-    )
-
-
-def test_digital_human_supports_nemotron_streaming_asr(tmp_path: Path) -> None:
-    context = create_context(_settings(tmp_path))
-    service = DigitalHumanService(context, DigitalHumanSettings())
-    model_id = "nvidia/nemotron-3.5-asr-streaming-0.6b"
-
-    specs = service._model_specs("4b", model_id)
-    options = {item.model_id: item for item in service._asr_models()}
-
-    assert specs[0] == (
-        "asr",
-        model_id,
-        "multilingual-2240ms",
-        "coreml",
-    )
-    assert options[model_id].streaming is True
-    assert options[model_id].streaming_chunk_seconds == 2.24
-
-
-def test_digital_human_supports_gemma_4_llm(tmp_path: Path) -> None:
-    context = create_context(_settings(tmp_path))
-    service = DigitalHumanService(context, DigitalHumanSettings())
-
-    specs = service._model_specs(
-        "e4b",
-        llm_model_id="google/gemma-4",
-    )
-    variants = {(item.model_id, item.name) for item in service._llm_variants()}
-
-    assert specs[1] == ("llm", "google/gemma-4", "e4b", "mlx")
-    assert ("google/gemma-4", "e4b") in variants
-    assert ("google/gemma-4", "e2b") in variants
 
 
 def test_text_to_speech_returns_actionable_inference_reason(

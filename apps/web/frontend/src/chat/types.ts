@@ -52,5 +52,29 @@ export interface ConversationMessage {
   role: "user" | "assistant"
   content: string
   images: Array<{ name: string; url: string }>
-  meta?: string
+  audio?: {
+    status: "generating" | "ready"
+    url: string | null
+    durationSeconds: number
+  }
+  status?: "complete" | "streaming" | "interrupted"
+  source?: "text" | "asr"
+  asrTiming?: {
+    totalMs: number
+    vadMs: number
+    enhancementMs: number | null
+    inferenceMs: number | null
+  }
+  llmTiming?: {
+    runtime: string
+    generatedTokens: number | null
+    inferenceMs: number | null
+    tokensPerSecond: number | null
+  }
+  ttsTiming?: {
+    runtime: string
+    segmentCount: number
+    firstAudioMs: number
+    slowestSegmentMs: number
+  }
 }

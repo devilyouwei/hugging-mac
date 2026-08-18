@@ -20,5 +20,17 @@ CHAT_MANIFEST = AppManifest(
             capabilities=("chat",),
             preferred_runtime="mlx",
         ),
+        AppModelRequirement(
+            model_id="nvidia/nemotron-3.5-asr-streaming-0.6b",
+            capabilities=("streaming-speech-transcription",),
+            preferred_runtime="coreml",
+            required=False,
+        ),
+        AppModelRequirement(
+            model_id="hexgrad/kokoro",
+            capabilities=("speech-synthesis",),
+            preferred_runtime="coreml",
+            required=False,
+        ),
     ),
 )

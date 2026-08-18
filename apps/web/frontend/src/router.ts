@@ -34,11 +34,6 @@ const router = createRouter({
       component: () => import("./yolo_fruit_slice/index.vue"),
     },
     {
-      path: "/games/digital-human",
-      name: "digital-human",
-      component: () => import("./digital_human_clone/index.vue"),
-    },
-    {
       path: "/apps/chat",
       name: "chat",
       component: () => import("./chat/index.vue"),

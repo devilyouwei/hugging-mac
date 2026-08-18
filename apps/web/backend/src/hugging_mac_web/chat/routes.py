@@ -7,11 +7,22 @@ import contextlib
 import io
 import json
 import tempfile
+import wave
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.responses import StreamingResponse
 from PIL import Image, UnidentifiedImageError
 from pydantic import TypeAdapter, ValidationError
@@ -26,6 +37,12 @@ from hugging_mac_web.chat.schemas import (
 )
 from hugging_mac_web.chat.service import ChatService
 from hugging_mac_web.dependencies import ContextDependency
+from hugging_mac_web.live_transcription.config import (
+    NEMOTRON_3_5_ASR_PROFILE,
+    LiveTranscriptionSettings,
+)
+from hugging_mac_web.live_transcription.schemas import StreamingSessionView
+from hugging_mac_web.live_transcription.service import LiveTranscriptionService
 from hugging_mac_web.schemas import ApiResponse, ResponseMeta
 from hugging_mac_web.shared.utils.sse_util import SseEvent
 from hugging_mac_web.shared.utils.time_util import utc_now
@@ -60,6 +77,112 @@ def create_router(settings: ChatSettings) -> APIRouter:
             request.model_id if request is not None else settings.model_variant
         )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
+
+    @router.websocket("/asr/ws")
+    async def asr_websocket(websocket: WebSocket, context: ContextDependency) -> None:
+        await websocket.accept()
+        live = LiveTranscriptionService(context, LiveTranscriptionSettings())
+        session: StreamingSessionView | None = None
+        utterance_id: int | None = None
+        sample_rate = 0
+        utterance_bytes = 0
+        try:
+            while True:
+                message = await websocket.receive()
+                if message["type"] == "websocket.disconnect":
+                    break
+                if message.get("text") is not None:
+                    payload = json.loads(message["text"])
+                    message_type = payload.get("type")
+                    if message_type == "start_utterance":
+                        if session is not None:
+                            raise ValueError("An ASR utterance is already active")
+                        sample_rate = int(payload.get("sample_rate", 0))
+                        utterance_id = int(payload.get("utterance_id", 0))
+                        if not 8_000 <= sample_rate <= 192_000:
+                            raise ValueError("Invalid PCM sample rate")
+                        session = await live.start_stream(
+                            model_id=NEMOTRON_3_5_ASR_PROFILE.model_id,
+                            instance_id=str(payload.get("instance_id", "")),
+                        )
+                        utterance_bytes = 0
+                        await websocket.send_json(
+                            {
+                                "type": "ready",
+                                "utterance_id": utterance_id,
+                                **session.model_dump(mode="json"),
+                            }
+                        )
+                    elif message_type == "finish_utterance":
+                        if session is None:
+                            raise ValueError("No ASR utterance is active")
+                        response = await live.finish_stream(
+                            model_id=NEMOTRON_3_5_ASR_PROFILE.model_id,
+                            instance_id=session.instance_id,
+                            session_id=session.session_id,
+                        )
+                        session = None
+                        utterance_bytes = 0
+                        await websocket.send_json(
+                            {
+                                "type": "final",
+                                "utterance_id": utterance_id,
+                                **response.model_dump(mode="json"),
+                            }
+                        )
+                        utterance_id = None
+                    elif message_type == "cancel_utterance":
+                        if session is not None:
+                            await live.cancel_stream(
+                                model_id=NEMOTRON_3_5_ASR_PROFILE.model_id,
+                                instance_id=session.instance_id,
+                                session_id=session.session_id,
+                            )
+                            session = None
+                            utterance_bytes = 0
+                        await websocket.send_json(
+                            {
+                                "type": "cancelled",
+                                "utterance_id": payload.get("utterance_id"),
+                            }
+                        )
+                    else:
+                        raise ValueError("Unsupported ASR WebSocket message")
+                    continue
+                audio = message.get("bytes")
+                if audio is None or session is None:
+                    raise ValueError("Binary PCM requires an active ASR utterance")
+                utterance_bytes += len(audio)
+                if utterance_bytes > context.settings.max_upload_bytes:
+                    raise ValueError("ASR utterance exceeds the configured audio limit")
+                response = await live.transcribe_stream_chunk(
+                    _pcm16_to_wav(audio, sample_rate),
+                    model_id=NEMOTRON_3_5_ASR_PROFILE.model_id,
+                    instance_id=session.instance_id,
+                    session_id=session.session_id,
+                )
+                await websocket.send_json(
+                    {
+                        "type": "partial",
+                        "utterance_id": utterance_id,
+                        **response.model_dump(mode="json"),
+                    }
+                )
+        except WebSocketDisconnect:
+            pass
+        except Exception as error:
+            with contextlib.suppress(RuntimeError):
+                await websocket.send_json({"type": "error", "message": str(error)[:500]})
+        finally:
+            if session is not None:
+                with contextlib.suppress(Exception):
+                    await live.cancel_stream(
+                        model_id=NEMOTRON_3_5_ASR_PROFILE.model_id,
+                        instance_id=session.instance_id,
+                        session_id=session.session_id,
+                    )
+            with contextlib.suppress(RuntimeError):
+                await websocket.close()
 
     @router.post("/messages", response_model=ApiResponse[ChatReplyView])
     async def send_message(
@@ -164,6 +287,16 @@ def create_router(settings: ChatSettings) -> APIRouter:
         )
 
     return router
+
+
+def _pcm16_to_wav(audio: bytes, sample_rate: int) -> bytes:
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(audio)
+    return output.getvalue()
 
 
 def _parse_history(value: str, character_limit: int) -> tuple[ChatHistoryMessage, ...]:

@@ -16,9 +16,6 @@ from hugging_mac_web.app_blueprint import AppBlueprint
 from hugging_mac_web.chat import create_blueprint as create_chat_blueprint
 from hugging_mac_web.config import WebSettings
 from hugging_mac_web.context import create_context
-from hugging_mac_web.digital_human_clone import (
-    create_blueprint as create_digital_human_blueprint,
-)
 from hugging_mac_web.error_handlers import install_error_handlers
 from hugging_mac_web.index import create_index_router
 from hugging_mac_web.instance_segmentation import (
@@ -81,7 +78,6 @@ def create_app(
             create_chat_blueprint(),
             create_pose_follow_blueprint(),
             create_fruit_slice_blueprint(),
-            create_digital_human_blueprint(),
         )
     )
     registered_blueprints = tuple(
