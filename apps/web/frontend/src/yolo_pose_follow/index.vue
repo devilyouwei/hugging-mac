@@ -9,9 +9,10 @@ import type { PoseResult } from "@/pose_estimation/types"
 import type { ResourceStatus } from "@/vision/types"
 import { errorMessage, loadSharedModel, unloadModel } from "@/modelLifecycle"
 
-import { fetchPoseTemplates, matchPose } from "./api"
+import { fetchPoseTemplates, matchGesture, matchPose } from "./api"
+import GestureFigure from "./GestureFigure.vue"
 import PoseFigure from "./PoseFigure.vue"
-import type { PoseMatch, PoseTemplate } from "./types"
+import type { GestureMatch, GestureName, GestureTarget, HandSide, PoseMatch, PoseTemplate } from "./types"
 
 type GamePhase = "lobby" | "preparing" | "playing" | "round-result" | "finished"
 type Difficulty = "easy" | "normal" | "hard" | "expert"
@@ -22,12 +23,16 @@ const LEVELS: Record<Difficulty, {
   startMs: number
   endMs: number
   maxPoseDifficulty: number
+  gestureChance: number
 }> = {
-  easy: { label: "Easy", rounds: 8, startMs: 3000, endMs: 2200, maxPoseDifficulty: 2 },
-  normal: { label: "Normal", rounds: 12, startMs: 2600, endMs: 1700, maxPoseDifficulty: 3 },
-  hard: { label: "Hard", rounds: 16, startMs: 2200, endMs: 1250, maxPoseDifficulty: 4 },
-  expert: { label: "Expert", rounds: 24, startMs: 1800, endMs: 900, maxPoseDifficulty: 4 },
+  easy: { label: "Easy", rounds: 8, startMs: 3000, endMs: 2200, maxPoseDifficulty: 2, gestureChance: 0.2 },
+  normal: { label: "Normal", rounds: 12, startMs: 2600, endMs: 1700, maxPoseDifficulty: 3, gestureChance: 0.35 },
+  hard: { label: "Hard", rounds: 16, startMs: 2200, endMs: 1250, maxPoseDifficulty: 4, gestureChance: 0.5 },
+  expert: { label: "Expert", rounds: 24, startMs: 1800, endMs: 900, maxPoseDifficulty: 4, gestureChance: 0.65 },
 }
+
+const GESTURES: GestureName[] = ["open-palm", "fist", "victory", "point"]
+const HAND_SIDES: HandSide[] = ["left", "right"]
 
 const video = ref<HTMLVideoElement | null>(null)
 const stream = ref<MediaStream | null>(null)
@@ -41,6 +46,8 @@ const roundIndex = ref(0)
 const target = ref<PoseTemplate | null>(null)
 const result = ref<PoseResult | null>(null)
 const poseMatch = ref<PoseMatch | null>(null)
+const gestureTarget = ref<GestureTarget | null>(null)
+const gestureMatch = ref<GestureMatch | null>(null)
 const score = ref(0)
 const combo = ref(0)
 const bestCombo = ref(0)
@@ -77,7 +84,8 @@ function currentRoundDuration(): number {
   const level = selectedLevel.value
   if (level.rounds <= 1) return level.endMs
   const position = Math.max(0, roundIndex.value - 1) / (level.rounds - 1)
-  return Math.round(level.startMs + (level.endMs - level.startMs) * position)
+  const base = Math.round(level.startMs + (level.endMs - level.startMs) * position)
+  return base + (gestureTarget.value ? 700 : 0)
 }
 
 function playTone(kind: "tick" | "go" | "success" | "fail") {
@@ -214,6 +222,8 @@ async function startGame() {
   roundIndex.value = 0
   result.value = null
   poseMatch.value = null
+  gestureTarget.value = null
+  gestureMatch.value = null
   prepCount.value = 3
   for (let count = 3; count > 0; count -= 1) {
     if (generation !== gameGeneration) return
@@ -237,6 +247,14 @@ function chooseTemplate(): PoseTemplate {
   return selected
 }
 
+function chooseGestureTarget(): GestureTarget | null {
+  if (Math.random() >= selectedLevel.value.gestureChance) return null
+  return {
+    hand: HAND_SIDES[Math.floor(Math.random() * HAND_SIDES.length)]!,
+    gesture: GESTURES[Math.floor(Math.random() * GESTURES.length)]!,
+  }
+}
+
 function startNextRound(generation: number) {
   if (generation !== gameGeneration) return
   if (roundIndex.value >= selectedLevel.value.rounds) {
@@ -244,8 +262,10 @@ function startNextRound(generation: number) {
     return
   }
   roundIndex.value += 1
-  target.value = chooseTemplate()
+  gestureTarget.value = chooseGestureTarget()
+  target.value = gestureTarget.value ? null : chooseTemplate()
   poseMatch.value = null
+  gestureMatch.value = null
   matchedFrames = 0
   roundOutcome.value = null
   phase.value = "playing"
@@ -270,7 +290,8 @@ function completeRound(success: boolean, generation: number) {
     combo.value += 1
     bestCombo.value = Math.max(bestCombo.value, combo.value)
     successCount.value += 1
-    score.value += 100 + speedBonus + Math.min(combo.value, 10) * 15
+    const gestureBonus = gestureTarget.value ? 50 : 0
+    score.value += 100 + gestureBonus + speedBonus + Math.min(combo.value, 10) * 15
     playTone("success")
   } else {
     combo.value = 0
@@ -282,7 +303,7 @@ function completeRound(success: boolean, generation: number) {
 async function inferenceLoop(generation: number) {
   let lastMediaTime = -1
   while (generation === gameGeneration && phase.value !== "finished" && video.value) {
-    if (phase.value !== "playing" || !target.value) {
+    if (phase.value !== "playing" || (!target.value && !gestureTarget.value)) {
       await new Promise((resolve) => window.setTimeout(resolve, 50))
       continue
     }
@@ -291,28 +312,57 @@ async function inferenceLoop(generation: number) {
         await waitForNextVideoFrame(video.value)
       }
       lastMediaTime = video.value.currentTime
-      const frame = await captureVideoFrame(video.value, canvas, "pose-follow-frame.jpg")
+      const frame = await captureVideoFrame(video.value, canvas, "pose-follow-frame.jpg", {
+        mirror: true,
+      })
+      const currentPoseTarget = target.value
+      const currentGestureTarget = gestureTarget.value
       inferenceRequest = new AbortController()
       const nextResult = await estimatePoses(frame, {
         runtime: "auto",
         variant: "m",
         confidence: 0.28,
         iouThreshold: 0.7,
-        maxDetections: 1,
+        maxDetections: currentGestureTarget ? 2 : 1,
+        poseEnabled: Boolean(currentPoseTarget),
+        faceEnabled: false,
+        handEnabled: Boolean(currentGestureTarget),
+        handConfidence: 0.6,
+        handLandmarksEnabled: Boolean(currentGestureTarget),
+        handLandmarkConfidence: 0.55,
+        handInputMirrored: true,
       }, { signal: inferenceRequest.signal, cacheInput: false })
       if (generation !== gameGeneration) return
       result.value = nextResult
-      const person = nextResult.poses[0]
-      if (!person || !target.value || phase.value !== "playing") {
-        poseMatch.value = null
-        matchedFrames = 0
-        continue
-      }
       matchRequest = new AbortController()
-      const nextMatch = await matchPose(target.value.template_id, person, matchRequest.signal)
+      if (currentGestureTarget) {
+        const nextGestureMatch = await matchGesture(
+          currentGestureTarget,
+          nextResult.hands,
+          matchRequest.signal,
+        )
+        if (generation !== gameGeneration || phase.value !== "playing") continue
+        gestureMatch.value = nextGestureMatch
+        poseMatch.value = null
+        matchedFrames = nextGestureMatch.matched ? matchedFrames + 1 : 0
+      } else if (currentPoseTarget) {
+        const person = nextResult.poses[0]
+        if (!person) {
+          poseMatch.value = null
+          matchedFrames = 0
+          continue
+        }
+        const nextMatch = await matchPose(
+          currentPoseTarget.template_id,
+          person,
+          matchRequest.signal,
+        )
+        if (generation !== gameGeneration || phase.value !== "playing") continue
+        poseMatch.value = nextMatch
+        gestureMatch.value = null
+        matchedFrames = nextMatch.matched ? matchedFrames + 1 : 0
+      }
       if (generation !== gameGeneration || phase.value !== "playing") continue
-      poseMatch.value = nextMatch
-      matchedFrames = nextMatch.matched ? matchedFrames + 1 : 0
       if (matchedFrames >= 2) completeRound(true, generation)
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return
@@ -336,6 +386,8 @@ function returnToLobby() {
   phase.value = "lobby"
   target.value = null
   poseMatch.value = null
+  gestureTarget.value = null
+  gestureMatch.value = null
   result.value = null
   roundOutcome.value = null
   timeLeftMs.value = 0
@@ -364,7 +416,7 @@ onBeforeUnmount(() => {
       <section class="game-lobby__intro">
         <p class="kicker">NEURAL CAMERA GAME · YOLOV8 POSE M</p>
         <h1>Follow the pose. <em>Beat the clock.</em></h1>
-        <p>镜头中的你就是控制器。模仿骨架、保持姿势、连续得分，节奏会越来越快。</p>
+        <p>镜头中的你就是控制器。每轮会随机出现身体姿态或左右手手势挑战，一次专注完成一个目标。</p>
         <div class="difficulty-picker" aria-label="选择难度">
           <button
             v-for="(level, key) in LEVELS"
@@ -374,7 +426,7 @@ onBeforeUnmount(() => {
             @click="difficulty = key as Difficulty"
           >
             <strong>{{ level.label }}</strong>
-            <span>{{ level.rounds }} poses · {{ (level.endMs / 1000).toFixed(1) }}s finish</span>
+            <span>{{ level.rounds }} poses · {{ Math.round(level.gestureChance * 100) }}% gestures</span>
           </button>
         </div>
         <div v-if="!sourceReady" class="game-model-setup">
@@ -404,27 +456,32 @@ onBeforeUnmount(() => {
     <main v-else class="game-arena">
       <section class="camera-stage">
         <video ref="video" autoplay muted playsinline></video>
-        <PoseSkeletonLayer :result="result" />
+        <PoseSkeletonLayer :result="result" fit="cover" />
         <div class="camera-vignette"></div>
         <div class="camera-label"><i></i> YOU · LIVE</div>
         <div v-if="poseMatch" class="match-meter">
           <span :style="{ width: `${scorePercent}%` }"></span>
-          <b>{{ scorePercent }}% MATCH</b>
+          <b>POSE {{ scorePercent }}% {{ poseMatch.matched ? "✓" : "" }}</b>
+        </div>
+        <div v-if="gestureTarget" class="gesture-status" :class="{ matched: gestureMatch?.matched }">
+          <b>{{ gestureTarget.hand.toUpperCase() }} HAND</b>
+          <span>{{ gestureMatch?.matched ? "GESTURE MATCH ✓" : gestureMatch?.feedback ?? "SHOW YOUR HAND" }}</span>
         </div>
       </section>
 
-      <section class="target-stage">
-        <div class="target-stage__label">TARGET POSE · {{ String(roundIndex).padStart(2, "0") }}</div>
+      <section class="target-stage" :class="{ 'target-stage--gesture': gestureTarget }">
+        <div class="target-stage__label">TARGET {{ gestureTarget ? "GESTURE" : "POSE" }} · {{ String(roundIndex).padStart(2, "0") }}</div>
         <PoseFigure v-if="target" :pose="target" />
         <div v-if="target" class="target-cue">
           <strong>{{ target.name }}</strong><span>{{ target.cue }}</span>
         </div>
+        <GestureFigure v-if="gestureTarget" :target="gestureTarget" />
       </section>
 
       <div class="game-hud">
         <div><span>SCORE</span><strong>{{ score.toLocaleString() }}</strong></div>
         <div><span>COMBO</span><strong>×{{ combo }}</strong></div>
-        <div><span>POSE</span><strong>{{ roundIndex }}/{{ selectedLevel.rounds }}</strong></div>
+        <div><span>ROUND</span><strong>{{ roundIndex }}/{{ selectedLevel.rounds }}</strong></div>
       </div>
 
       <div class="round-timer" :style="{ '--timer': timerProgress }">
@@ -438,7 +495,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-if="phase === 'round-result'" class="game-overlay game-overlay--result">
         <strong>{{ roundOutcome === "success" ? "NICE!" : "MISS" }}</strong>
-        <span>{{ roundOutcome === "success" ? `+${100 + Math.round(timeLeftMs / 20)}` : "Next pose…" }}</span>
+        <span>{{ roundOutcome === "success" ? `+${100 + (gestureTarget ? 50 : 0) + Math.round(timeLeftMs / 20)}` : "Next pose…" }}</span>
         <i v-for="particle in 18" :key="particle" :style="{ '--i': particle }"></i>
       </div>
       <div v-if="phase === 'finished'" class="game-overlay game-overlay--finished">
@@ -492,7 +549,6 @@ onBeforeUnmount(() => {
 .game-arena { display:grid; grid-template-columns:1.55fr .75fr; height:calc(100vh - 4.2rem); position:relative; }
 .camera-stage { background:#111; overflow:hidden; position:relative; }
 .camera-stage video { height:100%; object-fit:cover; transform:scaleX(-1); width:100%; }
-.camera-stage :deep(.pose-layer) { transform:scaleX(-1); }
 .camera-vignette { background:linear-gradient(90deg,#0005,transparent 30%,transparent 70%,#0007),linear-gradient(0deg,#0009,transparent 28%); inset:0; pointer-events:none; position:absolute; }
 .camera-label,.target-stage__label { font: .62rem var(--font-mono); left:1.4rem; letter-spacing:.09em; position:absolute; top:1.3rem; z-index:3; }
 .camera-label i { animation:pulse 1s infinite; background:#c8ff46; border-radius:50%; display:inline-block; height:.45rem; margin-right:.4rem; width:.45rem; }
@@ -500,7 +556,13 @@ onBeforeUnmount(() => {
 .match-meter::before { background:#ffffff1e; content:""; inset:0; position:absolute; }
 .match-meter span { background:#c8ff46; display:block; height:.32rem; transition:width .2s; }
 .match-meter b { display:block; font: .55rem var(--font-mono); margin-top:.45rem; }
+.gesture-status { background:#0c0d0cbb; border:1px solid #ffb62970; bottom:1.4rem; display:flex; flex-direction:column; gap:.2rem; padding:.65rem .8rem; position:absolute; right:1.5rem; text-align:right; z-index:5; }
+.gesture-status b { color:#ffb629; font:.58rem var(--font-mono); }
+.gesture-status span { color:#bbb; font:.5rem var(--font-mono); }
+.gesture-status.matched { border-color:#c8ff46; }.gesture-status.matched b,.gesture-status.matched span { color:#c8ff46; }
 .target-stage { align-items:center; background:radial-gradient(circle,#c8ff4615,transparent 60%),#151715; border-left:1px solid #ffffff20; display:flex; flex-direction:column; justify-content:center; padding:4rem 2rem 2rem; position:relative; }
+.target-stage--gesture { gap:.65rem; padding-bottom:1rem; padding-top:3rem; }
+.target-stage--gesture :deep(.target-figure) { height:min(30vh,280px); }
 .target-cue { text-align:center; }
 .target-cue strong,.target-cue span { display:block; }
 .target-cue strong { font-size:1.6rem; }
@@ -551,6 +613,8 @@ onBeforeUnmount(() => {
   .game-arena { grid-template-columns:1fr; grid-template-rows:62% 38%; height:calc(100svh - 4.2rem); }
   .target-stage { border-left:0; border-top:1px solid #ffffff20; padding:.5rem 7rem .5rem 1rem; }
   .target-stage :deep(.target-figure) { height:100%; width:50%; }
+  .target-stage--gesture :deep(.target-figure) { height:75%; }
+  .target-stage--gesture :deep(.gesture-target) { position:absolute; right:.6rem; width:38%; }
   .target-cue { position:absolute; right:1rem; width:44%; }
   .target-cue strong { font-size:1.05rem; }
   .game-hud { gap:1rem; left:1rem; }

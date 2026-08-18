@@ -4,8 +4,11 @@ from fastapi import APIRouter, HTTPException, status
 
 from hugging_mac_web.schemas import ApiResponse, ResponseMeta
 from hugging_mac_web.shared.utils.time_util import utc_now
+from hugging_mac_web.yolo_pose_follow.gestures import match_gesture
 from hugging_mac_web.yolo_pose_follow.matching import match_pose
 from hugging_mac_web.yolo_pose_follow.schemas import (
+    GestureMatchRequest,
+    GestureMatchResult,
     MatchRequest,
     MatchResult,
     PointView,
@@ -47,6 +50,15 @@ def create_router() -> APIRouter:
             )
         return ApiResponse(
             data=match_pose(template, request),
+            meta=ResponseMeta(generated_at=utc_now()),
+        )
+
+    @router.post("/match-gesture", response_model=ApiResponse[GestureMatchResult])
+    async def gesture_match(
+        request: GestureMatchRequest,
+    ) -> ApiResponse[GestureMatchResult]:
+        return ApiResponse(
+            data=match_gesture(request),
             meta=ResponseMeta(generated_at=utc_now()),
         )
 

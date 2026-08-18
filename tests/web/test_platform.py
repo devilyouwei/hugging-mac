@@ -195,11 +195,20 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         "coreml",
     }
     chat_model_views = {item["model_id"]: item for item in chat_models.json()["data"]}
-    assert set(chat_model_views) == {"qwen/qwen3.5"}
+    assert set(chat_model_views) == {"qwen/qwen3.5", "google/gemma-4"}
     assert {item["variant"] for item in chat_models.json()["data"]} == {
         "9b",
         "4b",
         "2b",
+        "e4b",
+        "e2b",
+    }
+    assert {item["profile_id"] for item in chat_models.json()["data"]} == {
+        "9b",
+        "4b",
+        "2b",
+        "gemma-4-e4b",
+        "gemma-4-e2b",
     }
     assert all(item["supports_images"] for item in chat_models.json()["data"])
     assert games.status_code == 200

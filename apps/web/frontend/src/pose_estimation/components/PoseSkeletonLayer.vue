@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type { PoseResult } from "../types"
 
-defineProps<{
+const props = withDefaults(defineProps<{
   result: PoseResult | null
-}>()
+  fit?: "fill" | "cover"
+}>(), {
+  fit: "fill",
+})
 
 const skeleton: ReadonlyArray<readonly [number, number]> = [
   [0, 1], [0, 2], [1, 3], [2, 4],
@@ -43,7 +46,7 @@ function boneVisible(
     v-if="result"
     class="pose-layer"
     :viewBox="`0 0 ${result.image_size.width} ${result.image_size.height}`"
-    preserveAspectRatio="none"
+    :preserveAspectRatio="props.fit === 'cover' ? 'xMidYMid slice' : 'none'"
     aria-label="Pose skeleton overlay"
   >
     <g v-for="(pose, poseIndex) in result.poses" :key="poseIndex">
@@ -132,10 +135,12 @@ function boneVisible(
 
 <style scoped>
 .pose-layer {
+  height: 100%;
   inset: 0;
   overflow: visible;
   pointer-events: none;
   position: absolute;
+  width: 100%;
 }
 
 .pose-bone {

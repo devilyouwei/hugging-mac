@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-CHAT_MODEL_ID = "qwen/qwen3.5"
+CHAT_MODEL_IDS = ("qwen/qwen3.5", "google/gemma-4")
 DEFAULT_CHAT_VARIANT = "9b"
 
 

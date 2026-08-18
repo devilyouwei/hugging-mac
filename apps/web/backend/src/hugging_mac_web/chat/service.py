@@ -14,7 +14,7 @@ from hugging_mac_sdk.errors import ResourceNotFoundError, UnsupportedCapabilityE
 from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.chat import ChatImage, ChatMessage, ChatRequest
 
-from hugging_mac_web.chat.config import CHAT_MODEL_ID, ChatModelProfile, ChatSettings
+from hugging_mac_web.chat.config import CHAT_MODEL_IDS, ChatModelProfile, ChatSettings
 from hugging_mac_web.chat.schemas import (
     ChatHistoryMessage,
     ChatModelView,
@@ -206,38 +206,46 @@ class ChatService:
         raise ResourceNotFoundError(f"Chat model is not supported: {model_id}/{variant}")
 
     def _profiles(self) -> tuple[ChatModelProfile, ...]:
-        definition = self._context.models.registry.get(CHAT_MODEL_ID)
+        return tuple(
+            profile for model_id in CHAT_MODEL_IDS for profile in self._model_profiles(model_id)
+        )
+
+    def _model_profiles(self, model_id: str) -> tuple[ChatModelProfile, ...]:
+        definition = self._context.models.registry.get(model_id)
         manifest = definition.manifest
+        runtime = manifest.default_runtime or "mlx"
         return tuple(
             ChatModelProfile(
-                profile_id=variant.name,
+                profile_id=self._profile_id(manifest.model_id, variant.name),
                 model_id=manifest.model_id,
                 display_name=variant.display_name,
                 short_name=variant.display_name,
                 description=variant.description or manifest.description,
                 variant=variant.name,
-                runtime=manifest.default_runtime or "mlx",
+                runtime=runtime,
                 required_artifact_id=self._artifact_id(
                     definition.artifacts,
                     variant=variant.name,
-                    runtime=manifest.default_runtime or "mlx",
+                    runtime=runtime,
                 ),
                 disk_size_bytes=int(variant.metadata.get("disk_size_bytes", 0)),
-                supports_images="vision-language-generation" in manifest.capabilities,
+                supports_images=bool(variant.metadata.get("multimodal", False)),
             )
             for variant in manifest.variants
         )
 
     @staticmethod
-    def _artifact_id(
-        artifacts: tuple[ModelArtifact, ...], *, variant: str, runtime: str
-    ) -> str:
+    def _profile_id(model_id: str, variant: str) -> str:
+        if model_id == "qwen/qwen3.5":
+            return variant
+        return f"{model_id.rsplit('/', 1)[-1]}-{variant}"
+
+    @staticmethod
+    def _artifact_id(artifacts: tuple[ModelArtifact, ...], *, variant: str, runtime: str) -> str:
         matching = [
             artifact.artifact_id
             for artifact in artifacts
-            if not artifact.shared
-            and artifact.variant == variant
-            and artifact.runtime == runtime
+            if not artifact.shared and artifact.variant == variant and artifact.runtime == runtime
         ]
         if len(matching) != 1:
             raise ResourceNotFoundError(
