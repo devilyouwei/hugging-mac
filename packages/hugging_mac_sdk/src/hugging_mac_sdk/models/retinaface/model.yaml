@@ -54,3 +54,10 @@ artifacts:
     path: py-feat/retinaface/31702389094fccc7060c15299e6ad712ee880de6/mobilenet0.25/coreml/retinaface.mlpackage
     kind: directory
     convert: true
+    expected_sha256: 6290800b08e20d9d6506795e5e47f1da35f2586ad4e75dcbb08a14ed11b2ed6b
+    source:
+      kind: url_archive
+      url: https://huggingface.co/hugging-mac/retinaface-coreml/resolve/f527f3066a92b04ca55eb3622c8ccfbd2fd6965b/retinaface.mlpackage.zip
+      format: zip
+      strip_components: 1
+      expected_sha256: c0f48becf7b5e738ce32d2c75518ef67b76705f728f42973d9978b81db843660

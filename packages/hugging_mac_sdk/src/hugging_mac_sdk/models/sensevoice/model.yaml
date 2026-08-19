@@ -67,6 +67,13 @@ artifacts:
     format: coreml
     path: funaudiollm/sensevoice/3847d57b6bdf2dd8875cb1508d2af43d80a16bf7/small/coreml/sensevoice-small-coreml
     kind: directory
+    expected_sha256: 6ec1ee9247f7c717a285d809967bd64e210dbba4418e872c01a7a60bdedbb983
+    source:
+      kind: url_archive
+      url: https://huggingface.co/hugging-mac/sensevoice-small-coreml/resolve/53ba0a99e0937254cc4b6378e82096c3bc68a146/sensevoice-small-coreml.tar
+      format: tar
+      strip_components: 1
+      expected_sha256: 53d62442e25efb74ce88a7d7a16c5752434ad71ef675672ee049efbaa112248e
   - artifact_id: tokenizer
     variant: small
     runtime: pytorch-mps

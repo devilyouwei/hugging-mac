@@ -61,3 +61,10 @@ artifacts:
     path: qualcomm/mediapipe-hand-detection/013e27b599e37c3b4c69439de15de53cc5b5708e/float/coreml
     kind: directory
     convert: true
+    expected_sha256: 5432c988be7ed2fd6847097f823e0d813f97be7dc7a7d6587129386dbcd75929
+    source:
+      kind: url_archive
+      url: https://huggingface.co/hugging-mac/mediapipe-hand-coreml/resolve/ddf3c3a6a6f832fde2fff50910c8383beed2c0a0/mediapipe-hand-coreml.tar
+      format: tar
+      strip_components: 1
+      expected_sha256: b80701c800ee166ef609e38d10761e3ac958a9637e41f8a6c961ebab098882e7

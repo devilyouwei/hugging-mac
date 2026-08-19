@@ -69,6 +69,13 @@ artifacts:
     format: coreml
     path: audio8/audio8-asr/8487da63d581fa4fc9b5c60444cb57c3a523d7aa/0.1b/coreml/audio8-asr-coreml
     kind: directory
+    expected_sha256: 6721e90590aee02b6091ec79e3ea451ae1997399e18fcf451f079535a44fce48
+    source:
+      kind: url_archive
+      url: https://huggingface.co/hugging-mac/audio8-asr-coreml/resolve/22ea4007532364bc48991100f3608291be2c8bf9/audio8-asr-coreml.tar
+      format: tar
+      strip_components: 1
+      expected_sha256: 6f38444a41e7406fb69c3a03c65c5edc8d1451c3014b712696be9cb345238842
   - artifact_id: tokenizer
     variant: 0.1b
     runtime: pytorch-mps
