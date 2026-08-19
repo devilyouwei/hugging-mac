@@ -520,4 +520,64 @@ onMounted(refreshResources)
 .model-runtime { color:var(--muted); letter-spacing:.06em; }
 .lifecycle-success { color:#3c8b2f; }
 .lifecycle-error { color:#cf3f27; }
+
+.detection-page { padding-bottom:5rem; }
+.app-hero { padding-top:1.2rem; }
+.detection-workspace { gap:1rem; }
+.control-panel,.output-panel {
+  background:var(--surface);
+  border:1px solid rgb(255 255 255 / 12%);
+  border-radius:var(--radius-panel);
+  box-shadow:var(--shadow-card);
+  overflow:hidden;
+  -webkit-backdrop-filter:blur(22px) saturate(145%);
+  backdrop-filter:blur(22px) saturate(145%);
+}
+.control-panel { padding:1.25rem; }
+.control-panel__heading,.output-panel__heading { border-color:var(--line); color:var(--muted); }
+.field {
+  background:rgb(118 118 128 / 6%);
+  border:1px solid transparent;
+  border-radius:14px;
+  margin-bottom:.65rem;
+  padding:.75rem;
+  transition:background .18s ease,border-color .18s ease;
+}
+.field:focus-within { background:rgb(10 132 255 / 7%); border-color:rgb(10 132 255 / 22%); }
+.field output { background:rgb(10 132 255 / 10%);border:1px solid rgb(10 132 255 / 16%);border-radius:7px;color:#66b5ff;padding:.2rem .4rem; }
+.field select,.field input[type=number] {
+  background:rgb(118 118 128 / 8%);
+  border:1px solid var(--line);
+  border-radius:10px;
+  min-height:38px;
+  padding:0 .7rem;
+}
+.model-field__control button {
+  background:linear-gradient(180deg,#1e91ff,#0878e9);
+  border-radius:10px;
+  color:white;
+  font-family:var(--font-display);
+  font-weight:650;
+}
+.mode-tabs {
+  background:rgb(118 118 128 / 8%);
+  border:1px solid rgb(255 255 255 / 8%);
+  border-radius:14px;
+  gap:3px;
+  margin:1rem;
+  padding:4px;
+}
+.mode-tabs button { border:0;border-radius:10px; }
+.mode-tabs button.mode-tab--active { background:var(--surface-solid);box-shadow:0 3px 12px rgb(0 0 0 / 14%); }
+.mode-tabs button.mode-tab--active span { color:#2997ff; }
+.resource-note,.local-note { border-radius:12px; }
+:deep(.dropzone),:deep(.media-stage),:deep(.camera-stage),:deep(.detection-stage) {
+  background:rgb(8 10 15 / 88%);
+  border-color:rgb(255 255 255 / 10%);
+  border-radius:18px;
+  overflow:hidden;
+}
+:deep(.media-actions button),:deep(.button--run) { border-radius:12px; }
+:deep(.result-row) { background:rgb(118 118 128 / 6%);border:1px solid transparent;border-radius:12px; }
+:deep(.result-row:hover) { background:rgb(10 132 255 / 7%);border-color:rgb(10 132 255 / 16%); }
 </style>

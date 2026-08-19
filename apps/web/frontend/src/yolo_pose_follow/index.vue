@@ -621,4 +621,33 @@ onBeforeUnmount(() => {
   .round-timer { right:1rem; }
   .camera-label,.target-stage__label { display:none; }
 }
+
+/* Apple Arcade-inspired finish */
+.pose-game{background:radial-gradient(circle at 70% 15%,#202d4a 0,transparent 36rem),linear-gradient(145deg,#090b11,#10131b);}
+.pose-game__topbar{background:rgb(22 25 34 / 68%);border:1px solid rgb(255 255 255 / 10%);border-radius:17px;height:3.2rem;margin:10px 12px 0;padding:0 1rem;position:relative;top:auto;-webkit-backdrop-filter:blur(24px) saturate(150%);backdrop-filter:blur(24px) saturate(150%);}
+.game-lobby{min-height:calc(100vh - 4.2rem);padding-top:0;}
+.game-lobby h1{background:linear-gradient(145deg,#fff 30%,#a8c9ff 68%,#8582ff);-webkit-background-clip:text;background-clip:text;color:transparent;}
+.game-lobby h1 em{color:inherit;-webkit-text-stroke:0;}
+.game-lobby__intro .kicker{color:#67b5ff;}
+.difficulty-picker button{background:rgb(255 255 255 / 5%);border-color:rgb(255 255 255 / 9%);border-radius:13px;}
+.difficulty-picker button:hover,.difficulty-picker button.active{border-color:rgb(41 151 255 / 42%);}
+.difficulty-picker button.active{background:rgb(10 132 255 / 11%);box-shadow:inset 0 -2px #2997ff,0 9px 24px rgb(0 0 0 / 14%);}
+.game-model-setup,.game-model-action{background:rgb(255 255 255 / 5%);border:1px solid rgb(255 255 255 / 9%);border-radius:12px;padding:.75rem;}
+.game-model-action button{background:rgb(255 255 255 / 9%);border-radius:9px;}
+.game-start{background:linear-gradient(180deg,#2997ff,#0878e8);border-radius:14px;box-shadow:0 14px 36px rgb(0 105 220 / 28%);color:white;font-family:var(--font-display);transition:transform .18s var(--ease-spring),box-shadow .18s ease;}
+.game-start:hover:not(:disabled){box-shadow:0 18px 45px rgb(0 126 255 / 38%);transform:translateY(-2px);}
+.game-lobby__preview{background:radial-gradient(circle at center,rgb(41 151 255 / 20%),transparent 48%),linear-gradient(145deg,#171d2b,#0d1018);border:1px solid rgb(255 255 255 / 9%);border-radius:28px 0 0 28px;margin:1rem 0 1rem 1rem;}
+.preview-orbit{border-color:rgb(65 164 255 / 28%);}.preview-score{color:#55aaff;}
+.game-arena{height:calc(100vh - 4.2rem);}
+.camera-stage{border-radius:0 22px 22px 0;margin:.5rem;}
+.target-stage{background:radial-gradient(circle,rgb(41 151 255 / 13%),transparent 60%),#121722;border:1px solid rgb(255 255 255 / 9%);border-radius:22px;margin:.5rem;}
+.game-hud,.gesture-status,.match-meter,.round-timer{filter:drop-shadow(0 12px 26px rgb(0 0 0 / 30%));}
+.game-hud{background:rgb(14 18 25 / 56%);border:1px solid rgb(255 255 255 / 12%);border-radius:16px;padding:.7rem 1rem;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);}
+.match-meter span,.round-progress span{background:#2997ff;box-shadow:0 0 12px rgb(41 151 255 / 45%);}
+.round-timer{background:conic-gradient(#2997ff calc(var(--timer) * 1turn),#ffffff1a 0);}
+.gesture-status{background:rgb(14 18 25 / 64%);border-radius:12px;-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);}
+.game-overlay{background:rgb(8 10 16 / 74%);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);}
+.game-overlay--prep p,.game-overlay--finished p,.game-overlay--result strong{color:#55aaff;}
+.game-overlay--finished button{background:linear-gradient(180deg,#2997ff,#0878e8);border-radius:13px;color:white;font-family:var(--font-display);}
+.game-overlay--finished button.quiet{border-radius:13px;}
 </style>

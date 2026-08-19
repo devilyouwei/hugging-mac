@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 
 import { fetchGames } from "@/api/catalog"
 import type { AppSummary } from "@/api/types"
@@ -8,6 +8,7 @@ import AppCard from "@/components/AppCard.vue"
 const games = ref<AppSummary[]>([])
 const loading = ref(true)
 const error = ref("")
+const featured = computed(() => games.value[0] ?? null)
 
 onMounted(async () => {
   try {
@@ -21,24 +22,37 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page inner-page games-directory-page">
-    <header class="page-title">
-      <RouterLink class="back-link" to="/">← Studio</RouterLink>
-      <p class="kicker">NEURAL GAME REGISTRY / LOCAL PLAYGROUND</p>
-      <h1>Neural Games</h1>
-      <p>面向本地神经模型的互动游戏实验场。未来的游戏会在这里运行、观察并持续进化。</p>
+  <div class="page inner-page games-directory-page store-page store-page--games">
+    <header class="store-titlebar">
+      <div>
+        <RouterLink class="back-link" to="/">← Studio</RouterLink>
+        <p class="kicker">ON-DEVICE ARCADE</p>
+        <h1>Play</h1>
+      </div>
+      <p>身体、镜头和本地神经网络组成的新型游戏控制器。你的动作只在这台 Mac 上处理。</p>
     </header>
 
     <div v-if="error" class="error-banner" role="alert">{{ error }}</div>
     <div v-else-if="loading" class="game-empty-card skeleton-card"></div>
-    <div v-else-if="games.length" class="app-list apps-directory-list">
-      <AppCard
-        v-for="(game, gameIndex) in games"
-        :key="game.manifest.app_id"
-        :app="game"
-        :index="gameIndex"
-      />
-    </div>
+    <template v-else-if="games.length">
+      <RouterLink v-if="featured" class="store-feature store-feature--games" :to="featured.manifest.frontend_route">
+        <div class="store-feature__copy">
+          <span>GAME OF THE MOMENT</span>
+          <h2>{{ featured.manifest.name }}</h2>
+          <p>{{ featured.manifest.description }}</p>
+          <b>Play now</b>
+        </div>
+        <div class="store-feature__game-art" aria-hidden="true">
+          <span>🍉</span><span>✨</span><span>🕺</span>
+        </div>
+      </RouterLink>
+      <section class="store-section">
+        <header><h2>Games we love</h2><span>All games</span></header>
+        <div class="store-list-grid">
+          <AppCard v-for="(game, gameIndex) in games" :key="game.manifest.app_id" :app="game" :index="gameIndex" />
+        </div>
+      </section>
+    </template>
     <section v-else class="games-empty-state">
       <span aria-hidden="true">🕹️</span>
       <p class="kicker">COMING SOON</p>

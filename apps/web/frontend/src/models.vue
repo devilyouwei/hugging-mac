@@ -365,7 +365,15 @@ onMounted(async () => {
     <div v-if="loading" class="model-workspace skeleton-card"></div>
     <p v-else-if="!visibleModels.length" class="models-empty">No models match this filter.</p>
 
-    <article v-for="model in visibleModels" :key="model.model_id" class="model-workspace">
+    <article
+      v-for="model in visibleModels"
+      :key="model.model_id"
+      class="model-workspace"
+      :class="{
+        'model-workspace--ready': modelHasReadyRuntime(model),
+        'model-workspace--loaded': model.instance_count,
+      }"
+    >
       <header class="model-workspace__header">
         <div class="model-identity">
           <div class="model-identity__topline">

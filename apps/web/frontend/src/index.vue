@@ -48,7 +48,7 @@ onMounted(loadHome)
   <div class="page home-page">
     <section class="hero">
       <div class="hero-copy">
-        <p class="kicker">LOCAL MODEL STUDIO · APPLE SILICON</p>
+        <p class="kicker hero-kicker"><span></span> BUILT FOR APPLE SILICON</p>
         <h1>
           <span class="hero-title-line">
             <span class="hero-icon" aria-hidden="true">
@@ -59,12 +59,22 @@ onMounted(loadHome)
           <span class="hero-title-outline">Many minds.</span>
         </h1>
         <p class="hero-intro">
-          Squeeze every last drop of performance from your Mac's Apple silicon.
+          Your private AI studio, accelerated by Apple silicon. Explore, create,
+          and run powerful models entirely on your Mac.
         </p>
         <div class="hero-actions">
           <RouterLink class="button button--primary" to="/apps/object-detection">
-            Run first demo
+            <span>Run first demo</span><span aria-hidden="true">↗</span>
           </RouterLink>
+          <RouterLink class="button button--glass" to="/models">
+            Explore models
+          </RouterLink>
+        </div>
+        <div class="hero-privacy">
+          <span aria-hidden="true">⌁</span>
+          <span>Private by design</span>
+          <i></i>
+          <span>Zero cloud required</span>
         </div>
       </div>
       <aside class="machine-panel" aria-label="本机运行环境">
@@ -165,6 +175,7 @@ onMounted(loadHome)
         </div>
       </section>
 
+      <div class="home-catalog-stack">
       <section class="section-block home-catalog-column home-catalog-column--apps">
         <div class="section-heading">
           <div>
@@ -226,6 +237,7 @@ onMounted(loadHome)
           </div>
         </div>
       </section>
+      </div>
     </div>
   </div>
 </template>

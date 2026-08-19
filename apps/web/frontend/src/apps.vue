@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 
 import { fetchApps } from "@/api/catalog"
 import type { AppSummary } from "@/api/types"
@@ -8,6 +8,8 @@ import AppCard from "@/components/AppCard.vue"
 const apps = ref<AppSummary[]>([])
 const loading = ref(true)
 const error = ref("")
+const featured = computed(() => apps.value[0] ?? null)
+const categories = computed(() => [...new Set(apps.value.flatMap((app) => app.manifest.tags))].slice(0, 6))
 
 onMounted(async () => {
   try {
@@ -21,26 +23,45 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page inner-page apps-directory-page">
-    <header class="page-title">
-      <RouterLink class="back-link" to="/">← Studio</RouterLink>
-      <p class="kicker">NEURAL APPLICATION REGISTRY / LOCAL EXPERIENCES</p>
-      <h1>Neural Apps</h1>
-      <p>浏览所有基于本地神经模型能力构建的工具与体验，选择一个项目进入完整工作区。</p>
+  <div class="page inner-page apps-directory-page store-page">
+    <header class="store-titlebar">
+      <div>
+        <RouterLink class="back-link" to="/">← Studio</RouterLink>
+        <p class="kicker">LOCAL APP COLLECTION</p>
+        <h1>Discover</h1>
+      </div>
+      <p>为 Apple silicon 打造的本地智能工具。无需云端，打开即可在这台 Mac 上运行。</p>
     </header>
 
     <div v-if="error" class="error-banner" role="alert">{{ error }}</div>
-    <div v-if="loading" class="app-list apps-directory-list">
+    <div v-if="loading" class="store-list-grid">
       <div v-for="item in 3" :key="item" class="app-card skeleton-card"></div>
     </div>
-    <div v-else class="app-list apps-directory-list">
-      <AppCard
-        v-for="(app, appIndex) in apps"
-        :key="app.manifest.app_id"
-        :app="app"
-        :index="appIndex"
-      />
-      <div v-if="!apps.length" class="empty-state">No neural applications are registered.</div>
-    </div>
+    <template v-else>
+      <RouterLink v-if="featured" class="store-feature store-feature--apps" :to="featured.manifest.frontend_route">
+        <div class="store-feature__copy">
+          <span>EDITOR’S CHOICE</span>
+          <h2>{{ featured.manifest.name }}</h2>
+          <p>{{ featured.manifest.description }}</p>
+          <b>Explore on this Mac</b>
+        </div>
+        <div class="store-feature__art" aria-hidden="true">
+          <span>✦</span><span>◉</span><span>⌁</span>
+        </div>
+      </RouterLink>
+
+      <section class="store-section">
+        <header><h2>Essential local apps</h2><span>{{ apps.length }} apps</span></header>
+        <div class="store-list-grid">
+          <AppCard v-for="(app, appIndex) in apps" :key="app.manifest.app_id" :app="app" :index="appIndex" />
+        </div>
+        <div v-if="!apps.length" class="empty-state">No neural applications are registered.</div>
+      </section>
+
+      <section v-if="categories.length" class="store-section store-categories">
+        <header><h2>Browse by capability</h2></header>
+        <div><span v-for="category in categories" :key="category">{{ category }}</span></div>
+      </section>
+    </template>
   </div>
 </template>

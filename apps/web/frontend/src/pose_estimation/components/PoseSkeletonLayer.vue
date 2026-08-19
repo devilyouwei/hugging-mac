@@ -14,7 +14,7 @@ const skeleton: ReadonlyArray<readonly [number, number]> = [
   [5, 11], [6, 12], [11, 12],
   [11, 13], [13, 15], [12, 14], [14, 16],
 ]
-const colors = ["#c8ff46", "#ff7148", "#7de2ff", "#f6bf4f", "#cb9cff"]
+const colors = ["#30d158", "#ff453a", "#64d2ff", "#ffd60a", "#bf5af2"]
 const facePointNames = ["left_eye", "right_eye", "nose", "left_mouth", "right_mouth"] as const
 const handSkeleton: ReadonlyArray<readonly [number, number]> = [
   [0, 1], [1, 2], [2, 3], [3, 4],

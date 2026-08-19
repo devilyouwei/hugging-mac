@@ -9,16 +9,41 @@ const isChatPage = computed(() => route.name === "chat")
 
 <template>
   <div class="app-shell" :class="{ 'app-shell--fixed': isChatPage }">
-    <header class="site-header">
-      <RouterLink class="brand" to="/" aria-label="Hugging Mac home">
-        <img
-          class="brand-mark"
-          src="/hugging-mac-icon.png"
-          alt=""
-          aria-hidden="true"
-        />
-        <span>Hugging Mac</span>
-      </RouterLink>
+    <div class="ambient-canvas" aria-hidden="true">
+      <span class="ambient-orb ambient-orb--blue"></span>
+      <span class="ambient-orb ambient-orb--violet"></span>
+      <span class="ambient-orb ambient-orb--cyan"></span>
+      <span class="ambient-noise"></span>
+    </div>
+
+    <header class="site-header" :class="{ 'site-header--chat': isChatPage }">
+      <div class="site-toolbar">
+        <RouterLink class="brand" to="/" aria-label="Hugging Mac home">
+          <span class="brand-icon-wrap">
+            <img
+              class="brand-mark"
+              src="/hugging-mac-icon.png"
+              alt=""
+              aria-hidden="true"
+            />
+          </span>
+          <span class="brand-copy">
+            <strong>Hugging Mac</strong>
+            <small>Local Intelligence</small>
+          </span>
+        </RouterLink>
+
+        <nav class="main-nav" aria-label="Primary navigation">
+          <RouterLink to="/models">Models</RouterLink>
+          <RouterLink to="/apps">Apps</RouterLink>
+          <RouterLink to="/games">Games</RouterLink>
+        </nav>
+
+        <div class="local-badge" aria-label="本地运行">
+          <span class="status-dot"></span>
+          <span>On device</span>
+        </div>
+      </div>
     </header>
 
     <main>

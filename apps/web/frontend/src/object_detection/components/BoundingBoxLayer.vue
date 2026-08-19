@@ -5,7 +5,7 @@ defineProps<{
   result: DetectionResult | null
 }>()
 
-const colors = ["#c8ff46", "#ff7148", "#7de2ff", "#f6bf4f", "#cb9cff"]
+const colors = ["#30d158", "#ff453a", "#64d2ff", "#ffd60a", "#bf5af2"]
 
 function percentage(value: number, size: number): string {
   if (!Number.isFinite(value) || !Number.isFinite(size) || size <= 0) return "0%"

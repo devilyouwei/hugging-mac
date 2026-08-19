@@ -120,4 +120,12 @@ const totalMs = computed(() =>
   color: var(--muted);
   padding: 1.5rem 0;
 }
+.result-summary{gap:.6rem;}
+.result-summary>div{background:rgb(118 118 128 / 7%);border:1px solid var(--line);border-radius:13px;color:var(--ink);}
+.result-summary span{color:var(--muted);font-family:var(--font-display);font-weight:600;letter-spacing:.02em;}
+.result-list{display:grid;gap:.35rem;}
+.result-row{background:rgb(118 118 128 / 5%);border:1px solid transparent;border-radius:11px;padding:.7rem;transition:background .16s ease,border-color .16s ease;}
+.result-row:hover{background:rgb(10 132 255 / 7%);border-color:rgb(10 132 255 / 14%);}
+.confidence-track{background:rgb(118 118 128 / 15%);border-radius:999px;overflow:hidden;}
+.confidence-track span{background:linear-gradient(90deg,#0a84ff,#64d2ff);border-radius:inherit;}
 </style>

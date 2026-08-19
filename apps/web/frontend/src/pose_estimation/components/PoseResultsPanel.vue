@@ -149,4 +149,11 @@ function visibleKeypoints(pose: PoseResult["poses"][number]): number {
   color: var(--muted);
   padding: 1.5rem 0;
 }
+.result-summary{background:rgb(118 118 128 / 7%);border:1px solid var(--line);border-radius:14px;color:var(--ink);overflow:hidden;}
+.result-summary__row{border-color:var(--line);}
+.result-summary__totals{background:rgb(10 132 255 / 7%);}
+.result-summary span,.result-summary__totals span{color:var(--muted);}
+.result-list{display:grid;gap:.35rem;}
+.result-row{background:rgb(118 118 128 / 5%);border:1px solid transparent;border-radius:11px;padding:.7rem;transition:background .16s ease,border-color .16s ease;}
+.result-row:hover{background:rgb(10 132 255 / 7%);border-color:rgb(10 132 255 / 14%);}
 </style>

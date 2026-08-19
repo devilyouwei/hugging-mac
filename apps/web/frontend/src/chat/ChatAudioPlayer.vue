@@ -77,5 +77,17 @@ button:disabled { background:#343831; cursor:wait; }
 .voice-progress>span i { background:var(--signal); border-radius:inherit; display:block; height:100%; transition:width .1s linear; }
 .voice-progress input { cursor:pointer; height:100%; inset:0; margin:0; opacity:0; position:absolute; width:100%; }
 .generating .voice-progress>span i { animation:voice-loading 1s ease-in-out infinite; background:linear-gradient(90deg,transparent,var(--signal),transparent); width:38%!important; }
+.voice-player { background:rgb(255 255 255 / 7%);border-color:rgb(255 255 255 / 11%);border-radius:13px;box-shadow:0 8px 20px rgb(0 0 0 / 12%);padding:.34rem .65rem .34rem .38rem; }
+.voice-player button { background:linear-gradient(145deg,#2997ff,#5e5ce6);border:0;border-radius:50%;box-shadow:0 5px 14px rgb(0 105 220 / 25%);color:white;height:1.7rem;width:1.7rem; }
+.voice-progress>span { background:rgb(255 255 255 / 14%);height:3px; }
+.voice-progress>span i { background:#4da3ff; }
+.generating .voice-progress>span i { background:linear-gradient(90deg,transparent,#4da3ff,transparent); }
+.voice-player {
+  background:color-mix(in srgb,var(--surface-solid) 68%,transparent);
+  border-color:var(--line);
+  box-shadow:0 8px 20px rgb(25 39 67 / 9%);
+}
+.voice-progress>span { background:color-mix(in srgb,var(--ink) 14%,transparent); }
+button:disabled { background:color-mix(in srgb,var(--muted) 28%,var(--surface-solid)); color:var(--muted); }
 @keyframes voice-loading { from { transform:translateX(-110%); } to { transform:translateX(280%); } }
 </style>

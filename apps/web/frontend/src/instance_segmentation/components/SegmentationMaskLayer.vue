@@ -5,7 +5,7 @@ defineProps<{
   result: SegmentationResult | null
 }>()
 
-const colors = ["#c8ff46", "#ff7148", "#42c8ff", "#f6bf4f", "#cb9cff", "#38e0a1"]
+const colors = ["#30d158", "#ff453a", "#64d2ff", "#ffd60a", "#bf5af2", "#63e6be"]
 
 function polygonPoints(
   polygon: SegmentationResult["segments"][number]["polygons"][number],
