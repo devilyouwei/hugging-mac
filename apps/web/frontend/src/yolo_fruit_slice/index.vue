@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
+import { useRouter } from "vue-router"
 
 import { ApiError } from "@/api/client"
 import { errorMessage, loadSharedModel, unloadModel } from "@/modelLifecycle"
@@ -16,6 +17,7 @@ import { GameRenderer } from "./renderer"
 import type { GamePhase, GameSnapshot, PoseFrame } from "./types"
 
 const video = ref<HTMLVideoElement | null>(null)
+const router = useRouter()
 const stage = ref<HTMLElement | null>(null)
 const gameCanvas = ref<HTMLCanvasElement | null>(null)
 const stream = ref<MediaStream | null>(null)
@@ -57,7 +59,6 @@ const modelAvailable = computed(() => coremlReady.value || sourceReady.value)
 const runtimeLabel = computed(() => loadedRuntime.value === "coreml" ? "CORE ML" : loadedRuntime.value === "pytorch-mps" ? "PYTORCH MPS" : "CORE ML → PYTORCH MPS")
 const modelStatus = computed(() => modelBusy.value ? "LOADING" : modelInstanceId.value ? `${loadedVariant.value?.toUpperCase()} · ${runtimeLabel.value}` : modelAvailable.value ? "AVAILABLE" : "MISSING")
 const poseStatus = computed(() => pointerReady.value ? "MOUSE BLADE" : inferenceState.value === "tracking" ? "BODY LOCKED" : inferenceState.value === "searching" ? "FINDING PLAYER" : inferenceState.value === "error" ? "POSE ERROR" : "STANDBY")
-const isArena = computed(() => phase.value !== "lobby")
 
 async function loadGame(): Promise<void> {
   try {
@@ -386,6 +387,11 @@ function returnToLobby(): void {
   phase.value = "lobby"
 }
 
+function handleBack(): void {
+  if (phase.value === "lobby") router.back()
+  else returnToLobby()
+}
+
 onMounted(() => {
   document.body.classList.add("fruit-game-active")
   document.addEventListener("visibilitychange", handleVisibility)
@@ -403,11 +409,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="fruit-game" :class="`fruit-game--${phase}`">
-    <header class="fruit-topbar">
-      <RouterLink to="/games" class="fruit-topbar__back">← NEURAL GAMES</RouterLink>
-      <div class="fruit-topbar__brand"><i></i> YOLO FRUIT SLICE</div>
-      <button v-if="isArena" type="button" @click="returnToLobby">EXIT</button>
-    </header>
+    <button type="button" class="game-back" aria-label="Back" @click="handleBack">←</button>
 
     <main v-if="phase === 'lobby'" class="fruit-lobby">
       <section class="fruit-lobby__copy">
@@ -527,4 +529,6 @@ onBeforeUnmount(() => {
 .fruit-overlay{background:rgb(6 9 12 / 74%);-webkit-backdrop-filter:blur(24px) saturate(130%);backdrop-filter:blur(24px) saturate(130%);}
 .fruit-overlay--paused button,.fruit-overlay--finished>button{background:linear-gradient(180deg,#ffd85d,#f2b52c);border-radius:13px;font-family:var(--font-display);}
 .fruit-overlay--finished>button.quiet{border-radius:13px;}
+.fruit-game{height:100svh;min-height:0;overflow:hidden;position:relative}.game-back{align-items:center;background:rgb(10 13 12 / 68%);border:1px solid rgb(255 255 255 / 18%);border-radius:50%;color:#fff;cursor:pointer;display:flex;font:400 1.35rem/1 system-ui;height:2.7rem;justify-content:center;position:fixed;left:1rem;top:1rem;transition:.2s ease;width:2.7rem;z-index:100}.game-back:hover{background:#ffffff18;border-color:#ffcf48;box-shadow:0 0 24px #ffcf4855;transform:translateX(-2px)}.fruit-lobby,.fruit-stage{height:100svh;min-height:0}.fruit-lobby{min-height:0}@media(max-height:850px) and (min-width:801px){.fruit-lobby__copy{padding:clamp(1rem,3vh,2rem) clamp(2rem,5vw,5rem)}.fruit-lobby h1{font-size:clamp(2.8rem,5vw,5rem);margin:.55rem 0 .85rem}.fruit-lobby__copy>p:not(.fruit-kicker,.fruit-error,.fruit-message){font-size:.88rem;line-height:1.5}.fruit-rules{margin:.8rem 0 .65rem;padding:.55rem}.fruit-model-picker button{padding:.55rem .7rem}.fruit-model-row{padding:.6rem}.fruit-start{padding:.8rem 1rem}}
+@media(max-width:800px){.fruit-lobby__copy{box-sizing:border-box;height:100%;overflow:hidden;padding:3.6rem 1rem .8rem}.fruit-lobby h1{font-size:clamp(2.5rem,10vw,3.6rem);margin:.35rem 0 .65rem}.fruit-lobby__copy>p:not(.fruit-kicker,.fruit-error,.fruit-message){font-size:.76rem;line-height:1.35}.fruit-rules{grid-template-columns:repeat(3,1fr);margin:.6rem 0 .4rem;padding:.4rem}.fruit-rules div{border-bottom:0;border-right:1px solid #ffffff14;padding:.35rem}.fruit-rules span{font-size:.56rem}.fruit-model-picker button,.fruit-model-row{padding:.5rem}.fruit-model-picker span{display:none}.fruit-start{padding:.7rem}.game-back{left:.7rem;top:.7rem}}
 </style>

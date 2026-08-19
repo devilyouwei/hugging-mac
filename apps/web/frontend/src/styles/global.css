@@ -639,6 +639,7 @@ body {
 .app-card--live-transcription .app-icon { background:linear-gradient(145deg,#65e0c1,#21986f); }
 .app-card--text-to-speech .app-icon { background:linear-gradient(145deg,#ffd76a,#ef8a2f); }
 .app-card--yolo-fruit-slice .app-icon { background:linear-gradient(145deg,#7be890,#29a84b); }
+.app-card--palm-thunder .app-icon { background:linear-gradient(145deg,#55e7ff,#7657f4 56%,#ff62c8); }
 .app-card[class*="app-card--"] .app-icon { color:white;text-shadow:0 2px 8px rgb(0 0 0 / 18%); }
 
 .app-card:hover .app-icon { transform: translateY(-2px) rotate(-3deg) scale(1.06); }

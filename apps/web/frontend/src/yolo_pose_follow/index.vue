@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
+import { useRouter } from "vue-router"
 
 import { ApiError } from "@/api/client"
 import { captureVideoFrame, waitForNextVideoFrame } from "@/object_detection/frame"
@@ -35,6 +36,7 @@ const GESTURES: GestureName[] = ["open-palm", "fist", "victory", "point"]
 const HAND_SIDES: HandSide[] = ["left", "right"]
 
 const video = ref<HTMLVideoElement | null>(null)
+const router = useRouter()
 const stream = ref<MediaStream | null>(null)
 const cameraReady = ref(false)
 const templates = ref<PoseTemplate[]>([])
@@ -393,6 +395,11 @@ function returnToLobby() {
   timeLeftMs.value = 0
 }
 
+function handleBack() {
+  if (phase.value === "lobby") router.back()
+  else returnToLobby()
+}
+
 onMounted(() => {
   document.body.classList.add("pose-game-active")
   void loadGame()
@@ -406,11 +413,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="pose-game" :class="[`pose-game--${phase}`, { 'pose-game--success': roundOutcome === 'success', 'pose-game--fail': roundOutcome === 'fail' }]">
-    <header class="pose-game__topbar">
-      <RouterLink to="/games" class="pose-game__back">← Neural Games</RouterLink>
-      <div class="pose-game__brand"><span>🕺</span> Yolo Pose Follow</div>
-      <button v-if="phase !== 'lobby'" type="button" @click="returnToLobby">EXIT</button>
-    </header>
+    <button type="button" class="game-back" aria-label="Back" @click="handleBack">←</button>
 
     <main v-if="phase === 'lobby'" class="game-lobby">
       <section class="game-lobby__intro">
@@ -511,6 +514,7 @@ onBeforeUnmount(() => {
 <style scoped>
 :global(body.pose-game-active .site-header),
 :global(body.pose-game-active .site-footer) { display:none; }
+:global(body.pose-game-active) { height:100%; overflow:hidden; }
 .pose-game { background:#0c0d0c; color:#f4f1e8; min-height:100vh; overflow:hidden; }
 .pose-game__topbar { align-items:center; border-bottom:1px solid #ffffff24; display:grid; font-family:var(--font-mono); grid-template-columns:1fr auto 1fr; height:3.3rem; padding:0 2.1rem; position:relative; z-index:20; }
 .pose-game__back { color:#aaa; font-size:.68rem; text-decoration:none; text-transform:uppercase; }
@@ -650,4 +654,6 @@ onBeforeUnmount(() => {
 .game-overlay--prep p,.game-overlay--finished p,.game-overlay--result strong{color:#55aaff;}
 .game-overlay--finished button{background:linear-gradient(180deg,#2997ff,#0878e8);border-radius:13px;color:white;font-family:var(--font-display);}
 .game-overlay--finished button.quiet{border-radius:13px;}
+.pose-game{height:100svh;min-height:0;overflow:hidden!important;position:relative}.game-back{align-items:center;background:rgb(12 15 22 / 68%);border:1px solid rgb(255 255 255 / 18%);border-radius:50%;color:#fff;cursor:pointer;display:flex;font:400 1.35rem/1 system-ui;height:2.7rem;justify-content:center;position:fixed;left:1rem;top:1rem;transition:.2s ease;width:2.7rem;z-index:100}.game-back:hover{background:#ffffff18;border-color:#74baff;box-shadow:0 0 24px #2997ff55;transform:translateX(-2px)}.game-lobby,.game-arena{height:100svh;min-height:0}.game-lobby{min-height:0}.game-lobby__intro{align-self:center}@media(max-height:850px) and (min-width:801px){.game-lobby__intro{padding:clamp(1rem,3vh,2rem) clamp(2rem,4vw,4rem)}.game-lobby h1{font-size:clamp(2.3rem,4vw,4rem);margin:.4rem 0 .65rem}.game-lobby__intro>p:not(.kicker,.game-error){font-size:.88rem;line-height:1.45}.difficulty-picker{margin:.8rem 0 .55rem}.difficulty-picker button{padding:.55rem}.game-model-setup,.game-model-action{margin:.5rem 0;padding:.55rem}.game-start{margin-top:.55rem;padding:.8rem 1rem}}
+@media(max-width:800px){.game-lobby{display:block}.game-lobby__intro{box-sizing:border-box;display:flex;flex-direction:column;height:100%;justify-content:center;overflow:hidden;padding:3.6rem 1rem .8rem}.game-lobby__preview{display:none}.game-lobby h1{font-size:clamp(2.4rem,10vw,3.4rem);margin:.35rem 0 .65rem}.game-lobby__intro>p:not(.kicker,.game-error){font-size:.76rem;line-height:1.35}.difficulty-picker{gap:.35rem;margin:.65rem 0 .4rem}.difficulty-picker button{padding:.5rem}.game-model-setup,.game-model-action{margin:.4rem 0;padding:.5rem}.game-start{margin-top:.4rem;padding:.7rem}.game-back{left:.7rem;top:.7rem}}
 </style>

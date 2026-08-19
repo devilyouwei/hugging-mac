@@ -13,6 +13,7 @@ const icon = computed(() => {
     "instance-segmentation": "🎨",
     "yolo-pose-follow": "🕺",
     "yolo-fruit-slice": "🍉",
+    "palm-thunder": "🛩️",
     "live-transcription": "🎙️",
     "text-to-speech": "🔊",
     chat: "💬",
