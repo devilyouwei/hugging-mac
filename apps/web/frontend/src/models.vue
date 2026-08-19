@@ -31,6 +31,7 @@ const loading = ref(true)
 const pageError = ref("")
 const query = ref("")
 const filter = ref<Filter>("all")
+const expandedModels = ref<Set<string>>(new Set())
 
 const visibleModels = computed(() => {
   const term = query.value.trim().toLowerCase()
@@ -74,6 +75,17 @@ function artifactKey(artifact: ArtifactInventoryItem): string {
 
 function isPending(key: string): boolean {
   return Boolean(pending.value[key])
+}
+
+function isExpanded(modelId: string): boolean {
+  return expandedModels.value.has(modelId)
+}
+
+function toggleModel(modelId: string): void {
+  const next = new Set(expandedModels.value)
+  if (next.has(modelId)) next.delete(modelId)
+  else next.add(modelId)
+  expandedModels.value = next
 }
 
 function selectedVariant(model: ModelSummary): string {
@@ -372,9 +384,10 @@ onMounted(async () => {
       :class="{
         'model-workspace--ready': modelHasReadyRuntime(model),
         'model-workspace--loaded': model.instance_count,
+        'model-workspace--expanded': isExpanded(model.model_id),
       }"
     >
-      <header class="model-workspace__header">
+      <header class="model-workspace__header" @click="toggleModel(model.model_id)">
         <div class="model-identity">
           <div class="model-identity__topline">
             <span class="eyebrow">{{ model.family }}</span>
@@ -391,7 +404,7 @@ onMounted(async () => {
             </span>
           </div>
         </div>
-        <div class="variant-control">
+        <div v-if="isExpanded(model.model_id)" class="variant-control" @click.stop>
           <span class="column-label">VARIANT</span>
           <div class="variant-tabs" role="group" :aria-label="`${model.name} variants`">
             <button
@@ -407,10 +420,24 @@ onMounted(async () => {
           </div>
           <small>{{ formatBytes(localVariantBytes(model)) }} installed for this variant</small>
         </div>
+        <div v-else class="model-collapsed-summary">
+          <span>{{ model.variants.length }} {{ model.variants.length === 1 ? 'variant' : 'variants' }}</span>
+          <span>{{ formatBytes(localVariantBytes(model)) }} installed</span>
+        </div>
+        <button
+          class="model-expand-button"
+          type="button"
+          :aria-expanded="isExpanded(model.model_id)"
+          :aria-controls="`model-details-${model.model_id}`"
+          :aria-label="`${isExpanded(model.model_id) ? 'Collapse' : 'Expand'} ${model.name}`"
+          @click.stop="toggleModel(model.model_id)"
+        >
+          <span aria-hidden="true">⌄</span>
+        </button>
       </header>
 
       <div
-        v-if="notices[model.model_id]"
+        v-if="isExpanded(model.model_id) && notices[model.model_id]"
         class="model-notice"
         :class="`model-notice--${notices[model.model_id].tone}`"
         role="status"
@@ -418,7 +445,7 @@ onMounted(async () => {
         {{ notices[model.model_id].text }}
       </div>
 
-      <div class="model-workspace__body">
+      <div v-if="isExpanded(model.model_id)" :id="`model-details-${model.model_id}`" class="model-workspace__body">
         <section class="workflow-panel">
           <div class="workflow-panel__heading">
             <span class="step-number">01</span>
@@ -525,7 +552,7 @@ onMounted(async () => {
         </section>
       </div>
 
-      <footer class="local-files">
+      <footer v-if="isExpanded(model.model_id)" class="local-files">
         <div class="local-files__title">
           <span>LOCAL FILES</span>
           <small>{{ localArtifacts(model).length }} installed · {{ formatBytes(localVariantBytes(model)) }}</small>
