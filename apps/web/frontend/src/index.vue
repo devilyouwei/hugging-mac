@@ -150,7 +150,6 @@ onMounted(loadHome)
       <section class="section-block home-catalog-column">
         <div class="section-heading">
           <div>
-            <span class="section-index">01</span>
             <div>
               <p class="kicker">NEURAL MODEL LAYER</p>
               <h2>Neural Models</h2>
@@ -179,7 +178,6 @@ onMounted(loadHome)
       <section class="section-block home-catalog-column home-catalog-column--apps">
         <div class="section-heading">
           <div>
-            <span class="section-index">02</span>
             <div>
               <p class="kicker">NEURAL APPLICATION LAYER</p>
               <h2>Neural Apps</h2>
@@ -208,7 +206,6 @@ onMounted(loadHome)
       <section class="section-block home-catalog-column home-catalog-column--games">
         <div class="section-heading">
           <div>
-            <span class="section-index">03</span>
             <div>
               <p class="kicker">NEURAL GAME LAYER</p>
               <h2>Neural Games</h2>

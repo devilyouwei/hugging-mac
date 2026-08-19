@@ -243,7 +243,8 @@ onBeforeUnmount(stopCamera)
 
 .mirror-control {
   align-items: center;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
   color: var(--ink) !important;
   display: flex;
   gap: 0.45rem;

@@ -142,7 +142,12 @@ class PoseEstimationService:
             )
             input_cache_id = cached.cache_id
         runtime = None if command.runtime is RuntimeChoice.AUTO else command.runtime.value
-        selected_variant = self._resolve_variant(command.variant)
+        # ``variant`` belongs to the pose model on this aggregate endpoint.  Hand-only
+        # clients use the MediaPipe variant name (``float``), so do not validate it
+        # against YOLO Pose when pose inference is disabled.
+        selected_variant = (
+            self._resolve_variant(command.variant) if command.pose_enabled else "n"
+        )
         pose_response = None
         face_response = None
         hand_response = None

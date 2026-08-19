@@ -210,11 +210,14 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert all(item["supports_images"] for item in chat_models.json()["data"])
     assert games.status_code == 200
     game_summaries = {item["manifest"]["app_id"]: item for item in games.json()["data"]}
-    assert set(game_summaries) == {"yolo-fruit-slice", "yolo-pose-follow"}
+    assert set(game_summaries) == {"palm-thunder", "yolo-fruit-slice", "yolo-pose-follow"}
     assert game_summaries["yolo-pose-follow"]["manifest"]["category"] == "game"
     assert game_summaries["yolo-pose-follow"]["status"] == "available"
     fruit_slice = game_summaries["yolo-fruit-slice"]
     assert fruit_slice["manifest"]["category"] == "game"
+    palm_thunder = game_summaries["palm-thunder"]
+    assert palm_thunder["manifest"]["frontend_route"] == "/games/palm-thunder"
+    assert palm_thunder["status"] == "available"
     assert fruit_slice["status"] == "available"
     assert fruit_slice["manifest"]["required_models"] == [
         {
@@ -255,6 +258,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert "/api/v1/games/yolo-pose-follow/templates" in openapi.json()["paths"]
     assert "/api/v1/games/yolo-pose-follow/match" in openapi.json()["paths"]
     assert "/api/v1/games/yolo-fruit-slice/status" in openapi.json()["paths"]
+    assert "/api/v1/games/palm-thunder/status" in openapi.json()["paths"]
     model = next(item for item in models.json()["data"] if item["model_id"] == "ultralytics/yolov8")
     silero = next(
         item for item in models.json()["data"] if item["model_id"] == "snakers4/silero-vad"
@@ -1466,7 +1470,8 @@ def test_pose_and_segmentation_apps_map_sdk_results(tmp_path: Path) -> None:
         )
         hand_only_response = client.post(
             "/api/v1/apps/pose-estimation/estimate/frame"
-            "?pose_enabled=false&face_enabled=false&hand_enabled=true&hand_confidence=0.83",
+            "?pose_enabled=false&face_enabled=false&hand_enabled=true&hand_confidence=0.83"
+            "&variant=float&hand_landmarks_enabled=true&hand_input_mirrored=true",
             content=_png(),
             headers={"Content-Type": "image/png"},
         )

@@ -866,7 +866,9 @@ input, select, textarea {
 }
 
 .field input, .field select, .field textarea, .model-search input, .compact-field input, .compact-field select {
+  border-color: var(--line);
   border-radius: 11px;
+  color: var(--ink);
   transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
@@ -1002,11 +1004,11 @@ button,select,a { touch-action:manipulation; }
   border-radius:0;
   box-shadow:none;
   transform:none;
-  transition:background-color 160ms ease;
+  transition:none;
 }
 .store-list-grid .app-card:hover,
 .store-list-grid .app-card:focus-visible {
-  background:color-mix(in srgb,var(--accent) 6%,transparent);
+  background:transparent;
   border-color:var(--line);
   box-shadow:none;
   outline:none;
@@ -1022,6 +1024,7 @@ button,select,a { touch-action:manipulation; }
 .store-list-grid .app-card:hover .app-card__action,
 .store-list-grid .app-card:focus-visible .app-card__action {
   background:var(--accent);
+  box-shadow:0 0 0 3px rgb(10 132 255 / 12%);
   color:white;
 }
 @media (prefers-color-scheme:dark) {
@@ -1032,7 +1035,7 @@ button,select,a { touch-action:manipulation; }
   .catalog-card p,.app-card p { color:#b3b7c0; }
   .catalog-card h3,.app-card h3,.model-workspace h2,.model-workspace h3 { color:#f5f5f7; }
   .store-list-grid .app-card { background:transparent; }
-  .store-list-grid .app-card:hover,.store-list-grid .app-card:focus-visible { background:rgb(41 151 255 / 7%); }
+  .store-list-grid .app-card:hover,.store-list-grid .app-card:focus-visible { background:transparent; }
 }
 
 /* Models — compact macOS library workspace */

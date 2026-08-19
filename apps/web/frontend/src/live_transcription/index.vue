@@ -1005,7 +1005,7 @@ onBeforeUnmount(() => {
 .model-controls > button:hover { background:var(--signal); color:var(--ink); }
 .model-controls > button:disabled,.model-controls select:disabled { cursor:not-allowed; opacity:.4; }
 .asr-model-picker article > small { grid-column:1/-1; margin-top:-.35rem; }
-.transcription-studio { border:1px solid var(--ink); display:grid; grid-template-columns:minmax(17rem,.7fr) minmax(0,1.3fr); min-height:38rem; }
+.transcription-studio { border:0; display:grid; grid-template-columns:minmax(17rem,.7fr) minmax(0,1.3fr); min-height:38rem; }
 .recorder-panel { background:#141614; color:var(--paper); display:flex; flex-direction:column; padding:2rem; }
 .recorder-state { align-items:center; display:flex; flex-direction:column; text-align:center; }
 .mic-orbit { align-items:center; background:#20231f; border:1px solid #ffffff1f; border-radius:50%; display:flex; height:10rem; justify-content:center; margin:1rem 0 1.5rem; position:relative; width:10rem; }

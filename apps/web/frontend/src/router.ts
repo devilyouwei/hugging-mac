@@ -34,6 +34,11 @@ const router = createRouter({
       component: () => import("./yolo_fruit_slice/index.vue"),
     },
     {
+      path: "/games/palm-thunder",
+      name: "palm-thunder",
+      component: () => import("./palm_thunder/index.vue"),
+    },
+    {
       path: "/apps/chat",
       name: "chat",
       component: () => import("./chat/index.vue"),

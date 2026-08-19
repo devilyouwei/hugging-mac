@@ -59,7 +59,7 @@ function handleInput(event: Event) {
 .dropzone {
   align-items: center;
   background: color-mix(in srgb, var(--paper) 78%, transparent);
-  border: 1px dashed var(--ink);
+  border: 1px dashed var(--line);
   color: var(--ink);
   cursor: pointer;
   display: flex;
@@ -76,6 +76,7 @@ function handleInput(event: Event) {
 .dropzone:hover,
 .dropzone--active {
   background: var(--signal-soft);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
   transform: translateY(-2px);
 }
 
