@@ -2,80 +2,125 @@
   <img src="apps/web/frontend/public/hugging-mac-icon.png" alt="hugging-mac" width="144">
 </p>
 
-<h1 align="center">🤗 Hugging Mac 🍎</h1>
+<h1 align="center">Hugging Mac</h1>
 
 <p align="center">
-  <strong>Suck every bit of performance out of your Mac. Run all kinds of AI models locally.</strong>
+  <strong>Unleash the power of your Mac. Run AI models and build AI applications locally.</strong>
 </p>
 
-> **You are wasting your Mac's performance.** Hugging Mac runs AI models locally
-> on Apple Silicon and pushes your machine hard—GPU, Neural Engine, and every
-> available core.
+Hugging Mac is built to make full use of your Mac’s powerful computing resources—including its CPU, GPU, and Apple Neural Engine. It provides a unified local platform for running computer vision, speech and audio, large language, and multimodal models on Apple Silicon.
 
-Run vision, speech, language, and multimodal models on your Mac. Build useful
-and strange local AI apps: a Digital Human, live transcription, camera vision,
-pose-controlled games, and whatever comes next.
+Use the capabilities of these models to create useful, creative, and playful **_applications_**, **_games_**, **_agents_**, **_services_**, and entirely new local AI experiences. Your Mac keeps your data private and does all the work.
 
-**Your data stays local. Your Mac does the work.**
+## Models
 
-> Hugging Mac is in active early development. YOLOv8 detection, pose estimation,
-> instance segmentation, the Yolo Pose Follow game, Audio8-ASR transcription,
-> SenseVoiceSmall speech understanding, and the Digital Human experience are
-> available today. More models, apps, and neural games are on the way.
+Hugging Mac currently integrates 16 model families across vision, speech,
+language, and multimodal intelligence. Each integration exposes a consistent
+local lifecycle while retaining the runtime choices that make sense for that
+model and Apple Silicon.
 
-## See it in action
+| Model                                            | Capability                             | Supported runtimes                 |
+| ------------------------------------------------ | -------------------------------------- | ---------------------------------- |
+| **Audio8-ASR 0.1B**                              | Speech transcription                   | PyTorch MPS, Core ML               |
+| **Audio8 TTS Preview**                           | Speech synthesis                       | PyTorch, MLX                       |
+| **DeepFilterNet3**                               | Speech enhancement                     | Core ML                            |
+| **Gemma 4**                                      | Chat                                   | MLX                                |
+| **Kokoro 82M v1.0**                              | Speech synthesis                       | PyTorch MPS, Core ML               |
+| **MediaPipe Hand Detection**                     | Hand detection and tracking            | ONNX Runtime, Core ML              |
+| **Nemotron 3.5 ASR Streaming Multilingual 0.6B** | Streaming speech transcription         | Core ML                            |
+| **Qwen3.5**                                      | Chat and vision-language generation    | MLX                                |
+| **Qwen3-ASR**                                    | Speech transcription                   | Core ML                            |
+| **Qwen3-TTS**                                    | Speech synthesis                       | MLX, Core ML                       |
+| **RetinaFace MobileNet0.25**                     | Face detection                         | PyTorch MPS, Core ML               |
+| **SenseVoiceSmall**                              | Speech transcription and understanding | PyTorch MPS, Core ML               |
+| **Silero VAD**                                   | Voice activity detection               | Core ML, ONNX Runtime              |
+| **Ultralytics YOLOv8**                           | Object detection                       | PyTorch MPS, Core ML, ONNX Runtime |
+| **Ultralytics YOLOv8 Pose**                      | Pose estimation                        | PyTorch MPS, Core ML, ONNX Runtime |
+| **Ultralytics YOLOv8 Seg**                       | Instance segmentation                  | PyTorch MPS, Core ML, ONNX Runtime |
 
-### Digital Human 🎙️
+Visit the [Hugging Mac organization on Hugging Face](https://huggingface.co/hugging-mac)
+to find converted weights and Apple-oriented model artifacts. Model contributions
+are welcome—even if you only help convert an existing model to Core ML, add an
+MLX variant, benchmark a runtime, reduce memory use, or improve performance on
+Apple architectures.
 
-A fully local, camera-aware voice conversation on Apple Silicon. Digital Human
-combines Audio8-ASR, Qwen 3.5 vision-language generation, and Kokoro speech
-to listen, respond to the current camera frame, and speak back with low latency.
+## Applications
 
-[![Watch the Digital Human demo](https://img.youtube.com/vi/YPr6fYPnCMQ/hqdefault.jpg)](https://youtu.be/YPr6fYPnCMQ)
+The Studio turns those model integrations into complete local workflows:
 
-Watch the [Digital Human video chat demo](https://youtu.be/YPr6fYPnCMQ) on YouTube.
+- **Object Detection** — detect and compare objects in images, videos, and live
+  camera feeds with YOLOv8.
+- **Pose Estimation** — run body pose, face, and hand landmark models together
+  for real-time human understanding.
+- **Instance Segmentation** — separate subjects from images, videos, or a camera
+  feed with colored masks and contours.
+- **Live Transcription** — compare multiple ASR models with optional voice
+  activity detection and speech enhancement in one streaming pipeline.
+- **Text to Speech** — synthesize and compare local voices across Audio8 TTS,
+  Kokoro, and Qwen3-TTS.
+- **Local Chat** — talk privately with Qwen3.5 or Gemma 4, with optional camera
+  understanding, speech input, and spoken responses. Watch the
+  [Digital Human demo](https://youtu.be/YPr6fYPnCMQ).
 
-### Yolo Pose Follow 🕺
+We welcome application contributions of every size: a focused demo, a polished
+end-to-end experience, a new model pipeline, or an improvement to an existing
+workflow. Combine the available models in ways we have not imagined yet.
 
-Your body becomes the controller. A local YOLOv8 Pose model follows the camera,
-draws your skeleton, and compares it with a target pose before the clock runs out.
-No cloud inference and no video upload—just you, your Mac, and a neural network.
+## Neural games
 
-![Yolo Pose Follow running locally on Hugging Mac](imgs/yollo-pose-follow.png)
+No controller. No cloud video upload. These games turn live model output into
+real-time input and run the full interaction loop on your Mac.
 
-This is the first entry in the Hugging Mac showcase. More experiments will be
-added here as the model, app, and game catalog grows.
+Click a poster to watch the demo.
 
-## What can you explore?
+| Demo | Game | Description |
+| :---: | --- | --- |
+| <a href="https://hugging-mac-readme.static.hf.space/videos/pose-follow.mp4"><img src="imgs/follow.png" alt="Watch the Yolo Pose Follow demo" width="220"></a> | **Yolo Pose Follow** | Match body poses and hand gestures before the clock runs out. YOLOv8 Pose tracks your skeleton locally and scores every target in real time. |
+| <a href="https://hugging-mac-readme.static.hf.space/videos/fruit-slice.mp4"><img src="imgs/fruit.png" alt="Watch the Yolo Fruit Slice demo" width="220"></a> | **Yolo Fruit Slice** | Turn both forearms into blades, slice fruit, avoid bombs, and build combos. Play with YOLOv8 Pose through the camera, or use the mouse for a quick test. |
+| <a href="https://hugging-mac-readme.static.hf.space/videos/palm-thunder.mp4"><img src="imgs/thunder.png" alt="Watch the Palm Thunder demo" width="220"></a> | **Palm Thunder** | Steer a vertical shooter with your palm, close your fist to trigger a screen bomb, and play solo or co-op with local MediaPipe hand tracking. |
 
-- 🔎 **Object detection** — compare YOLOv8 weight variants and detect objects in
-  images, videos, or a live camera.
-- 🕺 **Pose estimation** — visualize COCO-17 body keypoints and build interactions
-  driven by human movement.
-- 🎨 **Instance segmentation** — separate objects from the scene with colorful
-  masks and contours.
-- 🎙️ **Live transcription** — use VAD and Audio8-ASR to turn ongoing speech into
-  local, sentence-by-sentence text.
-- 🎧 **Speech understanding** — use SenseVoiceSmall to recognize text, language,
-  emotion, and acoustic events in one local pass.
-- 🕹️ **Neural games** — play Yolo Pose Follow and use model output as a real-time
-  game input.
-- 🧠 **Model engineering** — download weights, switch variants, manage instances,
-  convert formats, and observe how different runtimes use your Mac.
+Have an idea for an AI-native game? Contributions are welcome across game
+concepts, visual and audio assets, code, interaction design, stories, characters,
+levels, and scripts. Let us build playful games for the AI era together.
 
 ## Built for learning and building
 
-Hugging Mac is both a visual playground and an extensible development platform:
+Hugging Mac separates **what a model can do** from **how that model is
+implemented**. Each model package exposes one or more stable capability
+interfaces—such as object detection, pose estimation, transcription, speech
+synthesis, or chat—while keeping its weights, preprocessing, postprocessing,
+framework objects, and runtime-specific code private.
 
-- A standalone Python model SDK with consistent lifecycle and capability APIs
-- Multiple isolated instances and weight variants for the same model
-- Pluggable capabilities such as `detect`, `estimate_pose`, `segment`, and
-  `transcribe`
-- Runtime selection for PyTorch MPS, Core ML, ONNX Runtime, MLX, and future
-  Apple-friendly backends
-- Explicit model download, resource management, and format conversion
-- A FastAPI application layer and a responsive Vue 3 frontend
-- A foundation for demos, neural games, evaluation, training, and benchmarking
+Applications are registered independently through their own manifests. An App
+declares the models and capabilities it needs, then acquires those capabilities
+through the shared Model SDK at runtime. It can compose several models into a
+pipeline without depending on concrete model classes or knowing whether the work
+is performed by Core ML, MLX, PyTorch MPS, or ONNX Runtime.
+
+```mermaid
+flowchart TB
+    Experience["Interfaces and Applications<br/>Web Studio · CLI · Apps · Games · Services · Agents"]
+    Capability["Capability API<br/>Detect · Segment · Transcribe · Synthesize · Chat · ..."]
+    Models["Model Layer<br/>Independent model packages · instances · resources"]
+    Runtime["Runtime and EP<br/>Core ML · MLX · PyTorch MPS · ONNX Runtime<br/>CPU · GPU · ANE"]
+
+    Experience -->|compose capabilities| Capability
+    Capability -->|stable contracts| Models
+    Models -->|runtime adapters| Runtime
+```
+
+This capability-first architecture keeps both sides replaceable and composable:
+
+- A new model can implement an existing capability and immediately become
+  available to compatible Apps.
+- A model can support several runtimes without leaking runtime-specific APIs to
+  application code.
+- An App can combine vision, audio, language, and multimodal capabilities into a
+  single pipeline while remaining independent of model internals.
+- Model resources, instance lifecycle, runtime selection, reuse, and unloading
+  stay inside the SDK instead of being reimplemented by every App.
+- The standalone Python SDK can also be used from the Web Studio, a CLI, a
+  notebook, a service, or a future agent runtime.
 
 ## Requirements
 
@@ -110,10 +155,10 @@ npm run dev
 Open <http://127.0.0.1:5173/>. The API documentation is available at
 <http://127.0.0.1:8000/docs>.
 
-Open the Studio, choose a Neural App or Neural Game, prepare its model weights,
-and start experimenting. For example, download a YOLOv8 variant and run it with
-MPS, convert it to Core ML, speak into Audio8-ASR, or step in front of the camera
-and play Yolo Pose Follow.
+Open the Studio, prepare a model from the Models page, then choose an App or Game.
+For example, run YOLOv8 with MPS or Core ML, transcribe with one of four ASR
+families, chat with a local LLM, synthesize speech, or step in front of the camera
+and play one of the three neural games.
 
 ## Documentation
 
