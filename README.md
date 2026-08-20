@@ -46,6 +46,8 @@ Apple architectures.
 
 ## Applications
 
+![Hugging Mac applications](imgs/apps.png)
+
 The Studio turns those model integrations into complete local workflows:
 
 - **Object Detection** — detect and compare objects in images, videos, and live
@@ -68,34 +70,22 @@ workflow. Combine the available models in ways we have not imagined yet.
 
 ## Neural games
 
-No controller. No cloud video upload. These games turn live model output into
-real-time input and run the full interaction loop on your Mac.
+Recreate classic games with AI models, allowing players to step into the action
+and interact in real time.
 
 Click a poster to watch the demo.
 
 | Demo | Game | Description |
 | :---: | --- | --- |
-| <a href="https://hugging-mac-readme.static.hf.space/videos/pose-follow.mp4"><img src="imgs/follow.png" alt="Watch the Yolo Pose Follow demo" width="220"></a> | **Yolo Pose Follow** | Match body poses and hand gestures before the clock runs out. YOLOv8 Pose tracks your skeleton locally and scores every target in real time. |
-| <a href="https://hugging-mac-readme.static.hf.space/videos/fruit-slice.mp4"><img src="imgs/fruit.png" alt="Watch the Yolo Fruit Slice demo" width="220"></a> | **Yolo Fruit Slice** | Turn both forearms into blades, slice fruit, avoid bombs, and build combos. Play with YOLOv8 Pose through the camera, or use the mouse for a quick test. |
-| <a href="https://hugging-mac-readme.static.hf.space/videos/palm-thunder.mp4"><img src="imgs/thunder.png" alt="Watch the Palm Thunder demo" width="220"></a> | **Palm Thunder** | Steer a vertical shooter with your palm, close your fist to trigger a screen bomb, and play solo or co-op with local MediaPipe hand tracking. |
+| <a href="https://hugging-mac-readme.static.hf.space/videos/pose-follow.mp4"><img src="imgs/follow.png" alt="Watch the Yolo Pose Follow demo" width="420"></a> | **Yolo Pose Follow** | Match body poses and hand gestures before the clock runs out. YOLOv8 Pose tracks your skeleton locally and scores every target in real time. |
+| <a href="https://hugging-mac-readme.static.hf.space/videos/fruit-slice.mp4"><img src="imgs/fruit.png" alt="Watch the Yolo Fruit Slice demo" width="420"></a> | **Yolo Fruit Slice** | Turn both forearms into blades, slice fruit, avoid bombs, and build combos. Play with YOLOv8 Pose through the camera, or use the mouse for a quick test. |
+| <a href="https://hugging-mac-readme.static.hf.space/videos/palm-thunder.mp4"><img src="imgs/thunder.png" alt="Watch the Palm Thunder demo" width="420"></a> | **Palm Thunder** | Steer a vertical shooter with your palm, close your fist to trigger a screen bomb, and play solo or co-op with local MediaPipe hand tracking. |
 
 Have an idea for an AI-native game? Contributions are welcome across game
 concepts, visual and audio assets, code, interaction design, stories, characters,
 levels, and scripts. Let us build playful games for the AI era together.
 
 ## Built for learning and building
-
-Hugging Mac separates **what a model can do** from **how that model is
-implemented**. Each model package exposes one or more stable capability
-interfaces—such as object detection, pose estimation, transcription, speech
-synthesis, or chat—while keeping its weights, preprocessing, postprocessing,
-framework objects, and runtime-specific code private.
-
-Applications are registered independently through their own manifests. An App
-declares the models and capabilities it needs, then acquires those capabilities
-through the shared Model SDK at runtime. It can compose several models into a
-pipeline without depending on concrete model classes or knowing whether the work
-is performed by Core ML, MLX, PyTorch MPS, or ONNX Runtime.
 
 ```mermaid
 flowchart TB
@@ -109,18 +99,16 @@ flowchart TB
     Models -->|runtime adapters| Runtime
 ```
 
-This capability-first architecture keeps both sides replaceable and composable:
+Hugging Mac keeps **models and applications decoupled**. A model is packaged as
+an independent capability provider: it owns its weights, preprocessing,
+postprocessing, runtime adapters, and lifecycle, and exposes small, stable
+interfaces instead of being built for a specific application.
 
-- A new model can implement an existing capability and immediately become
-  available to compatible Apps.
-- A model can support several runtimes without leaking runtime-specific APIs to
-  application code.
-- An App can combine vision, audio, language, and multimodal capabilities into a
-  single pipeline while remaining independent of model internals.
-- Model resources, instance lifecycle, runtime selection, reuse, and unloading
-  stay inside the SDK instead of being reimplemented by every App.
-- The standalone Python SDK can also be used from the Web Studio, a CLI, a
-  notebook, a service, or a future agent runtime.
+Models are designed for composition. Applications register independently,
+declare the model capabilities they need, and combine those capabilities into
+pipelines through the Model SDK without needing to know how each model is
+implemented. This enables the same model to be reused across Apps, Games,
+services, and agents, while models and applications evolve independently.
 
 ## Requirements
 
