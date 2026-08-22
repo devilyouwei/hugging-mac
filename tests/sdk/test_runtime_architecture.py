@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -10,7 +11,9 @@ from hugging_mac_sdk import (
     ArtifactKind,
     ManifestError,
     ModelArtifact,
+    ModelComponentStructure,
     ModelDefinition,
+    ModelInspectionService,
     ModelLoadError,
     ModelManifest,
     ModelRegistry,
@@ -22,11 +25,14 @@ from hugging_mac_sdk import (
     RuntimeSpec,
     UnsupportedRuntimeError,
     UrlFileSource,
+    create_default_runtime_registry,
     load_model_config,
 )
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.core.manager import InstanceManager, ReusePolicy
-from hugging_mac_sdk.runtime.coreml import CoreMLSession
+from hugging_mac_sdk.runtime.coreml import CoreMLSession, inspect_coreml_artifact
+from hugging_mac_sdk.runtime.mlx import inspect_mlx_artifact
+from hugging_mac_sdk.runtime.torch import inspect_torch_artifact, inspect_torch_module
 
 
 class DummyInstance(BaseModelInstance):
@@ -168,14 +174,16 @@ def test_registry_reports_only_bound_runtimes_and_resolves_artifacts(
     shared = registry.get("example/multi-runtime").shared_artifacts
     assert tuple(item.artifact_id for item in shared) == ("tokenizer",)
     assert tuple(
-        item.artifact_id
-        for item in registry.get_artifacts("example/multi-runtime", "alpha")
+        item.artifact_id for item in registry.get_artifacts("example/multi-runtime", "alpha")
     ) == ("alpha-model",)
     assert registry.get_artifact("example/multi-runtime", "beta").artifact_id == "beta-model"
-    assert registry.resolve_artifact_path(
-        "example/multi-runtime",
-        "alpha",
-    ) == tmp_path / "example/alpha/model.onnx"
+    assert (
+        registry.resolve_artifact_path(
+            "example/multi-runtime",
+            "alpha",
+        )
+        == tmp_path / "example/alpha/model.onnx"
+    )
 
 
 def test_coreml_session_passes_inputs_for_multifunction_packages() -> None:
@@ -204,6 +212,103 @@ def test_coreml_session_detaches_array_outputs_from_native_storage() -> None:
     model.output[0] = 99.0
 
     assert np.asarray(output["hidden"]).tolist() == [1.0, 2.0]
+
+
+def test_mlx_inspector_reads_safetensors_header_without_loading_weights(tmp_path: Path) -> None:
+    artifact = tmp_path / "weights.safetensors"
+    header = json.dumps(
+        {"layer.weight": {"dtype": "F16", "shape": [4, 8], "data_offsets": [0, 64]}}
+    ).encode()
+    artifact.write_bytes(len(header).to_bytes(8, "little") + header + bytes(64))
+
+    structure = inspect_mlx_artifact(artifact)
+
+    assert len(structure) == 1
+    assert structure[0].parameter_count == 32
+    assert structure[0].outputs[0].name == "layer.weight"
+    assert structure[0].outputs[0].shape == (4, 8)
+
+
+def test_coreml_inspector_reads_compiled_mil_structure(tmp_path: Path) -> None:
+    artifact = tmp_path / "Encoder.mlmodelc"
+    artifact.mkdir()
+    (artifact / "model.mil").write_text(
+        """program(1.3)
+{
+    func main<ios18>(tensor<fp16, [1, 80, T]> audio) {
+        tensor<fp16, [256, 80]> weight = const()[val = BLOBFILE(path = string("w"))];
+        tensor<fp16, [1, 256, T]> hidden = conv(weight = weight, x = audio);
+    } -> (hidden);
+}
+"""
+    )
+
+    structure = inspect_coreml_artifact(artifact)[0]
+
+    assert structure.inputs[0].shape == (1, 80, "T")
+    assert structure.outputs[0].shape == (1, 256, "T")
+    assert structure.parameter_count == 20_480
+    assert structure.operator_counts == {"const": 1, "conv": 1}
+
+
+async def test_model_inspection_service_returns_normalized_artifact_structure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = ModelRegistry(storage_root=tmp_path)
+    registry.register(_definition())
+    artifact = tmp_path / "example/alpha/model.onnx"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"test")
+    expected = (ModelComponentStructure(name="graph", model_type="onnx", node_count=3),)
+    monkeypatch.setattr("hugging_mac_sdk.runtime.onnx.inspect_onnx_artifact", lambda _: expected)
+
+    result = await ModelInspectionService(registry).structure(
+        "example/multi-runtime",
+        variant="default",
+        runtime="alpha",
+        artifact_id="alpha-model",
+    )
+
+    assert result.components == expected
+    assert result.size_bytes == 4
+
+
+def test_torch_inspector_reads_safe_state_dict(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    artifact = tmp_path / "weights.pth"
+    torch.save({"state_dict": {"weight": torch.zeros(3, 4), "bias": torch.zeros(3)}}, artifact)
+
+    structure = inspect_torch_artifact(artifact)[0]
+
+    assert structure.model_type == "pytorch-state-dict"
+    assert structure.parameter_count == 15
+    assert structure.metadata == {"tensor_count": 2}
+    assert [tensor.name for tensor in structure.outputs] == ["weight", "bias"]
+
+
+def test_torch_inspector_flattens_nested_state_dict(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    artifact = tmp_path / "nested.pth"
+    torch.save({"encoder": {"block": {"weight": torch.zeros(2, 5)}}}, artifact)
+
+    structure = inspect_torch_artifact(artifact)[0]
+
+    assert structure.parameter_count == 10
+    assert structure.outputs[0].name == "encoder.block.weight"
+    assert structure.outputs[0].shape == (2, 5)
+
+
+def test_torch_module_inspector_summarizes_layers() -> None:
+    torch = pytest.importorskip("torch")
+    model = torch.nn.Sequential(torch.nn.Linear(4, 3), torch.nn.ReLU())
+
+    structure = inspect_torch_module(model, "example")
+
+    assert structure.parameter_count == 15
+    assert structure.node_count is None
+    assert [layer.name for layer in structure.layers] == ["0", "1"]
+    assert structure.layers[0].parameter_count == 15
+    assert structure.operator_counts == {"Linear": 1, "ReLU": 1}
 
 
 def test_definition_rejects_declared_runtime_without_implementation() -> None:
@@ -395,3 +500,14 @@ def test_runtime_backend_registry_is_independent_from_model_registry() -> None:
 
     assert runtimes.get("dummy") is backend
     assert runtimes.list() == (backend,)
+
+
+def test_default_runtime_registry_includes_mlx_provider() -> None:
+    runtimes = create_default_runtime_registry()
+
+    assert tuple(backend.name for backend in runtimes.list()) == (
+        "coreml",
+        "mlx",
+        "onnx",
+        "pytorch",
+    )

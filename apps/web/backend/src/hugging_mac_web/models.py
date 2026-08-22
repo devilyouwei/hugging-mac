@@ -13,6 +13,7 @@ from hugging_mac_sdk import (
     ModelArtifact,
     ModelDefinition,
     ModelResourceStatus,
+    ModelStructure,
     ModelSummary,
     ResourceNotFoundError,
     ReusePolicy,
@@ -132,6 +133,29 @@ def create_models_router() -> APIRouter:
     ) -> ApiResponse[ModelInventory]:
         return ApiResponse(
             data=_inventory(context, model_id),
+            meta=ResponseMeta(generated_at=utc_now()),
+        )
+
+    @router.get(
+        "/models/{model_id:path}/structure",
+        response_model=ApiResponse[ModelStructure],
+    )
+    async def model_structure(
+        model_id: str,
+        context: ContextDependency,
+        runtime: str = Query(),
+        artifact_id: str = Query(),
+        variant: str | None = Query(default=None),
+    ) -> ApiResponse[ModelStructure]:
+        structure = await context.models.inspection.structure(
+            model_id,
+            variant=variant,
+            runtime=runtime,
+            artifact_id=artifact_id,
+            model_home=context.settings.model_home,
+        )
+        return ApiResponse(
+            data=structure,
             meta=ResponseMeta(generated_at=utc_now()),
         )
 

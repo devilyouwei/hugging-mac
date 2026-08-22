@@ -2661,6 +2661,7 @@ a {
 .local-file-list { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-end; }
 .local-file { align-items: center; background: var(--paper); border: 1px solid var(--line); display: grid; gap: 0.55rem; grid-template-columns: auto auto auto; padding: 0.4rem 0.5rem; }
 .local-file > div { display: flex; flex-direction: column; gap: 0.1rem; }
+.local-file > .local-file__actions { flex-direction: row; gap: 0.3rem; }
 .local-file strong { font-size: 0.62rem; }
 .local-file small, .local-file > span { color: var(--muted); font-family: var(--font-mono); font-size: 0.5rem; white-space: nowrap; }
 

@@ -6,6 +6,7 @@ import {
   deleteModelArtifact,
   downloadModelResource,
   fetchModelInventory,
+  fetchModelStructure,
   fetchModels,
   loadModel,
   unloadModel,
@@ -14,11 +15,13 @@ import type {
   ArtifactInventoryItem,
   InstanceSummary,
   ModelInventory,
+  ModelStructure,
   ModelSummary,
   ResourceOption,
   RuntimeSummary,
 } from "@/api/types"
 import StatusPill from "@/components/StatusPill.vue"
+import ModelStructureModal from "@/components/ModelStructureModal.vue"
 
 type Filter = "all" | "ready" | "setup" | "loaded"
 
@@ -32,6 +35,11 @@ const pageError = ref("")
 const query = ref("")
 const filter = ref<Filter>("all")
 const expandedModels = ref<Set<string>>(new Set())
+const inspectedStructure = ref<ModelStructure | null>(null)
+const inspectedModelName = ref("")
+const inspectionLoading = ref(false)
+const inspectionError = ref("")
+const inspectionOpen = ref(false)
 
 const visibleModels = computed(() => {
   const term = query.value.trim().toLowerCase()
@@ -126,6 +134,12 @@ function conversionTargets(model: ModelSummary): ArtifactInventoryItem[] {
 function localArtifacts(model: ModelSummary): ArtifactInventoryItem[] {
   return [...variantArtifacts(model), ...sharedArtifacts(model)].filter(
     (artifact) => artifact.available,
+  )
+}
+
+function artifactInspectable(artifact: ArtifactInventoryItem): boolean {
+  return ["coreml", "onnx", "pytorch", "torchscript", "mlx", "safetensors"].includes(
+    artifact.format,
   )
 }
 
@@ -326,6 +340,27 @@ async function handleUnload(model: ModelSummary, instance: InstanceSummary): Pro
   await runOperation(model, key, "Instance unloaded.", async () => {
     await unloadModel(instance.instance_id, instance.reference_count > 0)
   })
+}
+
+async function handleInspect(model: ModelSummary, artifact: ArtifactInventoryItem): Promise<void> {
+  inspectionOpen.value = true
+  inspectionLoading.value = true
+  inspectionError.value = ""
+  inspectedStructure.value = null
+  inspectedModelName.value = model.name
+  try {
+    inspectedStructure.value = await fetchModelStructure(model.model_id, artifact)
+  } catch (caught) {
+    inspectionError.value = caught instanceof Error
+      ? caught.message
+      : "The model structure could not be inspected."
+  } finally {
+    inspectionLoading.value = false
+  }
+}
+
+function closeInspection(): void {
+  inspectionOpen.value = false
 }
 
 onMounted(async () => {
@@ -561,19 +596,37 @@ onMounted(async () => {
           <div v-for="artifact in localArtifacts(model)" :key="artifactKey(artifact)" class="local-file">
             <div><strong>{{ formatName(artifact.artifact_id) }}</strong><small>{{ formatName(artifact.format) }} · {{ formatName(artifact.runtime) }}</small></div>
             <span>{{ formatBytes(artifact.size_bytes) }}</span>
-            <button
-              class="text-action text-action--danger"
-              :disabled="artifactHasInstances(model, artifact) || isPending(operationKey('delete', model.model_id, artifactKey(artifact)))"
-              :title="artifactHasInstances(model, artifact) ? 'Unload this runtime before removing its files' : 'Remove from local storage'"
-              type="button"
-              @click="handleDelete(model, artifact)"
-            >
-              {{ isPending(operationKey('delete', model.model_id, artifactKey(artifact))) ? 'Removing…' : 'Remove' }}
-            </button>
+            <div class="local-file__actions">
+              <button
+                v-if="artifactInspectable(artifact)"
+                class="text-action"
+                type="button"
+                @click="handleInspect(model, artifact)"
+              >
+                Structure
+              </button>
+              <button
+                class="text-action text-action--danger"
+                :disabled="artifactHasInstances(model, artifact) || isPending(operationKey('delete', model.model_id, artifactKey(artifact)))"
+                :title="artifactHasInstances(model, artifact) ? 'Unload this runtime before removing its files' : 'Remove from local storage'"
+                type="button"
+                @click="handleDelete(model, artifact)"
+              >
+                {{ isPending(operationKey('delete', model.model_id, artifactKey(artifact))) ? 'Removing…' : 'Remove' }}
+              </button>
+            </div>
           </div>
         </div>
         <p v-else>No files installed for this variant.</p>
       </footer>
     </article>
+    <ModelStructureModal
+      v-if="inspectionOpen"
+      :error="inspectionError"
+      :loading="inspectionLoading"
+      :model-name="inspectedModelName"
+      :structure="inspectedStructure"
+      @close="closeInspection"
+    />
   </div>
 </template>

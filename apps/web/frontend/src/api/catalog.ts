@@ -5,6 +5,7 @@ import type {
   ModelResourceStatus,
   ModelSummary,
   ModelInventory,
+  ModelStructure,
   ArtifactInventoryItem,
   ResourceOption,
   SystemInfo,
@@ -34,6 +35,22 @@ function modelPath(modelId: string): string {
 
 export async function fetchModelInventory(modelId: string): Promise<ModelInventory> {
   return (await request<ModelInventory>(`/api/v1/catalog/models/${modelPath(modelId)}/inventory`)).data
+}
+
+export async function fetchModelStructure(
+  modelId: string,
+  artifact: ArtifactInventoryItem,
+): Promise<ModelStructure> {
+  const query = new URLSearchParams({
+    variant: artifact.variant,
+    runtime: artifact.runtime,
+    artifact_id: artifact.artifact_id,
+  })
+  return (
+    await request<ModelStructure>(
+      `/api/v1/catalog/models/${modelPath(modelId)}/structure?${query}`,
+    )
+  ).data
 }
 
 export async function downloadModelResource(modelId: string, resource: ResourceOption): Promise<ModelInventory> {

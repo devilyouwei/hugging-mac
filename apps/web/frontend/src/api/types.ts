@@ -111,6 +111,41 @@ export interface ModelInventory {
   artifacts: ArtifactInventoryItem[]
 }
 
+export interface TensorStructure {
+  name: string
+  dtype: string | null
+  shape: Array<number | string>
+}
+
+export interface ModelLayerStructure {
+  name: string
+  layer_type: string
+  parameter_count: number
+}
+
+export interface ModelComponentStructure {
+  name: string
+  model_type: string
+  inputs: TensorStructure[]
+  outputs: TensorStructure[]
+  layers: ModelLayerStructure[]
+  node_count: number | null
+  parameter_count: number | null
+  operator_counts: Record<string, number>
+  metadata: Record<string, string | number | boolean>
+}
+
+export interface ModelStructure {
+  model_id: string
+  revision: string
+  variant: string
+  runtime: string
+  artifact_id: string
+  format: string
+  size_bytes: number | null
+  components: ModelComponentStructure[]
+}
+
 export interface ModelSummary {
   model_id: string
   revision: string

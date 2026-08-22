@@ -91,6 +91,8 @@ async def test_qwen3_tts_load_explicitly_selects_model_type(tmp_path: Path, monk
     calls: list[tuple[str, dict[str, object]]] = []
     loaded_model = object()
     utils = ModuleType("mlx_audio.tts.utils")
+    mlx_core = ModuleType("mlx.core")
+    mlx_core.clear_cache = lambda: None  # type: ignore[attr-defined]
 
     def fake_load(path: str, **kwargs: object) -> object:
         calls.append((path, kwargs))
@@ -98,6 +100,7 @@ async def test_qwen3_tts_load_explicitly_selects_model_type(tmp_path: Path, monk
 
     utils.load = fake_load  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "mlx_audio.tts.utils", utils)
+    monkeypatch.setitem(sys.modules, "mlx.core", mlx_core)
     tokenizer_path = tmp_path / "tokenizers"
     tokenizer_path.mkdir()
 
