@@ -86,11 +86,12 @@ artifacts:
     kind: directory
     expected_sha256: c8eb62862dddac01512e47469e5dc15ad707d85c2d713d78a5b17b17d365f4a4
     source:
-      kind: url_archive
-      url: https://huggingface.co/hugging-mac/yolov8-coreml/resolve/6de29a7726591776b001f51dcb1cb45b0c49b9d5/yolov8n.mlpackage.zip
-      format: zip
-      strip_components: 1
-      expected_sha256: 58bcc9a75b285161f4cb4ed66c2ab1be76a9eed269bdeebd7548ad1a869e2322
+      kind: huggingface
+      repo_id: hugging-mac/yolov8-coreml
+      revision: 6de29a7726591776b001f51dcb1cb45b0c49b9d5
+      allow_patterns: [yolov8n.mlpackage/Manifest.json, yolov8n.mlpackage/Data/**]
+      strip_prefix: yolov8n.mlpackage
+      expected_sha256: c8eb62862dddac01512e47469e5dc15ad707d85c2d713d78a5b17b17d365f4a4
   - {artifact_id: onnx, variant: n, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/n/onnx/yolov8n.onnx, kind: file, convert: true}
   - artifact_id: source
     variant: s
@@ -114,11 +115,12 @@ artifacts:
     kind: directory
     expected_sha256: c5178bbaf83f8d4be513e2ce6f8081d44882466ab4a4eb62c704e1c9c95d3eac
     source:
-      kind: url_archive
-      url: https://huggingface.co/hugging-mac/yolov8-coreml/resolve/6de29a7726591776b001f51dcb1cb45b0c49b9d5/yolov8s.mlpackage.zip
-      format: zip
-      strip_components: 1
-      expected_sha256: ddb8ba08d2e675665965de413e3231c992e8b8bc3f4bfe28c4351120603eb7d0
+      kind: huggingface
+      repo_id: hugging-mac/yolov8-coreml
+      revision: 6de29a7726591776b001f51dcb1cb45b0c49b9d5
+      allow_patterns: [yolov8s.mlpackage/Manifest.json, yolov8s.mlpackage/Data/**]
+      strip_prefix: yolov8s.mlpackage
+      expected_sha256: c5178bbaf83f8d4be513e2ce6f8081d44882466ab4a4eb62c704e1c9c95d3eac
   - {artifact_id: onnx, variant: s, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/s/onnx/yolov8s.onnx, kind: file, convert: true}
   - artifact_id: source
     variant: m
@@ -142,9 +144,10 @@ artifacts:
     kind: directory
     expected_sha256: d4e4e1a92b891cd8cfc3c41e15a57b92b26abc263deed6dc409874c1fbefe6a5
     source:
-      kind: url_archive
-      url: https://huggingface.co/hugging-mac/yolov8-coreml/resolve/6de29a7726591776b001f51dcb1cb45b0c49b9d5/yolov8m.mlpackage.zip
-      format: zip
-      strip_components: 1
-      expected_sha256: 5a3f56d1f1a5e342b112919f82fcfef6edf513142ccac7efc6dab005caeee241
+      kind: huggingface
+      repo_id: hugging-mac/yolov8-coreml
+      revision: 6de29a7726591776b001f51dcb1cb45b0c49b9d5
+      allow_patterns: [yolov8m.mlpackage/Manifest.json, yolov8m.mlpackage/Data/**]
+      strip_prefix: yolov8m.mlpackage
+      expected_sha256: d4e4e1a92b891cd8cfc3c41e15a57b92b26abc263deed6dc409874c1fbefe6a5
   - {artifact_id: onnx, variant: m, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/m/onnx/yolov8m.onnx, kind: file, convert: true}

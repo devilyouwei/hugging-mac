@@ -65,11 +65,12 @@ artifacts:
     convert: true
     expected_sha256: 84d3154a02c99307ec9e5bab023551eaa4cd16660d61b61fc361ac3c760eb863
     source:
-      kind: url_archive
-      url: https://huggingface.co/hugging-mac/yolov8-pose-coreml/resolve/8d8d85e2b40d1474607651f25d9f870968debf31/yolov8n-pose.mlpackage.zip
-      format: zip
-      strip_components: 1
-      expected_sha256: d31d575b817f1a3eadf1dd7ea40b67da3eb11776f36b08cefd018c59dffab01a
+      kind: huggingface
+      repo_id: hugging-mac/yolov8-pose-coreml
+      revision: 8d8d85e2b40d1474607651f25d9f870968debf31
+      allow_patterns: [yolov8n-pose.mlpackage/Manifest.json, yolov8n-pose.mlpackage/Data/**]
+      strip_prefix: yolov8n-pose.mlpackage
+      expected_sha256: 84d3154a02c99307ec9e5bab023551eaa4cd16660d61b61fc361ac3c760eb863
   - {artifact_id: onnx, variant: n, runtime: onnx, format: onnx, path: ultralytics/yolov8-pose/v8.2.0/n/onnx/yolov8n-pose.onnx, kind: file, convert: true}
   - {artifact_id: source, variant: s, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-pose/v8.2.0/s/source/yolov8s-pose.pt, kind: file}
   - artifact_id: coreml
@@ -81,11 +82,12 @@ artifacts:
     convert: true
     expected_sha256: 660389b72cf309e66af18fdafe80d1c719809921b77ea2d417b76686cf44801c
     source:
-      kind: url_archive
-      url: https://huggingface.co/hugging-mac/yolov8-pose-coreml/resolve/8d8d85e2b40d1474607651f25d9f870968debf31/yolov8s-pose.mlpackage.zip
-      format: zip
-      strip_components: 1
-      expected_sha256: d0bd890ff8d0501baa8e317f9139172f6fc54ab5989b569e4769341c83364069
+      kind: huggingface
+      repo_id: hugging-mac/yolov8-pose-coreml
+      revision: 8d8d85e2b40d1474607651f25d9f870968debf31
+      allow_patterns: [yolov8s-pose.mlpackage/Manifest.json, yolov8s-pose.mlpackage/Data/**]
+      strip_prefix: yolov8s-pose.mlpackage
+      expected_sha256: 660389b72cf309e66af18fdafe80d1c719809921b77ea2d417b76686cf44801c
   - {artifact_id: onnx, variant: s, runtime: onnx, format: onnx, path: ultralytics/yolov8-pose/v8.2.0/s/onnx/yolov8s-pose.onnx, kind: file, convert: true}
   - {artifact_id: source, variant: m, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-pose/v8.2.0/m/source/yolov8m-pose.pt, kind: file}
   - artifact_id: coreml
@@ -97,9 +99,10 @@ artifacts:
     convert: true
     expected_sha256: da9a330d271eac5b1b740b2b78b2fbcc3a3406a5e5d25cb459afd122d091092a
     source:
-      kind: url_archive
-      url: https://huggingface.co/hugging-mac/yolov8-pose-coreml/resolve/8d8d85e2b40d1474607651f25d9f870968debf31/yolov8m-pose.mlpackage.zip
-      format: zip
-      strip_components: 1
-      expected_sha256: d812c8d1b276722eafc09d84298c82a6b40a0da5d588cf4adde7e7c73dd9aaa4
+      kind: huggingface
+      repo_id: hugging-mac/yolov8-pose-coreml
+      revision: 8d8d85e2b40d1474607651f25d9f870968debf31
+      allow_patterns: [yolov8m-pose.mlpackage/Manifest.json, yolov8m-pose.mlpackage/Data/**]
+      strip_prefix: yolov8m-pose.mlpackage
+      expected_sha256: da9a330d271eac5b1b740b2b78b2fbcc3a3406a5e5d25cb459afd122d091092a
   - {artifact_id: onnx, variant: m, runtime: onnx, format: onnx, path: ultralytics/yolov8-pose/v8.2.0/m/onnx/yolov8m-pose.onnx, kind: file, convert: true}

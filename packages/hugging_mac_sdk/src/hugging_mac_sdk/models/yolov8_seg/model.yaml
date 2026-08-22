@@ -65,11 +65,12 @@ artifacts:
     convert: true
     expected_sha256: 40e067215baf17be1d4c1a63483538d0fa39c5d0f231cb63248c404e929ce9bc
     source:
-      kind: url_archive
-      url: https://huggingface.co/hugging-mac/yolov8-seg-coreml/resolve/df834eb3ceacfd395690498f7ab3a96447c78f0c/yolov8n-seg.mlpackage.zip
-      format: zip
-      strip_components: 1
-      expected_sha256: f11e4c2ff74cd35251bd8ca13f43ac09e6b984bfc456610db2de987cb5478192
+      kind: huggingface
+      repo_id: hugging-mac/yolov8-seg-coreml
+      revision: df834eb3ceacfd395690498f7ab3a96447c78f0c
+      allow_patterns: [yolov8n-seg.mlpackage/Manifest.json, yolov8n-seg.mlpackage/Data/**]
+      strip_prefix: yolov8n-seg.mlpackage
+      expected_sha256: 40e067215baf17be1d4c1a63483538d0fa39c5d0f231cb63248c404e929ce9bc
   - {artifact_id: onnx, variant: n, runtime: onnx, format: onnx, path: ultralytics/yolov8-seg/v8.2.0/n/onnx/yolov8n-seg.onnx, kind: file, convert: true}
   - {artifact_id: source, variant: s, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-seg/v8.2.0/s/source/yolov8s-seg.pt, kind: file}
   - artifact_id: coreml
@@ -81,11 +82,12 @@ artifacts:
     convert: true
     expected_sha256: ab06bcad128a494510f6451c22cdebb79a58db01f628e9a9a60216b246691399
     source:
-      kind: url_archive
-      url: https://huggingface.co/hugging-mac/yolov8-seg-coreml/resolve/df834eb3ceacfd395690498f7ab3a96447c78f0c/yolov8s-seg.mlpackage.zip
-      format: zip
-      strip_components: 1
-      expected_sha256: a97a885f5000993df137e1be3e4e66893cec4dd18720ecc87ed292234efe97ef
+      kind: huggingface
+      repo_id: hugging-mac/yolov8-seg-coreml
+      revision: df834eb3ceacfd395690498f7ab3a96447c78f0c
+      allow_patterns: [yolov8s-seg.mlpackage/Manifest.json, yolov8s-seg.mlpackage/Data/**]
+      strip_prefix: yolov8s-seg.mlpackage
+      expected_sha256: ab06bcad128a494510f6451c22cdebb79a58db01f628e9a9a60216b246691399
   - {artifact_id: onnx, variant: s, runtime: onnx, format: onnx, path: ultralytics/yolov8-seg/v8.2.0/s/onnx/yolov8s-seg.onnx, kind: file, convert: true}
   - {artifact_id: source, variant: m, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-seg/v8.2.0/m/source/yolov8m-seg.pt, kind: file}
   - artifact_id: coreml
@@ -97,9 +99,10 @@ artifacts:
     convert: true
     expected_sha256: 685049dbc644c5f9abd088aa398942b052d3256819dfe7bf27456e7136c0e6a5
     source:
-      kind: url_archive
-      url: https://huggingface.co/hugging-mac/yolov8-seg-coreml/resolve/df834eb3ceacfd395690498f7ab3a96447c78f0c/yolov8m-seg.mlpackage.zip
-      format: zip
-      strip_components: 1
-      expected_sha256: 3405dc451c356f0c37a1a206a3470e27d07345f09eeea78b3588ea576e97d3a0
+      kind: huggingface
+      repo_id: hugging-mac/yolov8-seg-coreml
+      revision: df834eb3ceacfd395690498f7ab3a96447c78f0c
+      allow_patterns: [yolov8m-seg.mlpackage/Manifest.json, yolov8m-seg.mlpackage/Data/**]
+      strip_prefix: yolov8m-seg.mlpackage
+      expected_sha256: 685049dbc644c5f9abd088aa398942b052d3256819dfe7bf27456e7136c0e6a5
   - {artifact_id: onnx, variant: m, runtime: onnx, format: onnx, path: ultralytics/yolov8-seg/v8.2.0/m/onnx/yolov8m-seg.onnx, kind: file, convert: true}
