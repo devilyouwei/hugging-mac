@@ -24,7 +24,7 @@ manifest:
       metadata: {parameters_millions: 600, sample_rate: 16000, chunk_ms: 1120, vocab_size: 2828}
       resources: [{kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [latin/1120ms/**]}]
     - name: latin-2240ms
-      display_name: Latin 2240 ms (Recommended)
+      display_name: Latin 2240 ms
       metadata: {parameters_millions: 600, sample_rate: 16000, chunk_ms: 2240, vocab_size: 2828}
       resources: [{kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [latin/2240ms/**]}]
     - name: latin-4480ms
@@ -40,7 +40,7 @@ manifest:
       metadata: {parameters_millions: 600, sample_rate: 16000, chunk_ms: 1120, vocab_size: 13087}
       resources: [{kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [multilingual/1120ms/**]}]
     - name: multilingual-2240ms
-      display_name: Multilingual 2240 ms (Recommended)
+      display_name: Multilingual 2240 ms
       metadata: {parameters_millions: 600, sample_rate: 16000, chunk_ms: 2240, vocab_size: 13087}
       resources: [{kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [multilingual/2240ms/**]}]
     - name: multilingual-4480ms

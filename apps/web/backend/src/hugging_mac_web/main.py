@@ -91,6 +91,10 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Development servers may install their logging configuration after the
+        # app module is imported. Re-apply ours at the actual process lifecycle boundary.
+        configure_logging(resolved.log_level)
+        logger.info("Backend logging ready renderer=compact-v2 precision=milliseconds")
         _install_process_diagnostics()
         context = create_context(resolved)
         app.state.context = context

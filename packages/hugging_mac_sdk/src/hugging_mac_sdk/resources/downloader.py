@@ -267,6 +267,7 @@ class ResourceDownloader:
         token: str | None,
     ) -> ResolvedResource:
         staging = _staging_path(destination)
+        selected = _staging_path(destination, suffix=".selected")
         try:
             await asyncio.to_thread(
                 partial(
@@ -284,10 +285,20 @@ class ResourceDownloader:
             # The atomic destination is a model artifact, not another cache, so
             # keep only files selected by the source declaration.
             await asyncio.to_thread(_remove_huggingface_metadata, staging)
-            digest = await asyncio.to_thread(directory_sha256, staging)
+            materialized = staging
+            if source.strip_prefix is not None:
+                prefix_path = staging / source.strip_prefix
+                if not prefix_path.is_dir():
+                    raise ResourceNotFoundError(
+                        f"Hugging Face snapshot prefix not found: {source.strip_prefix}"
+                    )
+                await asyncio.to_thread(os.replace, prefix_path, selected)
+                await asyncio.to_thread(_remove_staging, staging)
+                materialized = selected
+            digest = await asyncio.to_thread(directory_sha256, materialized)
             self._validate_digest(digest, source.expected_sha256, source.repo_id)
-            size = directory_size(staging)
-            self._commit(staging, destination, overwrite)
+            size = directory_size(materialized)
+            self._commit(materialized, destination, overwrite)
             return ResolvedResource(
                 path=destination,
                 source=source,
@@ -303,6 +314,7 @@ class ResourceDownloader:
             ) from error
         finally:
             _remove_staging(staging)
+            _remove_staging(selected)
 
     async def _stream_url(
         self,

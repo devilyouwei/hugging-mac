@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Protocol, cast
@@ -35,7 +36,92 @@ class SileroEngine(Protocol):
 
     async def probabilities(self, prepared: PreparedAudio) -> tuple[float, ...]: ...
 
+    def create_stream(self) -> SileroEngineStream: ...
+
     async def close(self) -> None: ...
+
+
+class SileroEngineStream(Protocol):
+    async def probability(self, samples: tuple[float, ...]) -> float: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SileroStreamingResult:
+    voiced: bool
+    speech_started: bool
+    speech_ended: bool
+    probability: float
+    processed_samples: int
+
+
+class SileroStreamingDetector:
+    """Connection-scoped Silero state and speech/silence hysteresis."""
+
+    def __init__(
+        self,
+        engine: SileroEngineStream,
+        inference_lock: asyncio.Lock,
+        *,
+        chunk_samples: int,
+        sample_rate: int,
+        threshold: float,
+        min_speech_ms: int,
+        min_silence_ms: int,
+    ) -> None:
+        self._engine = engine
+        self._inference_lock = inference_lock
+        self._chunk_samples = chunk_samples
+        self._threshold = threshold
+        self._min_speech_samples = round(sample_rate * min_speech_ms / 1000)
+        self._min_silence_samples = round(sample_rate * min_silence_ms / 1000)
+        self._buffer: list[float] = []
+        self._candidate_speech_samples = 0
+        self._silence_samples = 0
+        self._voiced = False
+        self._last_probability = 0.0
+
+    async def push(self, samples: tuple[float, ...]) -> SileroStreamingResult:
+        self._buffer.extend(samples)
+        speech_started = False
+        speech_ended = False
+        processed_samples = 0
+        while len(self._buffer) >= self._chunk_samples:
+            frame = tuple(self._buffer[: self._chunk_samples])
+            del self._buffer[: self._chunk_samples]
+            async with self._inference_lock:
+                probability = await self._engine.probability(frame)
+            self._last_probability = probability
+            processed_samples += self._chunk_samples
+            if probability >= self._threshold:
+                self._silence_samples = 0
+                if not self._voiced:
+                    self._candidate_speech_samples += self._chunk_samples
+                    if self._candidate_speech_samples >= self._min_speech_samples:
+                        self._voiced = True
+                        speech_started = True
+            else:
+                self._candidate_speech_samples = 0
+                if self._voiced:
+                    self._silence_samples += self._chunk_samples
+                    if self._silence_samples >= self._min_silence_samples:
+                        self._voiced = False
+                        self._silence_samples = 0
+                        speech_ended = True
+
+        return SileroStreamingResult(
+            voiced=self._voiced,
+            speech_started=speech_started,
+            speech_ended=speech_ended,
+            probability=self._last_probability,
+            processed_samples=processed_samples,
+        )
+
+    def reset_boundary(self) -> None:
+        """Start endpoint hysteresis for a new utterance without dropping audio."""
+
+        self._candidate_speech_samples = 0
+        self._silence_samples = 0
+        self._voiced = False
 
 
 class SileroInstance(BaseModelInstance):
@@ -55,9 +141,26 @@ class SileroInstance(BaseModelInstance):
             cast(VoiceActivityDetection, self),
         )
 
-    async def detect_voice_activity(
-        self, request: VoiceActivityRequest
-    ) -> VoiceActivityResponse:
+    def create_streaming_detector(
+        self,
+        *,
+        threshold: float,
+        min_speech_ms: int = 96,
+        min_silence_ms: int = 800,
+    ) -> SileroStreamingDetector:
+        if self.state is not ModelState.READY:
+            raise InferenceError("Silero instance must be READY before streaming")
+        return SileroStreamingDetector(
+            self._engine.create_stream(),
+            self._inference_lock,
+            chunk_samples=self._config.chunk_samples,
+            sample_rate=self._config.sample_rate,
+            threshold=threshold,
+            min_speech_ms=min_speech_ms,
+            min_silence_ms=min_silence_ms,
+        )
+
+    async def detect_voice_activity(self, request: VoiceActivityRequest) -> VoiceActivityResponse:
         if self.state is not ModelState.READY:
             raise InferenceError("Silero instance must be READY before inference")
         started = perf_counter()

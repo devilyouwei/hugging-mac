@@ -5,9 +5,7 @@ from hugging_mac_web.app_registry import AppManifest, AppModelRequirement
 LIVE_TRANSCRIPTION_MANIFEST = AppManifest(
     app_id="live-transcription",
     name="Live Transcription",
-    description=(
-        "Live multi-model transcription with optional Silero VAD and DeepFilterNet3."
-    ),
+    description=("Live multi-model transcription with optional Silero VAD and DeepFilterNet3."),
     tags=frozenset({"audio", "asr", "vad", "live"}),
     frontend_route="/apps/live-transcription",
     api_prefix="/api/v1/apps/live-transcription",

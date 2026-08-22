@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from hugging_mac_sdk.core.registry import ModelDefinition, ModelRegistry
-from hugging_mac_sdk.errors import UnsupportedCapabilityError
+from hugging_mac_sdk.errors import ResourceNotFoundError, UnsupportedCapabilityError
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_size
 from hugging_mac_sdk.schemas.artifact import ArtifactKind, ModelArtifact
@@ -171,6 +171,39 @@ class ModelResourceService:
                 token=token,
             )
 
+    async def download_shared_artifact(
+        self,
+        model_id: str,
+        artifact_id: str,
+        *,
+        revision: str | None = None,
+        options: Mapping[str, object] | None = None,
+        overwrite: bool = False,
+    ) -> None:
+        """Install one explicitly selected model-wide artifact."""
+
+        definition = self._registry.get(model_id, revision)
+        artifact = next(
+            (item for item in definition.shared_artifacts if item.artifact_id == artifact_id),
+            None,
+        )
+        if artifact is None:
+            raise ResourceNotFoundError(
+                f"Shared artifact is not declared: {artifact_id}",
+                details={"model_id": model_id, "artifact_id": artifact_id},
+            )
+        path = artifact.resolve(self._model_home(options))
+        if not overwrite and artifact_available(artifact, path):
+            return
+        token_value = (options or {}).get("hf_token")
+        assert artifact.source is not None
+        await ResourceDownloader().download(
+            artifact.source,
+            path,
+            overwrite=overwrite,
+            token=str(token_value) if token_value is not None else None,
+        )
+
     def _with_shared_status(
         self,
         definition: ModelDefinition,
@@ -244,7 +277,11 @@ def artifact_available(artifact: ModelArtifact, path: Path) -> bool:
     source = artifact.source
     if not isinstance(source, HuggingFaceSource):
         return True
-    for pattern in source.allow_patterns:
+    patterns = source.allow_patterns
+    if source.strip_prefix is not None:
+        prefix = f"{source.strip_prefix.as_posix().rstrip('/')}/"
+        patterns = tuple(pattern.removeprefix(prefix) for pattern in patterns)
+    for pattern in patterns:
         if glob.has_magic(pattern):
             if not any(path.glob(pattern)):
                 return False

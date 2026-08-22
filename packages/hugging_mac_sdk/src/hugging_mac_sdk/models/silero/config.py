@@ -23,9 +23,9 @@ class SileroInstanceConfig(BaseModel):
     variant: Literal["v6.2.1"] = "v6.2.1"
     model_home: Path = Field(default_factory=lambda: user_cache_path("hugging-mac") / "models")
     artifact_path: Path | None = None
-    device: Literal[
-        "auto", "coreml", "cpu", "all", "cpu-only", "cpu-and-gpu",
-        "cpu-and-neural-engine"
-    ] | None = "auto"
+    device: (
+        Literal["auto", "coreml", "cpu", "all", "cpu-only", "cpu-and-gpu", "cpu-and-neural-engine"]
+        | None
+    ) = "auto"
     sample_rate: Literal[16000] = 16000
     chunk_samples: Literal[512] = 512

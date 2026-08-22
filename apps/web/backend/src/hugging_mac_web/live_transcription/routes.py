@@ -1,8 +1,12 @@
-"""Live transcription REST routes."""
+"""Live transcription management and realtime WebSocket routes."""
 
-from typing import Annotated
+import asyncio
+import contextlib
+import json
+from time import perf_counter
+from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from hugging_mac_web.dependencies import ContextDependency
 from hugging_mac_web.live_transcription.config import LiveTranscriptionSettings
@@ -12,26 +16,18 @@ from hugging_mac_web.live_transcription.schemas import (
     LoadModelRequest,
     PipelineComponentView,
     ResourceStatusView,
-    StreamingFinishRequest,
-    StreamingSessionRequest,
-    StreamingSessionView,
-    StreamingTranscriptionView,
-    TranscriptionResultView,
-    VadDetectionView,
 )
 from hugging_mac_web.live_transcription.service import LiveTranscriptionService
+from hugging_mac_web.live_transcription.session import (
+    LiveSessionStart,
+    LiveTranscriptionSession,
+)
 from hugging_mac_web.schemas import ApiResponse, ResponseMeta
+from hugging_mac_web.shared.utils.log_util import get_logger
 from hugging_mac_web.shared.utils.time_util import utc_now
-from hugging_mac_web.shared.utils.upload_util import read_upload_limited
 
-SUPPORTED_AUDIO = {
-    "audio/wav",
-    "audio/wave",
-    "audio/x-wav",
-    "audio/flac",
-    "audio/x-flac",
-}
 DEFAULT_MODEL_ID = "audio8/audio8-asr"
+logger = get_logger("live_transcription.routes")
 
 
 def create_router(settings: LiveTranscriptionSettings) -> APIRouter:
@@ -51,8 +47,11 @@ def create_router(settings: LiveTranscriptionSettings) -> APIRouter:
     async def resource_status(
         context: ContextDependency,
         model_id: str = Query(default=DEFAULT_MODEL_ID),
+        variant: str | None = Query(default=None),
     ) -> ApiResponse[ResourceStatusView]:
-        data = await LiveTranscriptionService(context, settings).resource_status(model_id)
+        data = await LiveTranscriptionService(context, settings).resource_status(
+            model_id, variant=variant
+        )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.get(
@@ -70,10 +69,15 @@ def create_router(settings: LiveTranscriptionSettings) -> APIRouter:
         request: LoadModelRequest,
         context: ContextDependency,
     ) -> ApiResponse[LoadedModelView]:
-        data = await LiveTranscriptionService(context, settings).load_model(
-            request.model_id,
-            runtime=request.runtime,
-        )
+        service = LiveTranscriptionService(context, settings)
+        if request.variant is None:
+            data = await service.load_model(request.model_id, runtime=request.runtime)
+        else:
+            data = await service.load_model(
+                request.model_id,
+                variant=request.variant,
+                runtime=request.runtime,
+            )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.post("/vad/model/load", response_model=ApiResponse[LoadedModelView])
@@ -90,106 +94,125 @@ def create_router(settings: LiveTranscriptionSettings) -> APIRouter:
         data = await LiveTranscriptionService(context, settings).load_enhancement()
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
-    @router.post("/vad/detect", response_model=ApiResponse[VadDetectionView])
-    async def detect_voice_activity(
-        context: ContextDependency,
-        file: Annotated[UploadFile, File(description="A short WAV VAD window")],
-        instance_id: Annotated[str, Form()],
-        threshold: Annotated[float, Form(ge=0.0, le=1.0)] = 0.5,
-    ) -> ApiResponse[VadDetectionView]:
-        if file.content_type not in SUPPORTED_AUDIO:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail="Silero VAD supports WAV and FLAC audio",
+    @router.websocket("/live/ws")
+    async def live_websocket(websocket: WebSocket, context: ContextDependency) -> None:
+        connection_id = uuid4().hex
+        client = websocket.client
+        log = logger.bind(
+            connection_id=connection_id,
+            client_host=client.host if client else None,
+            client_port=client.port if client else None,
+        )
+        connected_at = perf_counter()
+        received_chunks = received_bytes = 0
+        await websocket.accept()
+        log.info("live_websocket_connected")
+        session: LiveTranscriptionSession | None = None
+        send_lock = asyncio.Lock()
+
+        async def emit(payload: dict[str, object] | bytes) -> None:
+            async with send_lock:
+                if isinstance(payload, bytes):
+                    await websocket.send_bytes(payload)
+                else:
+                    await websocket.send_json(payload)
+
+        try:
+            while True:
+                message = await websocket.receive()
+                if message["type"] == "websocket.disconnect":
+                    log.info(
+                        "live_websocket_disconnected",
+                        received_chunks=received_chunks,
+                        received_bytes=received_bytes,
+                        session_active=session is not None and not session.closed,
+                    )
+                    break
+                if message.get("text") is not None:
+                    payload = json.loads(message["text"])
+                    message_type = payload.get("type")
+                    if message_type == "start":
+                        if session is not None:
+                            raise ValueError("A live transcription session is already active")
+                        start = LiveSessionStart.from_payload(payload)
+                        log.info(
+                            "live_websocket_start_requested",
+                            model_id=start.model_id,
+                            instance_id=start.instance_id,
+                            input_sample_rate=start.sample_rate,
+                            use_vad=start.use_vad,
+                            vad_instance_id=start.vad_instance_id,
+                            use_enhancement=start.use_enhancement,
+                            enhancement_instance_id=start.enhancement_instance_id,
+                        )
+                        session = await LiveTranscriptionSession.create(
+                            context,
+                            settings,
+                            start,
+                            emit,
+                        )
+                        log = log.bind(session_id=session.session_id)
+                        log.info(
+                            "live_websocket_ready",
+                            model_id=start.model_id,
+                            streaming=session.streaming,
+                        )
+                        await emit(
+                            {
+                                "type": "ready",
+                                "sample_rate": 16_000,
+                                "streaming": LiveTranscriptionService(context, settings)
+                                ._profile(start.model_id)
+                                .streaming,
+                            }
+                        )
+                    elif message_type == "stop":
+                        if session is None:
+                            raise ValueError("No live transcription session is active")
+                        log.info(
+                            "live_websocket_stop_requested",
+                            received_chunks=received_chunks,
+                            received_bytes=received_bytes,
+                        )
+                        await session.stop()
+                        await emit({"type": "stopped"})
+                        break
+                    else:
+                        raise ValueError("Unsupported live transcription WebSocket message")
+                    continue
+
+                audio = message.get("bytes")
+                if audio is None or session is None:
+                    raise ValueError("Binary PCM requires an active live session")
+                received_chunks += 1
+                received_bytes += len(audio)
+                await session.enqueue(audio)
+        except WebSocketDisconnect:
+            log.info(
+                "live_websocket_disconnected",
+                received_chunks=received_chunks,
+                received_bytes=received_bytes,
+                session_active=session is not None and not session.closed,
             )
-        audio = await read_upload_limited(file, context.settings.max_upload_bytes)
-        data = await LiveTranscriptionService(context, settings).detect_voice_activity(
-            audio,
-            instance_id=instance_id,
-            threshold=threshold,
-        )
-        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
-
-    @router.post("/transcribe", response_model=ApiResponse[TranscriptionResultView])
-    async def transcribe(
-        context: ContextDependency,
-        file: Annotated[UploadFile, File(description="A short WAV or FLAC utterance")],
-        model_id: Annotated[str, Form()],
-        instance_id: Annotated[str, Form()],
-        vad_instance_id: Annotated[str | None, Form()] = None,
-        enhancement_instance_id: Annotated[str | None, Form()] = None,
-        vad_threshold: Annotated[float, Form(ge=0.0, le=1.0)] = 0.5,
-    ) -> ApiResponse[TranscriptionResultView]:
-        if file.content_type not in SUPPORTED_AUDIO:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail="Live Transcription supports WAV and FLAC audio",
+        except Exception as error:
+            log.exception(
+                "live_websocket_failed",
+                error_type=type(error).__name__,
+                received_chunks=received_chunks,
+                received_bytes=received_bytes,
             )
-        audio = await read_upload_limited(file, context.settings.max_upload_bytes)
-        data = await LiveTranscriptionService(context, settings).transcribe(
-            audio,
-            model_id=model_id,
-            instance_id=instance_id,
-            vad_instance_id=vad_instance_id,
-            enhancement_instance_id=enhancement_instance_id,
-            vad_threshold=vad_threshold,
-        )
-        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
-
-    @router.post("/stream/start", response_model=ApiResponse[StreamingSessionView])
-    async def start_stream(
-        request: StreamingSessionRequest,
-        context: ContextDependency,
-    ) -> ApiResponse[StreamingSessionView]:
-        data = await LiveTranscriptionService(context, settings).start_stream(
-            model_id=request.model_id,
-            instance_id=request.instance_id,
-        )
-        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
-
-    @router.post("/stream/chunk", response_model=ApiResponse[StreamingTranscriptionView])
-    async def stream_chunk(
-        context: ContextDependency,
-        file: Annotated[UploadFile, File(description="A consecutive streaming WAV chunk")],
-        model_id: Annotated[str, Form()],
-        instance_id: Annotated[str, Form()],
-        session_id: Annotated[str, Form()],
-    ) -> ApiResponse[StreamingTranscriptionView]:
-        if file.content_type not in SUPPORTED_AUDIO:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail="Streaming transcription supports WAV and FLAC audio",
+            with contextlib.suppress(RuntimeError):
+                await emit({"type": "error", "message": str(error)[:500]})
+        finally:
+            if session is not None:
+                await session.cancel()
+            with contextlib.suppress(RuntimeError):
+                await websocket.close()
+            log.info(
+                "live_websocket_closed",
+                elapsed_ms=round((perf_counter() - connected_at) * 1000, 3),
+                received_chunks=received_chunks,
+                received_bytes=received_bytes,
             )
-        audio = await read_upload_limited(file, context.settings.max_upload_bytes)
-        data = await LiveTranscriptionService(context, settings).transcribe_stream_chunk(
-            audio,
-            model_id=model_id,
-            instance_id=instance_id,
-            session_id=session_id,
-        )
-        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
-
-    @router.post("/stream/finish", response_model=ApiResponse[StreamingTranscriptionView])
-    async def finish_stream(
-        request: StreamingFinishRequest,
-        context: ContextDependency,
-    ) -> ApiResponse[StreamingTranscriptionView]:
-        data = await LiveTranscriptionService(context, settings).finish_stream(
-            model_id=request.model_id,
-            instance_id=request.instance_id,
-            session_id=request.session_id,
-        )
-        return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
-
-    @router.post("/stream/cancel", status_code=status.HTTP_204_NO_CONTENT)
-    async def cancel_stream(
-        request: StreamingFinishRequest,
-        context: ContextDependency,
-    ) -> None:
-        await LiveTranscriptionService(context, settings).cancel_stream(
-            model_id=request.model_id,
-            instance_id=request.instance_id,
-            session_id=request.session_id,
-        )
 
     return router

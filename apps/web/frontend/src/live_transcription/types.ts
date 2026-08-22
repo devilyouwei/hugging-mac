@@ -29,10 +29,18 @@ export interface AsrModel {
   rich_understanding: boolean
   streaming: boolean
   streaming_chunk_seconds: number | null
+  variants: Array<{
+    name: string
+    display_name: string
+    available: boolean
+    available_runtimes: string[]
+    streaming_chunk_seconds: number | null
+  }>
   resource: AsrResourceStatus
   ready_instance_id: string | null
   ready_instances: Array<{
     instance_id: string
+    variant: string
     runtime: string
   }>
 }
@@ -57,60 +65,6 @@ export interface PipelineComponent {
   loaded_model: LoadedAsrModel | null
 }
 
-export interface VadDetection {
-  voiced: boolean
-  speech_seconds: number
-  duration_seconds: number
-  inference_ms: number
-}
-
-export interface StreamingSession {
-  session_id: string
-  model_id: string
-  instance_id: string
-  runtime: string
-  device: string
-  sample_rate: number
-}
-
-export interface StreamingTranscriptionResult {
-  session_id: string
-  model_id: string
-  instance_id: string
-  runtime: string
-  device: string
-  text: string
-  delta: string
-  sample_rate: number
-  audio_seconds: number
-  generated_tokens: number
-  detected_language: string | null
-  is_final: boolean
-  preprocess_ms: number | null
-  inference_ms: number | null
-  enhancement_inference_ms: number | null
-}
-
-export interface TranscriptionResult {
-  text: string
-  model_id: string
-  instance_id: string
-  runtime: string
-  device: string
-  sample_rate: number
-  duration_seconds: number
-  generated_tokens: number
-  inference_ms: number | null
-  languages: string[]
-  emotion: string | null
-  events: string[]
-  source_duration_seconds: number | null
-  speech_duration_seconds: number | null
-  speech_segment_count: number
-  vad_inference_ms: number | null
-  enhancement_inference_ms: number | null
-}
-
 export interface TranscriptSegment {
   id: number
   createdAt: Date
@@ -125,4 +79,13 @@ export interface TranscriptSegment {
   speechDurationSeconds: number | null
   vadInferenceMs: number | null
   enhancementInferenceMs: number | null
+  inputAudioUrl: string | null
+}
+
+export interface StreamingPlaybackItem {
+  id: number
+  text: string
+  durationSeconds: number
+  inferenceMs: number | null
+  inputAudioUrl: string
 }

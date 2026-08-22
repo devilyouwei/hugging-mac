@@ -230,3 +230,99 @@ async def test_downloads_huggingface_snapshot(
     assert (destination / "model.safetensors").read_bytes() == b"weights"
     assert not (destination / ".cache").exists()
     assert result.digest is not None
+
+
+async def test_downloads_selected_huggingface_directory_without_repo_prefix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_snapshot_download(**kwargs: object) -> str:
+        assert kwargs["allow_patterns"] == [
+            "yolov8n.mlpackage/Manifest.json",
+            "yolov8n.mlpackage/Data/**",
+        ]
+        local_dir = Path(str(kwargs["local_dir"]))
+        package = local_dir / "yolov8n.mlpackage"
+        (package / "Data" / "com.apple.CoreML").mkdir(parents=True)
+        (package / "Manifest.json").write_text("{}")
+        (package / "Data" / "com.apple.CoreML" / "model.mlmodel").write_bytes(
+            b"coreml"
+        )
+        (local_dir / "README.md").write_text("repository card")
+        return str(local_dir)
+
+    monkeypatch.setattr(downloader_module, "snapshot_download", fake_snapshot_download)
+    destination = tmp_path / "models" / "yolov8n.mlpackage"
+
+    result = await ResourceDownloader().download(
+        HuggingFaceSource(
+            repo_id="hugging-mac/yolov8-coreml",
+            allow_patterns=(
+                "yolov8n.mlpackage/Manifest.json",
+                "yolov8n.mlpackage/Data/**",
+            ),
+            strip_prefix="yolov8n.mlpackage",
+        ),
+        destination,
+    )
+
+    assert (destination / "Manifest.json").read_text() == "{}"
+    assert (
+        destination / "Data" / "com.apple.CoreML" / "model.mlmodel"
+    ).read_bytes() == b"coreml"
+    assert not (destination / "yolov8n.mlpackage").exists()
+    assert not (destination / "README.md").exists()
+    assert result.digest is not None
+    assert not tuple(tmp_path.rglob("*.partial-*"))
+
+
+async def test_missing_huggingface_strip_prefix_never_commits_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_snapshot_download(**kwargs: object) -> str:
+        local_dir = Path(str(kwargs["local_dir"]))
+        local_dir.mkdir()
+        return str(local_dir)
+
+    monkeypatch.setattr(downloader_module, "snapshot_download", fake_snapshot_download)
+    destination = tmp_path / "models" / "missing"
+
+    with pytest.raises(DownloadError):
+        await ResourceDownloader().download(
+            HuggingFaceSource(
+                repo_id="hugging-mac/missing",
+                allow_patterns=("bundle/**",),
+                strip_prefix="bundle",
+            ),
+            destination,
+        )
+
+    assert not destination.exists()
+    assert not tuple(tmp_path.rglob("*.partial-*"))
+
+
+@pytest.mark.parametrize("prefix", ("/absolute", "../outside", "."))
+def test_huggingface_strip_prefix_must_be_safe(prefix: str) -> None:
+    with pytest.raises(ValueError):
+        HuggingFaceSource(
+            repo_id="hugging-mac/model",
+            allow_patterns=("bundle/**",),
+            strip_prefix=prefix,
+        )
+
+
+def test_huggingface_strip_prefix_rejects_files_and_unscoped_patterns() -> None:
+    with pytest.raises(ValueError):
+        HuggingFaceSource(
+            repo_id="hugging-mac/model",
+            filename="model.bin",
+            allow_patterns=("bundle/**",),
+            strip_prefix="bundle",
+        )
+    with pytest.raises(ValueError):
+        HuggingFaceSource(
+            repo_id="hugging-mac/model",
+            allow_patterns=("README.md",),
+            strip_prefix="bundle",
+        )

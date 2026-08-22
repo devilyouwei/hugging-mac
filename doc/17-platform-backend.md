@@ -87,10 +87,10 @@ query 选择 variant，转换请求在 JSON 中携带 variant。不传时使用�
 
 业务日志通过 `shared/utils/log_util.py` 统一配置：
 
-- 自动输出调用源码的 `pathname`、`lineno` 和 `func_name`；
+- 使用 `时间 LEVEL logger [filename:line function] event fields` 紧凑格式；
 - `logger.exception()` 输出完整 Python traceback；
-- INFO 使用终端默认颜色；
-- DEBUG 青色、WARNING 黄色、ERROR 红色、CRITICAL 加粗红色；
+- 时间使用暗灰色、logger 使用青色、调用位置使用紫色、事件名使用加粗亮白色，结构化字段保持默认色；
+- DEBUG 青色、INFO 绿色、WARNING 黄色、ERROR 红色、CRITICAL 加粗红色；
 - 非 TTY 环境默认关闭 ANSI 颜色，也可由嵌入方显式覆盖。
 
 ## 本地数据
@@ -105,6 +105,8 @@ WEB_DATA_DIR=./data/web
 WEB_CACHE_DIR=./data/cache
 WEB_DATABASE_PATH=./data/web/platform.json
 WEB_RUNTIME_PREFERENCE=coreml,mlx,mps,onnx
+# 默认 INFO；开发排障时可改为 DEBUG。
+WEB_LOG_LEVEL=DEBUG
 ```
 
 ## 启动与验证

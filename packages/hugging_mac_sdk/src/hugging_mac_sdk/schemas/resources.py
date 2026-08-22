@@ -19,7 +19,29 @@ class HuggingFaceSource(BaseModel):
     filename: str | None = None
     allow_patterns: tuple[str, ...] = ()
     ignore_patterns: tuple[str, ...] = ()
+    strip_prefix: Path | None = None
     expected_sha256: Sha256 | None = None
+
+    @model_validator(mode="after")
+    def validate_snapshot_selection(self) -> HuggingFaceSource:
+        prefix = self.strip_prefix
+        if prefix is None:
+            return self
+        if self.filename is not None:
+            raise ValueError("strip_prefix is only valid for repository snapshots")
+        if prefix.is_absolute() or not prefix.parts or prefix == Path("."):
+            raise ValueError("strip_prefix must be a non-empty relative path")
+        if ".." in prefix.parts:
+            raise ValueError("strip_prefix must not contain '..'")
+        prefix_text = prefix.as_posix().rstrip("/")
+        if not self.allow_patterns:
+            raise ValueError("strip_prefix requires allow_patterns")
+        if any(
+            pattern != prefix_text and not pattern.startswith(f"{prefix_text}/")
+            for pattern in self.allow_patterns
+        ):
+            raise ValueError("allow_patterns must be contained by strip_prefix")
+        return self
 
 
 class UrlFileSource(BaseModel):

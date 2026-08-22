@@ -65,6 +65,7 @@ class ResourceOption(BaseModel):
     artifact_id: str
     format: str
     source: ResourceSource
+    shared: bool = False
     available: bool
     size_bytes: int | None = None
 
@@ -177,10 +178,22 @@ def create_models_router() -> APIRouter:
                 "Artifact is not downloadable; it must be converted",
                 details=command.model_dump(),
             )
+        if artifact.shared:
+            await _ensure_shared_resources_mutable(context, definition, overwrite=overwrite)
+            await context.models.resources.download_shared_artifact(
+                model_id,
+                artifact.artifact_id,
+                options={"model_home": context.settings.model_home},
+                overwrite=overwrite,
+            )
+            return ApiResponse(
+                data=_inventory(context, model_id),
+                meta=ResponseMeta(generated_at=utc_now()),
+            )
         await context.models.resources.ensure_shared_artifacts(
             model_id,
             options={"model_home": context.settings.model_home},
-            overwrite=overwrite,
+            overwrite=False,
         )
         destination = artifact.resolve(context.settings.model_home)
         available = (
@@ -188,7 +201,7 @@ def create_models_router() -> APIRouter:
             if artifact.kind.value == "directory"
             else destination.is_file()
         )
-        if artifact.shared or (available and not overwrite):
+        if available and not overwrite:
             return ApiResponse(
                 data=_inventory(context, model_id),
                 meta=ResponseMeta(generated_at=utc_now()),
@@ -381,7 +394,7 @@ def _inventory(context: ContextDependency, model_id: str) -> ModelInventory:
             )
         )
         source = _artifact_source(definition, artifact)
-        if source is not None and not artifact.shared:
+        if source is not None:
             resources.append(
                 ResourceOption(
                     resource_id=f"{artifact.variant}:{artifact.runtime}:{artifact.artifact_id}",
@@ -390,6 +403,7 @@ def _inventory(context: ContextDependency, model_id: str) -> ModelInventory:
                     artifact_id=artifact.artifact_id,
                     format=artifact.format.value,
                     source=source,
+                    shared=artifact.shared,
                     available=available,
                     size_bytes=size,
                 )

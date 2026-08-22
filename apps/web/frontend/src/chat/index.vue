@@ -21,7 +21,7 @@ const images = ref<Array<{ file: File; url: string }>>([])
 const loadingModel = ref(false)
 const sending = ref(false)
 const error = ref("")
-const lifecycleMessage = ref<{ type: "success" | "error"; text: string } | null>(null)
+const lifecycleMessage = ref<{ type: "error"; text: string } | null>(null)
 const maxTokens = ref(512)
 const temperature = ref(0)
 const enableThinking = ref(false)
@@ -630,7 +630,7 @@ async function toggleAsr() {
     return
   }
   try {
-    loadedAsr.value ??= await loadAsrModel(ASR_MODEL_ID, "coreml")
+    loadedAsr.value ??= await loadAsrModel(ASR_MODEL_ID, asrModel.value.variant, "coreml")
     asrSocket = await ChatAsrSocket.connect()
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: false, channelCount: 1 },
@@ -1051,7 +1051,7 @@ onBeforeUnmount(() => {
 .chat-model-link { color:var(--signal); font-size:.6rem; text-align:center; }
 .chat-model-select { color:#85877f; display:flex; flex-direction:column; font:.56rem var(--font-mono); gap:.45rem; }.chat-model-select select { background:#191b18; border:1px solid #343630; color:#f4f2e9; font:inherit; padding:.7rem; width:100%; }
 .chat-model-control { display:flex; gap:.4rem; }.chat-model-control select { min-width:0; }.chat-model-control button { background:var(--signal); border:0; cursor:pointer; font:700 .52rem var(--font-mono); padding:0 .6rem; }.chat-model-control button:disabled { cursor:not-allowed; opacity:.4; }
-.lifecycle-success { color:#75c763; font: .55rem var(--font-mono); }.lifecycle-error { color:#ff8066; font: .55rem var(--font-mono); }
+.lifecycle-error { color:#ff8066; font: .55rem var(--font-mono); }
 .chat-delete { background:none; border:1px solid #5d3934; color:#e7a59d; cursor:pointer; font:.58rem var(--font-mono); padding:.7rem; }.chat-delete:disabled { opacity:.5; }
 .chat-settings { border-top:1px solid #343630; color:#aaa99f; font-size:.62rem; padding-top:1rem; }.chat-settings summary { cursor:pointer; margin-bottom:1rem; }.chat-settings label { display:flex; justify-content:space-between; margin-top:.7rem; }.chat-settings input[type=range] { accent-color:var(--signal); width:100%; }.chat-toggle { justify-content:flex-start!important; gap:.5rem; }
 .chat-capabilities { border-top:1px solid #343630; display:grid; gap:.45rem; padding-top:1rem; }

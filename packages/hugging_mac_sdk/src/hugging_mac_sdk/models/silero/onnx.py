@@ -41,6 +41,11 @@ class OnnxSileroEngine:
             raise RuntimeError("Silero ONNX engine is not loaded")
         return await asyncio.to_thread(self._run, prepared)
 
+    def create_stream(self) -> OnnxSileroStream:
+        if self._session is None:
+            raise RuntimeError("Silero ONNX engine is not loaded")
+        return OnnxSileroStream(self._session, self._config.chunk_samples)
+
     def _run(self, prepared: PreparedAudio) -> tuple[float, ...]:
         assert self._session is not None
         numpy = importlib.import_module("numpy")
@@ -75,3 +80,36 @@ class OnnxSileroEngine:
         session, self._session = self._session, None
         if session is not None:
             await session.close()
+
+
+class OnnxSileroStream:
+    def __init__(self, session: RuntimeSession, chunk_samples: int) -> None:
+        numpy = importlib.import_module("numpy")
+        self._session = session
+        self._chunk_samples = chunk_samples
+        self._state = numpy.zeros((2, 1, 128), dtype=numpy.float32)
+        self._context = numpy.zeros((1, 64), dtype=numpy.float32)
+
+    async def probability(self, samples: tuple[float, ...]) -> float:
+        return await asyncio.to_thread(self._run, samples)
+
+    def _run(self, samples: tuple[float, ...]) -> float:
+        if len(samples) != self._chunk_samples:
+            raise ValueError("Silero streaming frame has an invalid size")
+        numpy = importlib.import_module("numpy")
+        chunk = numpy.asarray(samples, dtype=numpy.float32).reshape(1, -1)
+        model_input = numpy.concatenate((self._context, chunk), axis=1)
+        outputs = self._session.run(
+            {
+                "input": numpy.ascontiguousarray(model_input, dtype=numpy.float32),
+                "state": self._state,
+                "sr": numpy.asarray(16000, dtype=numpy.int64),
+            }
+        )
+        probability = outputs.get("output")
+        next_state = outputs.get("stateN")
+        if probability is None or next_state is None:
+            raise RuntimeError("Unexpected Silero ONNX output names")
+        self._state = numpy.asarray(next_state, dtype=numpy.float32)
+        self._context = model_input[:, -64:]
+        return float(numpy.asarray(probability).reshape(-1)[0])

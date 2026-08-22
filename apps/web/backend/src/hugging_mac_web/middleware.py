@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
+from structlog.contextvars import bound_contextvars
 
 
 class TraceIdMiddleware(BaseHTTPMiddleware):
@@ -17,6 +18,7 @@ class TraceIdMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         trace_id = request.headers.get("x-trace-id") or uuid4().hex
         request.state.trace_id = trace_id
-        response = await call_next(request)
+        with bound_contextvars(trace_id=trace_id):
+            response = await call_next(request)
         response.headers["x-trace-id"] = trace_id
         return response

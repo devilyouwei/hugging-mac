@@ -36,8 +36,20 @@ class FakeSileroEngine:
         del prepared
         return (0.0, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0)
 
+    def create_stream(self) -> FakeSileroStream:
+        return FakeSileroStream([0.9, 0.9, 0.9, *([0.1] * 25)])
+
     async def close(self) -> None:
         self.closed = True
+
+
+class FakeSileroStream:
+    def __init__(self, probabilities: list[float]) -> None:
+        self.probabilities = probabilities
+
+    async def probability(self, samples: tuple[float, ...]) -> float:
+        assert len(samples) == 512
+        return self.probabilities.pop(0)
 
 
 def test_manifest_and_registration() -> None:
@@ -83,6 +95,26 @@ async def test_instance_detects_voice_activity(
     assert response.speech_seconds == pytest.approx(0.096)
     await instance.unload()
     assert engine.closed
+
+
+async def test_streaming_detector_preserves_state_and_emits_boundaries(tmp_path: Path) -> None:
+    engine = FakeSileroEngine(tmp_path / "silero.onnx")
+    instance = SileroInstance(SileroInstanceConfig(runtime="onnx", device="cpu"), engine)
+    await instance.load()
+    detector = instance.create_streaming_detector(
+        threshold=0.5,
+        min_speech_ms=96,
+        min_silence_ms=800,
+    )
+
+    started = await detector.push(tuple([0.0] * (512 * 3)))
+    ended = await detector.push(tuple([0.0] * (512 * 25)))
+
+    assert started.speech_started
+    assert started.voiced
+    assert ended.speech_ended
+    assert not ended.voiced
+    await instance.unload()
 
 
 def test_postprocess_uses_hysteresis_and_padding() -> None:

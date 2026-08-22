@@ -59,6 +59,7 @@ from hugging_mac_web.live_transcription.schemas import (
     StreamingTranscriptionView,
     TranscriptionResultView,
     VadDetectionView,
+    encoded_input_audio,
 )
 from hugging_mac_web.live_transcription.service import LiveTranscriptionService
 from hugging_mac_web.main import create_app
@@ -246,11 +247,11 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert "/api/v1/apps/object-detection/detect" in openapi.json()["paths"]
     assert "/api/v1/apps/pose-estimation/estimate" in openapi.json()["paths"]
     assert "/api/v1/apps/instance-segmentation/segment" in openapi.json()["paths"]
-    assert "/api/v1/apps/live-transcription/transcribe" in openapi.json()["paths"]
+    assert "/api/v1/apps/live-transcription/transcribe" not in openapi.json()["paths"]
     assert "/api/v1/apps/live-transcription/models/load" in openapi.json()["paths"]
-    assert "/api/v1/apps/live-transcription/stream/start" in openapi.json()["paths"]
-    assert "/api/v1/apps/live-transcription/stream/chunk" in openapi.json()["paths"]
-    assert "/api/v1/apps/live-transcription/stream/finish" in openapi.json()["paths"]
+    assert "/api/v1/apps/live-transcription/stream/start" not in openapi.json()["paths"]
+    assert "/api/v1/apps/live-transcription/stream/chunk" not in openapi.json()["paths"]
+    assert "/api/v1/apps/live-transcription/stream/finish" not in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/synthesize" in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/synthesize/reference" in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/models/load" in openapi.json()["paths"]
@@ -338,9 +339,12 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     ]
     assert qwen3_asr_inventory.status_code == 200
     assert [item["artifact_id"] for item in qwen3_asr_inventory.json()["data"]["resources"]] == [
-        "coreml-int8"
+        "coreml-int8",
+        "tokenizer",
     ]
     assert qwen3_asr_inventory.json()["data"]["resources"][0]["source"]["kind"] == ("huggingface")
+    assert not qwen3_asr_inventory.json()["data"]["resources"][0]["shared"]
+    assert qwen3_asr_inventory.json()["data"]["resources"][1]["shared"]
     assert [item["artifact_id"] for item in qwen3_asr_inventory.json()["data"]["artifacts"]] == [
         "coreml-int8",
         "tokenizer",
@@ -458,6 +462,8 @@ def test_live_transcription_accepts_vad_wave_segments(
     monkeypatch: Any,
 ) -> None:
     async def fake_transcribe(*_: object, **kwargs: object) -> TranscriptionResultView:
+        assert kwargs["use_vad"]
+        assert kwargs["use_enhancement"]
         assert kwargs["vad_instance_id"] == "silero-instance"
         assert kwargs["vad_threshold"] == 0.425
         return TranscriptionResultView(
@@ -490,9 +496,18 @@ def test_live_transcription_accepts_vad_wave_segments(
             },
         )
 
-    assert response.status_code == 200
-    assert response.json()["data"]["text"] == "你好 Hugging Mac"
-    assert response.json()["data"]["duration_seconds"] == 1.25
+    assert response.status_code == 404
+
+
+def test_live_transcription_serializes_exact_model_input_audio() -> None:
+    audio = b"RIFF\x00\x00\x00\x00WAVEprocessed-model-input"
+
+    encoded = encoded_input_audio(audio)
+
+    assert encoded == {
+        "input_audio_base64": "UklGRgAAAABXQVZFcHJvY2Vzc2VkLW1vZGVsLWlucHV0",
+        "input_audio_media_type": "audio/wav",
+    }
 
 
 def test_live_transcription_load_forwards_selected_runtime(
@@ -503,10 +518,12 @@ def test_live_transcription_load_forwards_selected_runtime(
         self: object,
         model_id: str,
         *,
+        variant: str | None = None,
         runtime: str | None = None,
     ) -> LoadedModelView:
         del self
         assert model_id == AUDIO8_PROFILE.model_id
+        assert variant == "0.1b"
         assert runtime == "pytorch-mps"
         return LoadedModelView(
             instance_id="audio8-mps",
@@ -526,7 +543,11 @@ def test_live_transcription_load_forwards_selected_runtime(
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/apps/live-transcription/models/load",
-            json={"model_id": AUDIO8_PROFILE.model_id, "runtime": "pytorch-mps"},
+            json={
+                "model_id": AUDIO8_PROFILE.model_id,
+                "variant": "0.1b",
+                "runtime": "pytorch-mps",
+            },
         )
 
     assert response.status_code == 200
@@ -558,13 +579,28 @@ def test_live_transcription_uses_silero_vad_endpoint(
             data={"instance_id": "silero-instance", "threshold": "0.5"},
         )
 
-    assert response.status_code == 200
-    assert response.json()["data"] == {
-        "voiced": True,
-        "speech_seconds": 0.16,
-        "duration_seconds": 0.18,
-        "inference_ms": 0.7,
-    }
+    assert response.status_code == 404
+
+
+def test_live_transcription_vad_websocket_validates_stream_instance(tmp_path: Path) -> None:
+    app = create_app(_settings(tmp_path))
+
+    with (
+        TestClient(app) as client,
+        client.websocket_connect("/api/v1/apps/live-transcription/live/ws") as socket,
+    ):
+        socket.send_json(
+            {
+                "type": "start",
+                "model_id": AUDIO8_PROFILE.model_id,
+                "instance_id": "missing-asr-instance",
+                "sample_rate": 16000,
+                "vad_threshold": 0.5,
+            }
+        )
+        response = socket.receive_json()
+
+    assert response["type"] == "error"
 
 
 def test_live_transcription_reports_optional_pipeline_components(tmp_path: Path) -> None:
@@ -600,6 +636,45 @@ def test_models_catalog_exposes_all_nemotron_download_variants(tmp_path: Path) -
         for chunk_ms in (560, 1120, 2240, 4480)
     }
     assert all(item["runtime"] == "coreml" for item in resources)
+
+
+def test_models_catalog_downloads_one_shared_artifact_independently(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_download(
+        _: ResourceDownloader,
+        source: Any,
+        destination: Path,
+        **__: object,
+    ) -> ResolvedResource:
+        destination.mkdir(parents=True, exist_ok=True)
+        for filename in ("vocab.json", "merges.txt", "tokenizer_config.json"):
+            (destination / filename).write_text("{}")
+        return ResolvedResource(
+            path=destination,
+            source=source,
+            digest="0" * 64,
+            size_bytes=2,
+        )
+
+    monkeypatch.setattr(ResourceDownloader, "download", fake_download)
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/catalog/models/qwen/qwen3-asr/resources/download-one",
+            json={
+                "variant": "0.6b",
+                "runtime": "coreml",
+                "artifact_id": "tokenizer",
+            },
+        )
+
+    assert response.status_code == 200
+    resources = {item["artifact_id"]: item for item in response.json()["data"]["resources"]}
+    assert resources["tokenizer"]["available"]
+    assert not resources["coreml-int8"]["available"]
 
 
 def test_live_transcription_exposes_stateful_streaming_routes(
@@ -661,9 +736,9 @@ def test_live_transcription_exposes_stateful_streaming_routes(
             },
         )
 
-    assert started.status_code == 200
-    assert chunk.json()["data"]["delta"] == " world"
-    assert finished.json()["data"]["is_final"]
+    assert started.status_code == 404
+    assert chunk.status_code == 404
+    assert finished.status_code == 404
 
 
 def _streaming_view(*, is_final: bool, delta: str) -> StreamingTranscriptionView:

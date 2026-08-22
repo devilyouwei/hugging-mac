@@ -1,8 +1,8 @@
 """Multi-model live transcription use case."""
 
 import asyncio
-import logging
 from dataclasses import replace
+from time import perf_counter
 from typing import Literal
 
 from hugging_mac_sdk import (
@@ -35,6 +35,7 @@ from hugging_mac_web.live_transcription.config import (
 )
 from hugging_mac_web.live_transcription.schemas import (
     AsrModelView,
+    AsrVariantView,
     LoadedModelView,
     PipelineComponentView,
     ReadyAsrInstanceView,
@@ -43,11 +44,13 @@ from hugging_mac_web.live_transcription.schemas import (
     StreamingTranscriptionView,
     TranscriptionResultView,
     VadDetectionView,
+    encoded_input_audio,
 )
+from hugging_mac_web.shared.utils.log_util import get_logger
 
 SILERO_MODEL_ID = "snakers4/silero-vad"
 DEEPFILTERNET3_MODEL_ID = "deepfilternet/deepfilternet3"
-logger = logging.getLogger(__name__)
+logger = get_logger("live_transcription.service")
 
 
 class LiveTranscriptionService:
@@ -66,9 +69,31 @@ class LiveTranscriptionService:
 
     async def model_view(self, model_id: str) -> AsrModelView:
         configured = self._profile(model_id)
-        resource = await self.resource_status(model_id)
+        manifest = self._context.models.registry.get(model_id).manifest
+        resources = await asyncio.gather(
+            *(self.resource_status(model_id, variant=item.name) for item in manifest.variants)
+        )
+        available_variant = next(
+            (
+                item.variant
+                for item in resources
+                if any(runtime.available for runtime in item.runtimes)
+            ),
+            None,
+        )
+        selected_variant = (
+            configured.variant
+            if any(
+                item.variant == configured.variant
+                and any(runtime.available for runtime in item.runtimes)
+                for item in resources
+            )
+            else available_variant or configured.variant
+        )
+        resource = next(item for item in resources if item.variant == selected_variant)
+        configured = replace(configured, variant=selected_variant)
         profile = self._select_runtime(configured, resource)
-        ready_instances = await self._ready_instances(profile)
+        ready_instances = await self._ready_instances(profile.model_id)
         return AsrModelView.from_profile(
             profile,
             resource,
@@ -76,25 +101,65 @@ class LiveTranscriptionService:
                 (
                     item.instance_id
                     for item in ready_instances
-                    if item.runtime == profile.runtime
+                    if item.variant == profile.variant and item.runtime == profile.runtime
                 ),
                 None,
             ),
             ready_instances=ready_instances,
+            variants=tuple(
+                AsrVariantView(
+                    name=variant.name,
+                    display_name=variant.display_name,
+                    available=any(runtime.available for runtime in status.runtimes),
+                    available_runtimes=tuple(
+                        runtime.runtime for runtime in status.runtimes if runtime.available
+                    ),
+                    streaming_chunk_seconds=(
+                        float(variant.metadata["chunk_ms"]) / 1000
+                        if "chunk_ms" in variant.metadata
+                        else None
+                    ),
+                )
+                for variant, status in zip(manifest.variants, resources, strict=True)
+            ),
         )
 
-    async def resource_status(self, model_id: str) -> ResourceStatusView:
+    async def resource_status(
+        self, model_id: str, *, variant: str | None = None
+    ) -> ResourceStatusView:
         profile = self._profile(model_id)
+        selected_variant = variant or profile.variant
         status = await self._context.models.resources.status(
             profile.model_id,
-            variant=profile.variant,
+            variant=selected_variant,
             options=self._model_options_for(profile.model_id, profile.runtime),
         )
         return ResourceStatusView.from_sdk(status)
 
-    async def load_model(self, model_id: str, *, runtime: str | None = None) -> LoadedModelView:
+    async def load_model(
+        self,
+        model_id: str,
+        *,
+        variant: str | None = None,
+        runtime: str | None = None,
+    ) -> LoadedModelView:
+        started = perf_counter()
+        logger.info(
+            "asr_model_load_requested",
+            model_id=model_id,
+            requested_variant=variant,
+            requested_runtime=runtime,
+        )
         configured = self._profile(model_id)
-        resource = await self.resource_status(model_id)
+        if variant is not None:
+            manifest = self._context.models.registry.get(model_id).manifest
+            if variant not in {item.name for item in manifest.variants}:
+                raise ResourceNotFoundError(
+                    f"Variant {variant} is not supported by {model_id}",
+                    details={"model_id": model_id, "variant": variant},
+                )
+            configured = replace(configured, variant=variant)
+        resource = await self.resource_status(model_id, variant=configured.variant)
         profile = self._select_runtime(configured, resource)
         if runtime is not None:
             selected = next(
@@ -124,11 +189,23 @@ class LiveTranscriptionService:
             reuse=ReusePolicy.SHARED,
         )
         try:
-            return LoadedModelView.from_sdk(handle.info())
+            loaded = LoadedModelView.from_sdk(handle.info())
+            logger.info(
+                "asr_model_load_completed",
+                model_id=loaded.model_id,
+                instance_id=loaded.instance_id,
+                variant=loaded.variant,
+                runtime=loaded.runtime,
+                device=loaded.device,
+                elapsed_ms=round((perf_counter() - started) * 1000, 3),
+            )
+            return loaded
         finally:
             await handle.close()
 
     async def load_vad(self) -> LoadedModelView:
+        started = perf_counter()
+        logger.info("pipeline_model_load_requested", component="vad", model_id=SILERO_MODEL_ID)
         manifest = self._context.models.registry.get(SILERO_MODEL_ID).manifest
         handle = await self._context.models.load(
             SILERO_MODEL_ID,
@@ -138,7 +215,16 @@ class LiveTranscriptionService:
             reuse=ReusePolicy.SHARED,
         )
         try:
-            return LoadedModelView.from_sdk(handle.info())
+            loaded = LoadedModelView.from_sdk(handle.info())
+            logger.info(
+                "pipeline_model_load_completed",
+                component="vad",
+                model_id=loaded.model_id,
+                instance_id=loaded.instance_id,
+                runtime=loaded.runtime,
+                elapsed_ms=round((perf_counter() - started) * 1000, 3),
+            )
+            return loaded
         finally:
             await handle.close()
 
@@ -164,6 +250,12 @@ class LiveTranscriptionService:
 
     async def load_enhancement(self) -> LoadedModelView:
         """Load the shared DeepFilterNet3 instance using its Core ML default."""
+        started = perf_counter()
+        logger.info(
+            "pipeline_model_load_requested",
+            component="enhancement",
+            model_id=DEEPFILTERNET3_MODEL_ID,
+        )
         manifest = self._context.models.registry.get(DEEPFILTERNET3_MODEL_ID).manifest
         handle = await self._context.models.load(
             DEEPFILTERNET3_MODEL_ID,
@@ -173,7 +265,16 @@ class LiveTranscriptionService:
             reuse=ReusePolicy.SHARED,
         )
         try:
-            return LoadedModelView.from_sdk(handle.info())
+            loaded = LoadedModelView.from_sdk(handle.info())
+            logger.info(
+                "pipeline_model_load_completed",
+                component="enhancement",
+                model_id=loaded.model_id,
+                instance_id=loaded.instance_id,
+                runtime=loaded.runtime,
+                elapsed_ms=round((perf_counter() - started) * 1000, 3),
+            )
+            return loaded
         finally:
             await handle.close()
 
@@ -196,13 +297,20 @@ class LiveTranscriptionService:
             VoiceActivityRequest(
                 audio=AudioInput(data=audio),
                 threshold=threshold,
-                min_speech_ms=32,
-                min_silence_ms=32,
-                speech_pad_ms=0,
+                min_speech_ms=96,
+                min_silence_ms=160,
+                speech_pad_ms=64,
             )
         )
+        trailing_silence_seconds = (
+            response.duration_seconds - response.segments[-1].end_seconds
+            if response.segments
+            else response.duration_seconds
+        )
         return VadDetectionView(
-            voiced=bool(response.segments),
+            # The client sends a rolling context window. Only speech close to
+            # its tail describes the current microphone state.
+            voiced=bool(response.segments) and trailing_silence_seconds <= 0.24,
             speech_seconds=response.speech_seconds,
             duration_seconds=response.duration_seconds,
             inference_ms=response.timings.inference_ms,
@@ -234,7 +342,7 @@ class LiveTranscriptionService:
                 audio=AudioInput(data=audio),
             )
         )
-        return StreamingTranscriptionView.from_sdk(response)
+        return StreamingTranscriptionView.from_sdk(response, input_audio=audio)
 
     async def finish_stream(
         self,
@@ -245,9 +353,7 @@ class LiveTranscriptionService:
     ) -> StreamingTranscriptionView:
         instance = await self._require_streaming_instance(model_id, instance_id)
         streamer = instance.require(StreamingSpeechTranscription)  # type: ignore[type-abstract]
-        return StreamingTranscriptionView.from_sdk(
-            await streamer.finish_stream(session_id)
-        )
+        return StreamingTranscriptionView.from_sdk(await streamer.finish_stream(session_id))
 
     async def cancel_stream(
         self,
@@ -266,18 +372,25 @@ class LiveTranscriptionService:
         *,
         model_id: str,
         instance_id: str,
+        use_vad: bool = True,
+        use_enhancement: bool = True,
+        include_input_audio: bool = True,
         vad_instance_id: str | None = None,
         enhancement_instance_id: str | None = None,
         vad_threshold: float = 0.5,
     ) -> TranscriptionResultView:
+        started = perf_counter()
+        source_bytes = len(audio)
         logger.info(
-            "Live transcription started model_id=%s instance_id=%s bytes=%d "
-            "vad_instance_id=%s enhancement_instance_id=%s",
-            model_id,
-            instance_id,
-            len(audio),
-            vad_instance_id,
-            enhancement_instance_id,
+            "asr_inference_started",
+            model_id=model_id,
+            instance_id=instance_id,
+            input_bytes=source_bytes,
+            offline_vad_enabled=use_vad and bool(vad_instance_id),
+            inline_enhancement_enabled=use_enhancement and bool(enhancement_instance_id),
+            preprocessed_upstream=not use_vad and not use_enhancement,
+            vad_instance_id=vad_instance_id,
+            enhancement_instance_id=enhancement_instance_id,
         )
         profile = self._profile(model_id)
         instance = await self._context.models.instances.require(instance_id)
@@ -302,24 +415,30 @@ class LiveTranscriptionService:
         speech_segment_count = 0
         vad_inference_ms: float | None = None
         enhancement_inference_ms: float | None = None
-        if vad_instance_id:
+        if use_vad and vad_instance_id:
             try:
+                logger.info(
+                    "offline_vad_started",
+                    instance_id=vad_instance_id,
+                    input_bytes=len(audio),
+                    threshold=vad_threshold,
+                )
                 vad_instance = await self._require_vad_instance(vad_instance_id)
                 detector = vad_instance.require(VoiceActivityDetection)  # type: ignore[type-abstract]
                 vad_response = await detector.detect_voice_activity(
                     VoiceActivityRequest(
                         audio=AudioInput(data=audio),
                         threshold=vad_threshold,
-                        min_speech_ms=160,
-                        min_silence_ms=180,
-                        speech_pad_ms=0,
+                        min_speech_ms=120,
+                        min_silence_ms=300,
+                        speech_pad_ms=80,
                         max_speech_seconds=25.0,
                     )
                 )
                 vad_inference_ms = vad_response.timings.inference_ms
                 source_duration_seconds = vad_response.duration_seconds
                 if not vad_response.segments:
-                    return TranscriptionResultView(
+                    result = TranscriptionResultView(
                         text="",
                         model_id=profile.model_id,
                         instance_id=info.instance_id,
@@ -335,6 +454,22 @@ class LiveTranscriptionService:
                         vad_inference_ms=vad_inference_ms,
                         enhancement_inference_ms=None,
                     )
+                    logger.info(
+                        "offline_vad_completed",
+                        instance_id=vad_instance_id,
+                        segments=0,
+                        speech_seconds=0.0,
+                        duration_seconds=vad_response.duration_seconds,
+                        inference_ms=vad_inference_ms,
+                    )
+                    self._log_transcription_completed(
+                        result,
+                        started=started,
+                        source_bytes=source_bytes,
+                        prepared_bytes=0,
+                        path="vad_no_speech",
+                    )
+                    return result
                 prepared = await asyncio.to_thread(
                     prepare_detected_speech,
                     audio,
@@ -345,25 +480,36 @@ class LiveTranscriptionService:
                 source_duration_seconds = prepared.source_duration_seconds
                 speech_duration_seconds = prepared.speech_duration_seconds
                 speech_segment_count = prepared.segment_count
+                logger.info(
+                    "offline_vad_completed",
+                    instance_id=vad_instance_id,
+                    segments=speech_segment_count,
+                    speech_seconds=speech_duration_seconds,
+                    duration_seconds=source_duration_seconds,
+                    inference_ms=vad_inference_ms,
+                    prepared_bytes=len(audio),
+                )
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.warning(
-                    "Silero VAD unavailable; continuing directly to ASR instance_id=%s",
-                    vad_instance_id,
+                    "offline_vad_failed_continuing_without_vad",
+                    instance_id=vad_instance_id,
                     exc_info=True,
                 )
+        elif use_vad:
+            logger.warning("offline_vad_skipped", reason="missing_instance_id")
 
-        if enhancement_instance_id:
+        if use_enhancement and enhancement_instance_id:
             try:
                 enhancement_instance = await self._require_enhancement_instance(
                     enhancement_instance_id
                 )
                 enhancer = enhancement_instance.require(SpeechEnhancement)  # type: ignore[type-abstract]
                 logger.info(
-                    "DeepFilterNet3 enhancement started instance_id=%s bytes=%d",
-                    enhancement_instance_id,
-                    len(audio),
+                    "inline_enhancement_started",
+                    instance_id=enhancement_instance_id,
+                    input_bytes=len(audio),
                 )
                 enhanced = await enhancer.enhance_speech(
                     SpeechEnhancementRequest(audio=AudioInput(data=audio))
@@ -372,21 +518,23 @@ class LiveTranscriptionService:
                 raise
             except Exception:
                 logger.warning(
-                    "DeepFilterNet3 unavailable; continuing directly to ASR instance_id=%s",
-                    enhancement_instance_id,
+                    "inline_enhancement_failed_continuing_without_enhancement",
+                    instance_id=enhancement_instance_id,
                     exc_info=True,
                 )
             else:
                 audio = enhanced.audio
                 enhancement_inference_ms = enhanced.timings.inference_ms
                 logger.info(
-                    "DeepFilterNet3 enhancement completed instance_id=%s "
-                    "duration_seconds=%.3f inference_ms=%.1f sample_rate=%d",
-                    enhancement_instance_id,
-                    enhanced.duration_seconds,
-                    enhancement_inference_ms,
-                    enhanced.sample_rate,
+                    "inline_enhancement_completed",
+                    instance_id=enhancement_instance_id,
+                    output_bytes=len(audio),
+                    duration_seconds=enhanced.duration_seconds,
+                    inference_ms=enhancement_inference_ms,
+                    sample_rate=enhanced.sample_rate,
                 )
+        elif use_enhancement:
+            logger.warning("inline_enhancement_skipped", reason="missing_instance_id")
 
         audio_input = AudioInput(data=audio)
         if profile.rich_understanding and instance.supports(SpeechUnderstanding):
@@ -395,15 +543,24 @@ class LiveTranscriptionService:
                 SpeechUnderstandingRequest(audio=audio_input)
             )
             result = TranscriptionResultView.from_understanding(understanding_response)
-            return result.model_copy(
+            completed = result.model_copy(
                 update={
                     "source_duration_seconds": source_duration_seconds,
                     "speech_duration_seconds": speech_duration_seconds,
                     "speech_segment_count": speech_segment_count,
                     "vad_inference_ms": vad_inference_ms,
                     "enhancement_inference_ms": enhancement_inference_ms,
+                    **(encoded_input_audio(audio) if include_input_audio else {}),
                 }
             )
+            self._log_transcription_completed(
+                completed,
+                started=started,
+                source_bytes=source_bytes,
+                prepared_bytes=len(audio),
+                path="speech_understanding",
+            )
+            return completed
 
         transcriber = instance.require(SpeechTranscription)  # type: ignore[type-abstract]
         transcription_response = await transcriber.transcribe(
@@ -414,14 +571,48 @@ class LiveTranscriptionService:
             )
         )
         result = TranscriptionResultView.from_sdk(transcription_response)
-        return result.model_copy(
+        completed = result.model_copy(
             update={
                 "source_duration_seconds": source_duration_seconds,
                 "speech_duration_seconds": speech_duration_seconds,
                 "speech_segment_count": speech_segment_count,
                 "vad_inference_ms": vad_inference_ms,
                 "enhancement_inference_ms": enhancement_inference_ms,
+                **(encoded_input_audio(audio) if include_input_audio else {}),
             }
+        )
+        self._log_transcription_completed(
+            completed,
+            started=started,
+            source_bytes=source_bytes,
+            prepared_bytes=len(audio),
+            path="speech_transcription",
+        )
+        return completed
+
+    @staticmethod
+    def _log_transcription_completed(
+        result: TranscriptionResultView,
+        *,
+        started: float,
+        source_bytes: int,
+        prepared_bytes: int,
+        path: str,
+    ) -> None:
+        logger.info(
+            "asr_inference_completed",
+            model_id=result.model_id,
+            instance_id=result.instance_id,
+            path=path,
+            source_bytes=source_bytes,
+            prepared_bytes=prepared_bytes,
+            text_length=len(result.text),
+            generated_tokens=result.generated_tokens,
+            model_inference_ms=result.inference_ms,
+            wall_ms=round((perf_counter() - started) * 1000, 3),
+            runtime=result.runtime,
+            device=result.device,
+            speech_segments=result.speech_segment_count,
         )
 
     async def _require_vad_instance(self, instance_id: str) -> BaseModelInstance:
@@ -472,15 +663,15 @@ class LiveTranscriptionService:
             )
         return instance
 
-    async def _ready_instances(
-        self, profile: AsrModelProfile
-    ) -> tuple[ReadyAsrInstanceView, ...]:
+    async def _ready_instances(self, model_id: str) -> tuple[ReadyAsrInstanceView, ...]:
         return tuple(
-            ReadyAsrInstanceView(instance_id=snapshot.instance_id, runtime=snapshot.runtime)
+            ReadyAsrInstanceView(
+                instance_id=snapshot.instance_id,
+                variant=snapshot.variant,
+                runtime=snapshot.runtime,
+            )
             for snapshot in await self._context.models.instances.snapshots()
-            if snapshot.model_id == profile.model_id
-            and snapshot.variant == profile.variant
-            and snapshot.state is ModelState.READY
+            if snapshot.model_id == model_id and snapshot.state is ModelState.READY
         )
 
     async def _pipeline_component(
@@ -503,9 +694,7 @@ class LiveTranscriptionService:
             variant=manifest.default_variant,
             options=self._base_model_options,
         )
-        downloaded = any(
-            item.runtime == runtime and item.available for item in status.runtimes
-        )
+        downloaded = any(item.runtime == runtime and item.available for item in status.runtimes)
         ready = next(
             (
                 snapshot
@@ -561,9 +750,7 @@ class LiveTranscriptionService:
     @staticmethod
     def _resource_artifact_id(resource: ResourceStatusView, runtime: str) -> str:
         matching = tuple(
-            artifact.artifact_id
-            for artifact in resource.artifacts
-            if artifact.runtime == runtime
+            artifact.artifact_id for artifact in resource.artifacts if artifact.runtime == runtime
         )
         if len(matching) != 1:
             raise ResourceNotFoundError(

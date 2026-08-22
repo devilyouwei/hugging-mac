@@ -69,11 +69,15 @@ artifacts:
     kind: directory
     expected_sha256: 6ec1ee9247f7c717a285d809967bd64e210dbba4418e872c01a7a60bdedbb983
     source:
-      kind: url_archive
-      url: https://huggingface.co/hugging-mac/sensevoice-small-coreml/resolve/53ba0a99e0937254cc4b6378e82096c3bc68a146/sensevoice-small-coreml.tar
-      format: tar
-      strip_components: 1
-      expected_sha256: 53d62442e25efb74ce88a7d7a16c5752434ad71ef675672ee049efbaa112248e
+      kind: huggingface
+      repo_id: hugging-mac/sensevoice-small-coreml
+      revision: 53ba0a99e0937254cc4b6378e82096c3bc68a146
+      allow_patterns:
+        - sensevoice-small-coreml/sensevoice.mlpackage/**
+        - sensevoice-small-coreml/am.mvn
+        - sensevoice-small-coreml/conversion.json
+      strip_prefix: sensevoice-small-coreml
+      expected_sha256: 6ec1ee9247f7c717a285d809967bd64e210dbba4418e872c01a7a60bdedbb983
   - artifact_id: tokenizer
     variant: small
     runtime: pytorch-mps

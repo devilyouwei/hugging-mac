@@ -75,3 +75,31 @@ def test_shared_snapshot_is_unavailable_until_declared_files_exist(
     (tokenizer / "speech_tokenizer").mkdir()
     (tokenizer / "speech_tokenizer" / "model.safetensors").touch()
     assert artifact_available(artifact, tokenizer)
+
+
+def test_stripped_snapshot_checks_patterns_relative_to_installed_directory(
+    tmp_path: Path,
+) -> None:
+    package = tmp_path / "yolov8n.mlpackage"
+    package.mkdir()
+    artifact = ModelArtifact(
+        artifact_id="coreml",
+        runtime="coreml",
+        format=ArtifactFormat.COREML,
+        path=Path("yolov8n.mlpackage"),
+        kind=ArtifactKind.DIRECTORY,
+        source=HuggingFaceSource(
+            repo_id="hugging-mac/yolov8-coreml",
+            allow_patterns=(
+                "yolov8n.mlpackage/Manifest.json",
+                "yolov8n.mlpackage/Data/**",
+            ),
+            strip_prefix="yolov8n.mlpackage",
+        ),
+    )
+
+    assert not artifact_available(artifact, package)
+    (package / "Manifest.json").touch()
+    (package / "Data").mkdir()
+    (package / "Data" / "weights.bin").touch()
+    assert artifact_available(artifact, package)

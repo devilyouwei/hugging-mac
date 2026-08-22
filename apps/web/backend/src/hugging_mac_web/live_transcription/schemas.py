@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import asdict
 from typing import Literal
 
@@ -78,7 +79,18 @@ class ReadyAsrInstanceView(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     instance_id: str
+    variant: str
     runtime: str
+
+
+class AsrVariantView(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    display_name: str
+    available: bool
+    available_runtimes: tuple[str, ...] = ()
+    streaming_chunk_seconds: float | None = None
 
 
 class AsrModelView(BaseModel):
@@ -95,6 +107,7 @@ class AsrModelView(BaseModel):
     rich_understanding: bool
     streaming: bool
     streaming_chunk_seconds: float | None
+    variants: tuple[AsrVariantView, ...] = ()
     resource: ResourceStatusView
     ready_instance_id: str | None = None
     ready_instances: tuple[ReadyAsrInstanceView, ...] = ()
@@ -107,10 +120,12 @@ class AsrModelView(BaseModel):
         *,
         ready_instance_id: str | None,
         ready_instances: tuple[ReadyAsrInstanceView, ...] = (),
+        variants: tuple[AsrVariantView, ...] = (),
     ) -> AsrModelView:
         return cls(
             **asdict(profile),
             resource=resource,
+            variants=variants,
             ready_instance_id=ready_instance_id,
             ready_instances=ready_instances,
         )
@@ -120,6 +135,7 @@ class LoadModelRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     model_id: str
+    variant: str | None = None
     runtime: str | None = None
 
 
@@ -204,6 +220,8 @@ class StreamingTranscriptionView(BaseModel):
     preprocess_ms: float | None
     inference_ms: float | None
     enhancement_inference_ms: float | None = None
+    input_audio_base64: str | None = None
+    input_audio_media_type: str | None = None
 
     @classmethod
     def from_sdk(
@@ -211,6 +229,7 @@ class StreamingTranscriptionView(BaseModel):
         response: StreamingTranscriptionResponse,
         *,
         enhancement_inference_ms: float | None = None,
+        input_audio: bytes | None = None,
     ) -> StreamingTranscriptionView:
         return cls(
             session_id=response.session_id,
@@ -228,6 +247,10 @@ class StreamingTranscriptionView(BaseModel):
             preprocess_ms=response.timings.preprocess_ms,
             inference_ms=response.timings.inference_ms,
             enhancement_inference_ms=enhancement_inference_ms,
+            input_audio_base64=(
+                base64.b64encode(input_audio).decode("ascii") if input_audio else None
+            ),
+            input_audio_media_type=(_audio_media_type(input_audio) if input_audio else None),
         )
 
 
@@ -260,6 +283,8 @@ class TranscriptionResultView(BaseModel):
     speech_segment_count: int = 0
     vad_inference_ms: float | None = None
     enhancement_inference_ms: float | None = None
+    input_audio_base64: str | None = None
+    input_audio_media_type: str | None = None
 
     @classmethod
     def from_sdk(cls, response: TranscriptionResponse) -> TranscriptionResultView:
@@ -294,3 +319,20 @@ class TranscriptionResultView(BaseModel):
             emotion=response.emotion,
             events=response.events,
         )
+
+
+def encoded_input_audio(audio: bytes) -> dict[str, str]:
+    """Serialize the exact encoded audio passed to an inference capability."""
+
+    return {
+        "input_audio_base64": base64.b64encode(audio).decode("ascii"),
+        "input_audio_media_type": _audio_media_type(audio),
+    }
+
+
+def _audio_media_type(audio: bytes) -> str:
+    if audio.startswith(b"RIFF") and audio[8:12] == b"WAVE":
+        return "audio/wav"
+    if audio.startswith(b"fLaC"):
+        return "audio/flac"
+    return "application/octet-stream"

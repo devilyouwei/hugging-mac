@@ -88,29 +88,21 @@ class SileroResourceResolver:
     async def download(self, *, overwrite: bool = False) -> None:
         onnx_path = self._onnx_path()
         if overwrite or not onnx_path.exists():
-            await self._downloader.download(
-                self._onnx_source, onnx_path, overwrite=overwrite
-            )
+            await self._downloader.download(self._onnx_source, onnx_path, overwrite=overwrite)
         else:
             await self.resolve_onnx()
 
         coreml_path = self._coreml_path()
         coreml_root = coreml_path.parent
         if overwrite or not coreml_path.exists():
-            await self._downloader.download(
-                self._coreml_source, coreml_root, overwrite=overwrite
-            )
+            await self._downloader.download(self._coreml_source, coreml_root, overwrite=overwrite)
         await self.resolve_coreml()
 
     def status(self) -> ModelResourceStatus:
         onnx_path = self._onnx_path()
-        onnx_available = (
-            onnx_path.is_file() and file_sha256(onnx_path) == SILERO_SHA256
-        )
+        onnx_available = onnx_path.is_file() and file_sha256(onnx_path) == SILERO_SHA256
         coreml_path = self._coreml_path()
-        coreml_available = all(
-            (coreml_path / name).is_file() for name in _COREML_REQUIRED_FILES
-        )
+        coreml_available = all((coreml_path / name).is_file() for name in _COREML_REQUIRED_FILES)
         return ModelResourceStatus(
             model_id=SILERO_MODEL_ID,
             revision=SILERO_REVISION,
@@ -191,9 +183,7 @@ class SileroResourceResolver:
 
 
 class SileroResourceProvider:
-    def __init__(
-        self, onnx_source: UrlFileSource, coreml_source: HuggingFaceSource
-    ) -> None:
+    def __init__(self, onnx_source: UrlFileSource, coreml_source: HuggingFaceSource) -> None:
         self._onnx_source = onnx_source
         self._coreml_source = coreml_source
 
