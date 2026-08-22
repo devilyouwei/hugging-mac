@@ -3,8 +3,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "v
 
 import { fetchChatModels, fetchLoadedChatModel, loadChatModel, streamChatMessage } from "./api"
 import { ChatAsrSocket } from "./asrSocket"
+import type { ChatAsrEvent } from "./asrSocket"
 import ChatAudioPlayer from "./ChatAudioPlayer.vue"
-import { encodePcm16, mergeWavBlobs } from "./wav"
+import { mergeWavBlobs } from "./wav"
 import { errorMessage, unloadModel } from "@/modelLifecycle"
 import { fetchAsrModels, loadAsrModel } from "@/live_transcription/api"
 import { fetchTtsModels, loadTtsModel, synthesizeSpeech } from "@/text_to_speech/api"
@@ -51,19 +52,10 @@ let audioSource: MediaStreamAudioSourceNode | null = null
 let audioProcessor: ScriptProcessorNode | null = null
 let audioGain: GainNode | null = null
 let asrSocket: ChatAsrSocket | null = null
-let speaking = false
-let asrFinalizing = false
-let silenceStartedAt = 0
-let speechStartedAt = 0
-let asrChunks: Float32Array[] = []
-let asrSamples = 0
-let preRoll: Float32Array[] = []
-let preRollSamples = 0
 let currentAudio: HTMLAudioElement | null = null
 let currentAudioResolve: (() => void) | null = null
 let playbackGeneration = 0
 const ttsRequests = new Set<AbortController>()
-let vadInferenceMs = 0
 
 interface TtsSegmentResult {
   index: number
@@ -82,16 +74,11 @@ interface TtsPipeline {
 interface AsrTiming {
   totalMs: number
   vadMs: number
-  enhancementMs: number | null
   inferenceMs: number | null
 }
 
 const ASR_MODEL_ID = "nvidia/nemotron-3.5-asr-streaming-0.6b"
 const TTS_MODEL_ID = "hexgrad/kokoro"
-const ASR_CHUNK_SECONDS = 2.24
-const PRE_ROLL_SECONDS = 0.5
-const SILENCE_SECONDS = 0.7
-const MIN_SPEECH_SECONDS = 0.15
 const VISION_FRAME_SIZE = 448
 const KOKORO_LANGUAGE_PREFIX: Record<string, string> = {
   "en-us": "a",
@@ -344,7 +331,6 @@ async function submit() {
   const text = prompt.value.trim()
   const attachments = images.value.splice(0)
   prompt.value = ""
-  cancelAsrUtterance()
   await startTurn(text, attachments, "text")
 }
 
@@ -631,13 +617,21 @@ async function toggleAsr() {
   }
   try {
     loadedAsr.value ??= await loadAsrModel(ASR_MODEL_ID, asrModel.value.variant, "coreml")
-    asrSocket = await ChatAsrSocket.connect()
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: false, channelCount: 1 },
       video: false,
     })
     audioContext = new AudioContext({ latencyHint: "interactive" })
     await audioContext.resume()
+    asrSocket = await ChatAsrSocket.connect(
+      {
+        instanceId: loadedAsr.value.instance_id,
+        sampleRate: audioContext.sampleRate,
+        streamingChunkSeconds: asrModel.value.streaming_chunk_seconds ?? 2.24,
+      },
+      handleAsrEvent,
+      (caught) => { error.value = caught.message },
+    )
     audioSource = audioContext.createMediaStreamSource(mediaStream)
     audioProcessor = audioContext.createScriptProcessor(4096, 1, 1)
     audioGain = audioContext.createGain()
@@ -654,96 +648,30 @@ async function toggleAsr() {
 }
 
 function processAsrAudio(event: AudioProcessingEvent) {
-  if (!asrEnabled.value || !audioContext) return
-  const vadStartedAt = performance.now()
-  const chunk = new Float32Array(event.inputBuffer.getChannelData(0))
-  let energy = 0
-  for (const sample of chunk) energy += sample * sample
-  const voiced = Math.sqrt(energy / chunk.length) >= 0.018
-  vadInferenceMs += performance.now() - vadStartedAt
-  if (!speaking) {
-    preRoll.push(chunk)
-    preRollSamples += chunk.length
-    const limit = audioContext.sampleRate * PRE_ROLL_SECONDS
-    while (preRollSamples > limit && preRoll.length > 1) preRollSamples -= preRoll.shift()!.length
-    if (voiced) beginAsrUtterance()
-    return
-  }
-  asrChunks.push(chunk)
-  asrSamples += chunk.length
-  if (asrSamples / audioContext.sampleRate >= ASR_CHUNK_SECONDS) flushAsrAudio()
-  if (voiced) silenceStartedAt = 0
-  else if (!silenceStartedAt) silenceStartedAt = performance.now()
-  const silence = silenceStartedAt ? (performance.now() - silenceStartedAt) / 1000 : 0
-  if (silence >= SILENCE_SECONDS) finishAsrUtterance()
+  if (!asrEnabled.value || !asrSocket) return
+  asrSocket.send(event.inputBuffer.getChannelData(0))
 }
 
-function beginAsrUtterance() {
-  if (!asrSocket || !loadedAsr.value || !audioContext || speaking) return
-  if (asrFinalizing) {
-    asrSocket.cancel()
-    asrFinalizing = false
-  }
-  speaking = true
-  speechStartedAt = performance.now()
-  silenceStartedAt = 0
-  asrChunks = preRoll
-  asrSamples = preRollSamples
-  preRoll = []
-  preRollSamples = 0
-  asrDraft.value = "Listening…"
-  asrSocket.start(
-    loadedAsr.value.instance_id,
-    audioContext.sampleRate,
-    (event) => { if (event.text.trim()) asrDraft.value = event.text },
-    (caught) => { error.value = caught.message },
-  )
-}
-
-function flushAsrAudio() {
-  if (!asrSocket || !asrChunks.length) return
-  asrSocket.send(encodePcm16(asrChunks))
-  asrChunks = []
-  asrSamples = 0
-}
-
-function finishAsrUtterance() {
-  if (!speaking || !asrSocket) return
-  const duration = (performance.now() - speechStartedAt) / 1000
-  speaking = false
-  silenceStartedAt = 0
-  if (duration < MIN_SPEECH_SECONDS) { cancelAsrUtterance(); return }
-  flushAsrAudio()
-  const utteranceVadMs = vadInferenceMs
-  vadInferenceMs = 0
-  asrFinalizing = true
-  void asrSocket.finish().then((result) => {
+function handleAsrEvent(event: ChatAsrEvent) {
+  if (event.type === "speech_start") {
+    asrDraft.value = "Listening…"
+  } else if (event.type === "partial" && event.text?.trim()) {
+    asrDraft.value = event.text
+  } else if (event.type === "transcript") {
     asrDraft.value = ""
-    if (/[\p{L}\p{N}]/u.test(result.text.trim())) {
-      void startTurn(result.text.trim(), [], "asr", {
-        totalMs: utteranceVadMs + (result.preprocess_ms ?? 0) + (result.inference_ms ?? 0),
-        vadMs: utteranceVadMs,
-        enhancementMs: result.enhancement_inference_ms,
-        inferenceMs: (result.preprocess_ms ?? 0) + (result.inference_ms ?? 0),
+    const text = event.text?.trim() ?? ""
+    if (/[\p{L}\p{N}]/u.test(text)) {
+      const vadMs = event.vad_inference_ms ?? 0
+      const inferenceMs = (event.preprocess_ms ?? 0) + (event.inference_ms ?? 0)
+      void startTurn(text, [], "asr", {
+        totalMs: vadMs + inferenceMs,
+        vadMs,
+        inferenceMs,
       })
     }
-  }).catch((caught) => {
-    if (!(caught instanceof DOMException && caught.name === "AbortError")) error.value = errorMessage(caught, "ASR 失败")
-  }).finally(() => {
-    asrFinalizing = false
-  })
-}
-
-function cancelAsrUtterance() {
-  asrSocket?.cancel()
-  speaking = false
-  asrFinalizing = false
-  asrChunks = []
-  asrSamples = 0
-  silenceStartedAt = 0
-  speechStartedAt = 0
-  asrDraft.value = ""
-  vadInferenceMs = 0
+  } else if (event.type === "stopped") {
+    asrDraft.value = ""
+  }
 }
 
 function formatTime(value: number | null): string {
@@ -752,7 +680,7 @@ function formatTime(value: number | null): string {
 }
 
 function stopAsr() {
-  cancelAsrUtterance()
+  asrDraft.value = ""
   asrSocket?.close()
   asrSocket = null
   if (audioProcessor) audioProcessor.onaudioprocess = null
@@ -766,8 +694,6 @@ function stopAsr() {
   audioSource = null
   audioProcessor = null
   audioGain = null
-  preRoll = []
-  preRollSamples = 0
 }
 
 async function toggleCamera() {
@@ -985,7 +911,6 @@ onBeforeUnmount(() => {
             <div v-if="message.source === 'asr' && message.asrTiming" class="chat-message-meta">
               <span>ASR {{ formatTime(message.asrTiming.totalMs) }}</span>
               <span>VAD {{ formatTime(message.asrTiming.vadMs) }}</span>
-              <span v-if="message.asrTiming.enhancementMs !== null">ENHANCE {{ formatTime(message.asrTiming.enhancementMs) }}</span>
               <span>MODEL {{ formatTime(message.asrTiming.inferenceMs) }}</span>
             </div>
             <div v-if="message.llmTiming" class="chat-message-meta">

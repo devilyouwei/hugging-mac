@@ -8,24 +8,17 @@ from typing import Literal
 from hugging_mac_sdk import (
     AudioInput,
     ReusePolicy,
-    SpeechEnhancementRequest,
-    StreamingTranscriptionRequest,
     TranscriptionRequest,
-    VoiceActivityRequest,
 )
 from hugging_mac_sdk.capabilities import (
-    SpeechEnhancement,
     SpeechTranscription,
     SpeechUnderstanding,
-    StreamingSpeechTranscription,
-    VoiceActivityDetection,
 )
-from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
+from hugging_mac_sdk.core.instance import ModelState
 from hugging_mac_sdk.errors import ResourceNotFoundError
 from hugging_mac_sdk.schemas.speech_understanding import SpeechUnderstandingRequest
 
 from hugging_mac_web.context import PlatformContext
-from hugging_mac_web.live_transcription.audio_pipeline import prepare_detected_speech
 from hugging_mac_web.live_transcription.config import (
     ASR_MODEL_PROFILES,
     QWEN3_ASR_PROFILE,
@@ -40,11 +33,7 @@ from hugging_mac_web.live_transcription.schemas import (
     PipelineComponentView,
     ReadyAsrInstanceView,
     ResourceStatusView,
-    StreamingSessionView,
-    StreamingTranscriptionView,
     TranscriptionResultView,
-    VadDetectionView,
-    encoded_input_audio,
 )
 from hugging_mac_web.shared.utils.log_util import get_logger
 
@@ -278,119 +267,21 @@ class LiveTranscriptionService:
         finally:
             await handle.close()
 
-    async def detect_voice_activity(
-        self,
-        audio: bytes,
-        *,
-        instance_id: str,
-        threshold: float,
-    ) -> VadDetectionView:
-        instance = await self._context.models.instances.require(instance_id)
-        info = instance.info()
-        if info.model_id != SILERO_MODEL_ID or info.state is not ModelState.READY:
-            raise ResourceNotFoundError(
-                "The Silero VAD instance is not ready",
-                details={"instance_id": instance_id, "model_id": info.model_id},
-            )
-        detector = instance.require(VoiceActivityDetection)  # type: ignore[type-abstract]
-        response = await detector.detect_voice_activity(
-            VoiceActivityRequest(
-                audio=AudioInput(data=audio),
-                threshold=threshold,
-                min_speech_ms=96,
-                min_silence_ms=160,
-                speech_pad_ms=64,
-            )
-        )
-        trailing_silence_seconds = (
-            response.duration_seconds - response.segments[-1].end_seconds
-            if response.segments
-            else response.duration_seconds
-        )
-        return VadDetectionView(
-            # The client sends a rolling context window. Only speech close to
-            # its tail describes the current microphone state.
-            voiced=bool(response.segments) and trailing_silence_seconds <= 0.24,
-            speech_seconds=response.speech_seconds,
-            duration_seconds=response.duration_seconds,
-            inference_ms=response.timings.inference_ms,
-        )
-
-    async def start_stream(
-        self,
-        *,
-        model_id: str,
-        instance_id: str,
-    ) -> StreamingSessionView:
-        instance = await self._require_streaming_instance(model_id, instance_id)
-        streamer = instance.require(StreamingSpeechTranscription)  # type: ignore[type-abstract]
-        return StreamingSessionView.from_sdk(await streamer.start_stream())
-
-    async def transcribe_stream_chunk(
-        self,
-        audio: bytes,
-        *,
-        model_id: str,
-        instance_id: str,
-        session_id: str,
-    ) -> StreamingTranscriptionView:
-        instance = await self._require_streaming_instance(model_id, instance_id)
-        streamer = instance.require(StreamingSpeechTranscription)  # type: ignore[type-abstract]
-        response = await streamer.transcribe_stream(
-            StreamingTranscriptionRequest(
-                session_id=session_id,
-                audio=AudioInput(data=audio),
-            )
-        )
-        return StreamingTranscriptionView.from_sdk(response, input_audio=audio)
-
-    async def finish_stream(
-        self,
-        *,
-        model_id: str,
-        instance_id: str,
-        session_id: str,
-    ) -> StreamingTranscriptionView:
-        instance = await self._require_streaming_instance(model_id, instance_id)
-        streamer = instance.require(StreamingSpeechTranscription)  # type: ignore[type-abstract]
-        return StreamingTranscriptionView.from_sdk(await streamer.finish_stream(session_id))
-
-    async def cancel_stream(
-        self,
-        *,
-        model_id: str,
-        instance_id: str,
-        session_id: str,
-    ) -> None:
-        instance = await self._require_streaming_instance(model_id, instance_id)
-        streamer = instance.require(StreamingSpeechTranscription)  # type: ignore[type-abstract]
-        await streamer.cancel_stream(session_id)
-
     async def transcribe(
         self,
         audio: bytes,
         *,
         model_id: str,
         instance_id: str,
-        use_vad: bool = True,
-        use_enhancement: bool = True,
-        include_input_audio: bool = True,
-        vad_instance_id: str | None = None,
-        enhancement_instance_id: str | None = None,
-        vad_threshold: float = 0.5,
     ) -> TranscriptionResultView:
+        """Run ASR on audio already prepared by the session pipeline."""
+
         started = perf_counter()
-        source_bytes = len(audio)
         logger.info(
             "asr_inference_started",
             model_id=model_id,
             instance_id=instance_id,
-            input_bytes=source_bytes,
-            offline_vad_enabled=use_vad and bool(vad_instance_id),
-            inline_enhancement_enabled=use_enhancement and bool(enhancement_instance_id),
-            preprocessed_upstream=not use_vad and not use_enhancement,
-            vad_instance_id=vad_instance_id,
-            enhancement_instance_id=enhancement_instance_id,
+            input_bytes=len(audio),
         )
         profile = self._profile(model_id)
         instance = await self._context.models.instances.require(instance_id)
@@ -410,132 +301,6 @@ class LiveTranscriptionService:
                 details={"instance_id": instance_id, "state": info.state.value},
             )
 
-        source_duration_seconds: float | None = None
-        speech_duration_seconds: float | None = None
-        speech_segment_count = 0
-        vad_inference_ms: float | None = None
-        enhancement_inference_ms: float | None = None
-        if use_vad and vad_instance_id:
-            try:
-                logger.info(
-                    "offline_vad_started",
-                    instance_id=vad_instance_id,
-                    input_bytes=len(audio),
-                    threshold=vad_threshold,
-                )
-                vad_instance = await self._require_vad_instance(vad_instance_id)
-                detector = vad_instance.require(VoiceActivityDetection)  # type: ignore[type-abstract]
-                vad_response = await detector.detect_voice_activity(
-                    VoiceActivityRequest(
-                        audio=AudioInput(data=audio),
-                        threshold=vad_threshold,
-                        min_speech_ms=120,
-                        min_silence_ms=300,
-                        speech_pad_ms=80,
-                        max_speech_seconds=25.0,
-                    )
-                )
-                vad_inference_ms = vad_response.timings.inference_ms
-                source_duration_seconds = vad_response.duration_seconds
-                if not vad_response.segments:
-                    result = TranscriptionResultView(
-                        text="",
-                        model_id=profile.model_id,
-                        instance_id=info.instance_id,
-                        runtime=info.runtime or profile.runtime,
-                        device=info.device or "",
-                        sample_rate=vad_response.sample_rate,
-                        duration_seconds=vad_response.duration_seconds,
-                        generated_tokens=0,
-                        inference_ms=0.0,
-                        source_duration_seconds=vad_response.duration_seconds,
-                        speech_duration_seconds=0.0,
-                        speech_segment_count=0,
-                        vad_inference_ms=vad_inference_ms,
-                        enhancement_inference_ms=None,
-                    )
-                    logger.info(
-                        "offline_vad_completed",
-                        instance_id=vad_instance_id,
-                        segments=0,
-                        speech_seconds=0.0,
-                        duration_seconds=vad_response.duration_seconds,
-                        inference_ms=vad_inference_ms,
-                    )
-                    self._log_transcription_completed(
-                        result,
-                        started=started,
-                        source_bytes=source_bytes,
-                        prepared_bytes=0,
-                        path="vad_no_speech",
-                    )
-                    return result
-                prepared = await asyncio.to_thread(
-                    prepare_detected_speech,
-                    audio,
-                    vad_response.segments,
-                    vad_sample_rate=vad_response.sample_rate,
-                )
-                audio = prepared.wav
-                source_duration_seconds = prepared.source_duration_seconds
-                speech_duration_seconds = prepared.speech_duration_seconds
-                speech_segment_count = prepared.segment_count
-                logger.info(
-                    "offline_vad_completed",
-                    instance_id=vad_instance_id,
-                    segments=speech_segment_count,
-                    speech_seconds=speech_duration_seconds,
-                    duration_seconds=source_duration_seconds,
-                    inference_ms=vad_inference_ms,
-                    prepared_bytes=len(audio),
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.warning(
-                    "offline_vad_failed_continuing_without_vad",
-                    instance_id=vad_instance_id,
-                    exc_info=True,
-                )
-        elif use_vad:
-            logger.warning("offline_vad_skipped", reason="missing_instance_id")
-
-        if use_enhancement and enhancement_instance_id:
-            try:
-                enhancement_instance = await self._require_enhancement_instance(
-                    enhancement_instance_id
-                )
-                enhancer = enhancement_instance.require(SpeechEnhancement)  # type: ignore[type-abstract]
-                logger.info(
-                    "inline_enhancement_started",
-                    instance_id=enhancement_instance_id,
-                    input_bytes=len(audio),
-                )
-                enhanced = await enhancer.enhance_speech(
-                    SpeechEnhancementRequest(audio=AudioInput(data=audio))
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.warning(
-                    "inline_enhancement_failed_continuing_without_enhancement",
-                    instance_id=enhancement_instance_id,
-                    exc_info=True,
-                )
-            else:
-                audio = enhanced.audio
-                enhancement_inference_ms = enhanced.timings.inference_ms
-                logger.info(
-                    "inline_enhancement_completed",
-                    instance_id=enhancement_instance_id,
-                    output_bytes=len(audio),
-                    duration_seconds=enhanced.duration_seconds,
-                    inference_ms=enhancement_inference_ms,
-                    sample_rate=enhanced.sample_rate,
-                )
-        elif use_enhancement:
-            logger.warning("inline_enhancement_skipped", reason="missing_instance_id")
-
         audio_input = AudioInput(data=audio)
         if profile.rich_understanding and instance.supports(SpeechUnderstanding):
             understanding = instance.require(SpeechUnderstanding)  # type: ignore[type-abstract]
@@ -543,24 +308,13 @@ class LiveTranscriptionService:
                 SpeechUnderstandingRequest(audio=audio_input)
             )
             result = TranscriptionResultView.from_understanding(understanding_response)
-            completed = result.model_copy(
-                update={
-                    "source_duration_seconds": source_duration_seconds,
-                    "speech_duration_seconds": speech_duration_seconds,
-                    "speech_segment_count": speech_segment_count,
-                    "vad_inference_ms": vad_inference_ms,
-                    "enhancement_inference_ms": enhancement_inference_ms,
-                    **(encoded_input_audio(audio) if include_input_audio else {}),
-                }
-            )
             self._log_transcription_completed(
-                completed,
+                result,
                 started=started,
-                source_bytes=source_bytes,
-                prepared_bytes=len(audio),
+                input_bytes=len(audio),
                 path="speech_understanding",
             )
-            return completed
+            return result
 
         transcriber = instance.require(SpeechTranscription)  # type: ignore[type-abstract]
         transcription_response = await transcriber.transcribe(
@@ -571,32 +325,20 @@ class LiveTranscriptionService:
             )
         )
         result = TranscriptionResultView.from_sdk(transcription_response)
-        completed = result.model_copy(
-            update={
-                "source_duration_seconds": source_duration_seconds,
-                "speech_duration_seconds": speech_duration_seconds,
-                "speech_segment_count": speech_segment_count,
-                "vad_inference_ms": vad_inference_ms,
-                "enhancement_inference_ms": enhancement_inference_ms,
-                **(encoded_input_audio(audio) if include_input_audio else {}),
-            }
-        )
         self._log_transcription_completed(
-            completed,
+            result,
             started=started,
-            source_bytes=source_bytes,
-            prepared_bytes=len(audio),
+            input_bytes=len(audio),
             path="speech_transcription",
         )
-        return completed
+        return result
 
     @staticmethod
     def _log_transcription_completed(
         result: TranscriptionResultView,
         *,
         started: float,
-        source_bytes: int,
-        prepared_bytes: int,
+        input_bytes: int,
         path: str,
     ) -> None:
         logger.info(
@@ -604,64 +346,14 @@ class LiveTranscriptionService:
             model_id=result.model_id,
             instance_id=result.instance_id,
             path=path,
-            source_bytes=source_bytes,
-            prepared_bytes=prepared_bytes,
+            input_bytes=input_bytes,
             text_length=len(result.text),
             generated_tokens=result.generated_tokens,
             model_inference_ms=result.inference_ms,
             wall_ms=round((perf_counter() - started) * 1000, 3),
             runtime=result.runtime,
             device=result.device,
-            speech_segments=result.speech_segment_count,
         )
-
-    async def _require_vad_instance(self, instance_id: str) -> BaseModelInstance:
-        instance = await self._context.models.instances.require(instance_id)
-        info = instance.info()
-        if info.model_id != SILERO_MODEL_ID or info.state is not ModelState.READY:
-            raise ResourceNotFoundError(
-                "The Silero VAD instance is not ready",
-                details={"instance_id": instance_id, "model_id": info.model_id},
-            )
-        return instance
-
-    async def _require_enhancement_instance(self, instance_id: str) -> BaseModelInstance:
-        instance = await self._context.models.instances.require(instance_id)
-        info = instance.info()
-        if info.model_id != DEEPFILTERNET3_MODEL_ID or info.state is not ModelState.READY:
-            raise ResourceNotFoundError(
-                "The DeepFilterNet3 enhancement instance is not ready",
-                details={"instance_id": instance_id, "model_id": info.model_id},
-            )
-        return instance
-
-    async def _require_streaming_instance(
-        self, model_id: str, instance_id: str
-    ) -> BaseModelInstance:
-        profile = self._profile(model_id)
-        if not profile.streaming:
-            raise ResourceNotFoundError(
-                "The selected ASR model does not support streaming transcription",
-                details={"model_id": model_id},
-            )
-        instance = await self._context.models.instances.require(instance_id)
-        info = instance.info()
-        if info.model_id != model_id or info.state is not ModelState.READY:
-            raise ResourceNotFoundError(
-                "The streaming ASR instance is not ready",
-                details={
-                    "instance_id": instance_id,
-                    "expected_model_id": model_id,
-                    "actual_model_id": info.model_id,
-                    "state": info.state.value,
-                },
-            )
-        if not instance.supports(StreamingSpeechTranscription):
-            raise ResourceNotFoundError(
-                "The ASR instance does not expose streaming transcription",
-                details={"instance_id": instance_id, "model_id": model_id},
-            )
-        return instance
 
     async def _ready_instances(self, model_id: str) -> tuple[ReadyAsrInstanceView, ...]:
         return tuple(

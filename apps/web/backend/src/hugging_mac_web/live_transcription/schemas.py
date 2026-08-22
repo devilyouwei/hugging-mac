@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import base64
 from dataclasses import asdict
 from typing import Literal
 
 from hugging_mac_sdk.core.instance import ModelInstanceInfo
 from hugging_mac_sdk.schemas.resources import ModelResourceStatus
 from hugging_mac_sdk.schemas.speech_understanding import SpeechUnderstandingResponse
-from hugging_mac_sdk.schemas.streaming_transcription import (
-    StreamingTranscriptionResponse,
-    StreamingTranscriptionSession,
-)
 from hugging_mac_sdk.schemas.transcription import TranscriptionResponse
 from pydantic import BaseModel, ConfigDict
 
@@ -139,17 +134,6 @@ class LoadModelRequest(BaseModel):
     runtime: str | None = None
 
 
-class StreamingSessionRequest(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    model_id: str
-    instance_id: str
-
-
-class StreamingFinishRequest(StreamingSessionRequest):
-    session_id: str
-
-
 class LoadedModelView(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -187,82 +171,6 @@ class PipelineComponentView(BaseModel):
     loaded_model: LoadedModelView | None = None
 
 
-class StreamingSessionView(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    session_id: str
-    model_id: str
-    instance_id: str
-    runtime: str
-    device: str
-    sample_rate: int
-
-    @classmethod
-    def from_sdk(cls, session: StreamingTranscriptionSession) -> StreamingSessionView:
-        return cls(**session.model_dump())
-
-
-class StreamingTranscriptionView(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    session_id: str
-    model_id: str
-    instance_id: str
-    runtime: str
-    device: str
-    text: str
-    delta: str
-    sample_rate: int
-    audio_seconds: float
-    generated_tokens: int
-    detected_language: str | None
-    is_final: bool
-    preprocess_ms: float | None
-    inference_ms: float | None
-    enhancement_inference_ms: float | None = None
-    input_audio_base64: str | None = None
-    input_audio_media_type: str | None = None
-
-    @classmethod
-    def from_sdk(
-        cls,
-        response: StreamingTranscriptionResponse,
-        *,
-        enhancement_inference_ms: float | None = None,
-        input_audio: bytes | None = None,
-    ) -> StreamingTranscriptionView:
-        return cls(
-            session_id=response.session_id,
-            model_id=response.model_id,
-            instance_id=response.instance_id,
-            runtime=response.runtime,
-            device=response.device,
-            text=response.text,
-            delta=response.delta,
-            sample_rate=response.sample_rate,
-            audio_seconds=response.audio_seconds,
-            generated_tokens=response.generated_tokens,
-            detected_language=response.detected_language,
-            is_final=response.is_final,
-            preprocess_ms=response.timings.preprocess_ms,
-            inference_ms=response.timings.inference_ms,
-            enhancement_inference_ms=enhancement_inference_ms,
-            input_audio_base64=(
-                base64.b64encode(input_audio).decode("ascii") if input_audio else None
-            ),
-            input_audio_media_type=(_audio_media_type(input_audio) if input_audio else None),
-        )
-
-
-class VadDetectionView(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    voiced: bool
-    speech_seconds: float
-    duration_seconds: float
-    inference_ms: float
-
-
 class TranscriptionResultView(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -278,13 +186,6 @@ class TranscriptionResultView(BaseModel):
     languages: tuple[str, ...] = ()
     emotion: str | None = None
     events: tuple[str, ...] = ()
-    source_duration_seconds: float | None = None
-    speech_duration_seconds: float | None = None
-    speech_segment_count: int = 0
-    vad_inference_ms: float | None = None
-    enhancement_inference_ms: float | None = None
-    input_audio_base64: str | None = None
-    input_audio_media_type: str | None = None
 
     @classmethod
     def from_sdk(cls, response: TranscriptionResponse) -> TranscriptionResultView:
@@ -319,20 +220,3 @@ class TranscriptionResultView(BaseModel):
             emotion=response.emotion,
             events=response.events,
         )
-
-
-def encoded_input_audio(audio: bytes) -> dict[str, str]:
-    """Serialize the exact encoded audio passed to an inference capability."""
-
-    return {
-        "input_audio_base64": base64.b64encode(audio).decode("ascii"),
-        "input_audio_media_type": _audio_media_type(audio),
-    }
-
-
-def _audio_media_type(audio: bytes) -> str:
-    if audio.startswith(b"RIFF") and audio[8:12] == b"WAVE":
-        return "audio/wav"
-    if audio.startswith(b"fLaC"):
-        return "audio/flac"
-    return "application/octet-stream"

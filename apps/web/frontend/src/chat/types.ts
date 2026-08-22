@@ -62,7 +62,6 @@ export interface ConversationMessage {
   asrTiming?: {
     totalMs: number
     vadMs: number
-    enhancementMs: number | null
     inferenceMs: number | null
   }
   llmTiming?: {

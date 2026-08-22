@@ -55,11 +55,6 @@ from hugging_mac_web.live_transcription.schemas import (
     LoadedModelView,
     ResourceStatusView,
     RuntimeResourceView,
-    StreamingSessionView,
-    StreamingTranscriptionView,
-    TranscriptionResultView,
-    VadDetectionView,
-    encoded_input_audio,
 )
 from hugging_mac_web.live_transcription.service import LiveTranscriptionService
 from hugging_mac_web.main import create_app
@@ -247,11 +242,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert "/api/v1/apps/object-detection/detect" in openapi.json()["paths"]
     assert "/api/v1/apps/pose-estimation/estimate" in openapi.json()["paths"]
     assert "/api/v1/apps/instance-segmentation/segment" in openapi.json()["paths"]
-    assert "/api/v1/apps/live-transcription/transcribe" not in openapi.json()["paths"]
     assert "/api/v1/apps/live-transcription/models/load" in openapi.json()["paths"]
-    assert "/api/v1/apps/live-transcription/stream/start" not in openapi.json()["paths"]
-    assert "/api/v1/apps/live-transcription/stream/chunk" not in openapi.json()["paths"]
-    assert "/api/v1/apps/live-transcription/stream/finish" not in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/synthesize" in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/synthesize/reference" in openapi.json()["paths"]
     assert "/api/v1/apps/text-to-speech/models/load" in openapi.json()["paths"]
@@ -457,59 +448,6 @@ def test_yolo_pose_follow_templates_and_matching(tmp_path: Path) -> None:
     assert matched.json()["data"]["score"] > 0.99
 
 
-def test_live_transcription_accepts_vad_wave_segments(
-    tmp_path: Path,
-    monkeypatch: Any,
-) -> None:
-    async def fake_transcribe(*_: object, **kwargs: object) -> TranscriptionResultView:
-        assert kwargs["use_vad"]
-        assert kwargs["use_enhancement"]
-        assert kwargs["vad_instance_id"] == "silero-instance"
-        assert kwargs["vad_threshold"] == 0.425
-        return TranscriptionResultView(
-            text="你好 Hugging Mac",
-            model_id="audio8/audio8-asr",
-            instance_id="test-instance",
-            runtime="coreml",
-            device="cpu-and-neural-engine",
-            sample_rate=16000,
-            duration_seconds=1.25,
-            generated_tokens=8,
-            inference_ms=42.0,
-        )
-
-    monkeypatch.setattr(
-        "hugging_mac_web.live_transcription.service.LiveTranscriptionService.transcribe",
-        fake_transcribe,
-    )
-    app = create_app(_settings(tmp_path))
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/apps/live-transcription/transcribe",
-            files={"file": ("utterance.wav", b"RIFF-test-wave", "audio/wav")},
-            data={
-                "model_id": AUDIO8_PROFILE.model_id,
-                "instance_id": "test-instance",
-                "vad_instance_id": "silero-instance",
-                "vad_threshold": "0.425",
-            },
-        )
-
-    assert response.status_code == 404
-
-
-def test_live_transcription_serializes_exact_model_input_audio() -> None:
-    audio = b"RIFF\x00\x00\x00\x00WAVEprocessed-model-input"
-
-    encoded = encoded_input_audio(audio)
-
-    assert encoded == {
-        "input_audio_base64": "UklGRgAAAABXQVZFcHJvY2Vzc2VkLW1vZGVsLWlucHV0",
-        "input_audio_media_type": "audio/wav",
-    }
-
-
 def test_live_transcription_load_forwards_selected_runtime(
     tmp_path: Path,
     monkeypatch: Any,
@@ -552,34 +490,6 @@ def test_live_transcription_load_forwards_selected_runtime(
 
     assert response.status_code == 200
     assert response.json()["data"]["runtime"] == "pytorch-mps"
-
-
-def test_live_transcription_uses_silero_vad_endpoint(
-    tmp_path: Path,
-    monkeypatch: Any,
-) -> None:
-    async def fake_detect(*_: object, **__: object) -> VadDetectionView:
-        return VadDetectionView(
-            voiced=True,
-            speech_seconds=0.16,
-            duration_seconds=0.18,
-            inference_ms=0.7,
-        )
-
-    monkeypatch.setattr(
-        "hugging_mac_web.live_transcription.service.LiveTranscriptionService.detect_voice_activity",
-        fake_detect,
-    )
-    app = create_app(_settings(tmp_path))
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/apps/live-transcription/vad/detect",
-            files={"file": ("window.wav", b"RIFF-test-wave", "audio/wav")},
-            data={"instance_id": "silero-instance", "threshold": "0.5"},
-        )
-
-    assert response.status_code == 404
 
 
 def test_live_transcription_vad_websocket_validates_stream_instance(tmp_path: Path) -> None:
@@ -677,114 +587,61 @@ def test_models_catalog_downloads_one_shared_artifact_independently(
     assert not resources["coreml-int8"]["available"]
 
 
-def test_live_transcription_exposes_stateful_streaming_routes(
-    tmp_path: Path,
-    monkeypatch: Any,
-) -> None:
-    async def fake_start(*_: object, **kwargs: object) -> StreamingSessionView:
-        assert kwargs["model_id"] == NEMOTRON_3_5_ASR_PROFILE.model_id
-        assert kwargs["instance_id"] == "nemotron-instance"
-        return StreamingSessionView(
-            session_id="stream-1",
-            model_id=NEMOTRON_3_5_ASR_PROFILE.model_id,
-            instance_id="nemotron-instance",
-            runtime="coreml",
-            device="cpu-and-neural-engine",
-            sample_rate=16000,
-        )
-
-    async def fake_chunk(_: object, audio: bytes, **kwargs: object) -> StreamingTranscriptionView:
-        assert audio == b"RIFF-stream"
-        assert kwargs["session_id"] == "stream-1"
-        assert "enhancement_instance_id" not in kwargs
-        return _streaming_view(is_final=False, delta=" world")
-
-    async def fake_finish(*_: object, **__: object) -> StreamingTranscriptionView:
-        return _streaming_view(is_final=True, delta="")
-
-    monkeypatch.setattr(LiveTranscriptionService, "start_stream", fake_start)
-    monkeypatch.setattr(LiveTranscriptionService, "transcribe_stream_chunk", fake_chunk)
-    monkeypatch.setattr(LiveTranscriptionService, "finish_stream", fake_finish)
-    app = create_app(_settings(tmp_path))
-
-    with TestClient(app) as client:
-        started = client.post(
-            "/api/v1/apps/live-transcription/stream/start",
-            json={
-                "model_id": NEMOTRON_3_5_ASR_PROFILE.model_id,
-                "instance_id": "nemotron-instance",
-            },
-        )
-        chunk = client.post(
-            "/api/v1/apps/live-transcription/stream/chunk",
-            files={"file": ("chunk.wav", b"RIFF-stream", "audio/wav")},
-            data={
-                "model_id": NEMOTRON_3_5_ASR_PROFILE.model_id,
-                "instance_id": "nemotron-instance",
-                "session_id": "stream-1",
-                # Legacy clients may still submit this field. Nemotron streaming
-                # must ignore it and send the original audio directly to ASR.
-                "enhancement_instance_id": "deepfilter-instance",
-            },
-        )
-        finished = client.post(
-            "/api/v1/apps/live-transcription/stream/finish",
-            json={
-                "model_id": NEMOTRON_3_5_ASR_PROFILE.model_id,
-                "instance_id": "nemotron-instance",
-                "session_id": "stream-1",
-            },
-        )
-
-    assert started.status_code == 404
-    assert chunk.status_code == 404
-    assert finished.status_code == 404
-
-
-def _streaming_view(*, is_final: bool, delta: str) -> StreamingTranscriptionView:
-    return StreamingTranscriptionView(
-        session_id="stream-1",
-        model_id=NEMOTRON_3_5_ASR_PROFILE.model_id,
-        instance_id="nemotron-instance",
-        runtime="coreml",
-        device="cpu-and-neural-engine",
-        text="hello world",
-        delta=delta,
-        sample_rate=16000,
-        audio_seconds=2.24,
-        generated_tokens=2,
-        detected_language="en-US",
-        is_final=is_final,
-        preprocess_ms=None if is_final else 1.0,
-        inference_ms=12.0 if is_final else 50.0,
-    )
-
-
 def test_chat_streams_nemotron_over_websocket(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
-    async def fake_start(*_: object, **__: object) -> StreamingSessionView:
-        return StreamingSessionView(
-            session_id="stream-1",
-            model_id=NEMOTRON_3_5_ASR_PROFILE.model_id,
-            instance_id="nemotron-instance",
-            runtime="coreml",
-            device="cpu-and-neural-engine",
-            sample_rate=16000,
-        )
+    class FakeSession:
+        session_id = "chat-session"
+        closed = False
 
-    async def fake_chunk(_: object, audio: bytes, **__: object) -> StreamingTranscriptionView:
-        assert audio.startswith(b"RIFF")
-        assert b"\0\0" * 160 in audio
-        return _streaming_view(is_final=False, delta="hello")
+        def __init__(self, emit: Any) -> None:
+            self.emit = emit
 
-    async def fake_finish(*_: object, **__: object) -> StreamingTranscriptionView:
-        return _streaming_view(is_final=True, delta="")
+        async def enqueue(self, audio: bytes) -> None:
+            assert audio == b"\0\0" * 160
+            await self.emit({"type": "speech_start", "utterance_id": 1})
+            await self.emit(
+                {"type": "partial", "utterance_id": 1, "text": "hello", "delta": "hello"}
+            )
 
-    monkeypatch.setattr(LiveTranscriptionService, "start_stream", fake_start)
-    monkeypatch.setattr(LiveTranscriptionService, "transcribe_stream_chunk", fake_chunk)
-    monkeypatch.setattr(LiveTranscriptionService, "finish_stream", fake_finish)
+        async def stop(self) -> None:
+            self.closed = True
+            await self.emit(
+                {
+                    "type": "transcript",
+                    "utterance_id": 1,
+                    "text": "hello world",
+                    "vad_inference_ms": 2.0,
+                    "preprocess_ms": 1.0,
+                    "inference_ms": 12.0,
+                }
+            )
+
+        async def cancel(self) -> None:
+            self.closed = True
+
+    class FakeSessionFactory:
+        @staticmethod
+        async def create(
+            _: object,
+            __: object,
+            start: Any,
+            emit: Any,
+            *,
+            include_input_audio: bool,
+        ) -> FakeSession:
+            assert start.model_id == NEMOTRON_3_5_ASR_PROFILE.model_id
+            assert start.instance_id == "nemotron-instance"
+            assert not start.use_vad
+            assert not start.use_enhancement
+            assert not include_input_audio
+            return FakeSession(emit)
+
+    monkeypatch.setattr(
+        "hugging_mac_web.chat.routes.LiveTranscriptionSession",
+        FakeSessionFactory,
+    )
     app = create_app(_settings(tmp_path))
 
     with (
@@ -793,20 +650,23 @@ def test_chat_streams_nemotron_over_websocket(
     ):
         socket.send_json(
             {
-                "type": "start_utterance",
-                "model_id": NEMOTRON_3_5_ASR_PROFILE.model_id,
+                "type": "start",
                 "instance_id": "nemotron-instance",
                 "sample_rate": 16000,
+                "streaming_chunk_seconds": 2.24,
             }
         )
         assert socket.receive_json()["type"] == "ready"
         socket.send_bytes(b"\0\0" * 160)
+        assert socket.receive_json()["type"] == "speech_start"
         assert socket.receive_json()["type"] == "partial"
-        socket.send_json({"type": "finish_utterance"})
+        socket.send_json({"type": "stop"})
         final = socket.receive_json()
+        stopped = socket.receive_json()
 
-    assert final["type"] == "final"
+    assert final["type"] == "transcript"
     assert final["text"] == "hello world"
+    assert stopped["type"] == "stopped"
 
 
 def test_live_transcription_declares_inference_ready_asr_models() -> None:

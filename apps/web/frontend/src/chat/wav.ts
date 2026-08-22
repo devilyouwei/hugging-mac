@@ -1,18 +1,3 @@
-export function encodePcm16(chunks: Float32Array[]): ArrayBuffer {
-  const sampleCount = chunks.reduce((total, chunk) => total + chunk.length, 0)
-  const output = new ArrayBuffer(sampleCount * 2)
-  const view = new DataView(output)
-  let offset = 0
-  for (const chunk of chunks) {
-    for (const sample of chunk) {
-      const clamped = Math.max(-1, Math.min(1, sample))
-      view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true)
-      offset += 2
-    }
-  }
-  return output
-}
-
 interface WavParts {
   format: Uint8Array
   data: Uint8Array

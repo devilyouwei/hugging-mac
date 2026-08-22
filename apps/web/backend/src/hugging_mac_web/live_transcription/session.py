@@ -171,19 +171,19 @@ class LiveTranscriptionSession:
     def __init__(
         self,
         context: PlatformContext,
-        settings: LiveTranscriptionSettings,
+        service: LiveTranscriptionService,
         start: LiveSessionStart,
         detector: Detector,
         emitter: Emitter,
         *,
         streaming: bool,
+        streamer: StreamingSpeechTranscription | None,
+        include_input_audio: bool,
     ) -> None:
-        self.context, self.service, self.start = (
-            context,
-            LiveTranscriptionService(context, settings),
-            start,
-        )
+        self.context, self.service, self.start = context, service, start
         self.detector, self.emitter, self.streaming = detector, emitter, streaming
+        self.streamer = streamer
+        self.include_input_audio = include_input_audio
         self.session_id = uuid4().hex
         self.log = logger.bind(
             session_id=self.session_id,
@@ -192,8 +192,10 @@ class LiveTranscriptionSession:
         )
         self.resampler = FrameResampler(start.sample_rate)
         self.raw: asyncio.Queue[bytes | None] = asyncio.Queue(32)
-        self.utterances: asyncio.Queue[UtteranceWorkItem | None] = asyncio.Queue(8)
-        self.asr: asyncio.Queue[AsrWorkItem | None] = asyncio.Queue(8)
+        self.utterances: asyncio.Queue[UtteranceWorkItem | None] | None = (
+            None if streaming else asyncio.Queue(8)
+        )
+        self.asr: asyncio.Queue[AsrWorkItem | None] | None = None if streaming else asyncio.Queue(8)
         self.results: asyncio.Queue[Outbound | None] = asyncio.Queue(64)
         self.pre_roll: deque[AudioFrame] = deque(maxlen=PRE_ROLL_FRAMES)
         self.confirmed: list[AudioFrame] = []
@@ -205,23 +207,26 @@ class LiveTranscriptionSession:
         self.last_backpressure_log_at = 0.0
         self.stream_tasks: list[asyncio.Task[None]] = []
         self.stream_queue: asyncio.Queue[AudioFrame | StreamEnd] | None = None
-        self.workers = [
-            asyncio.create_task(
-                self._guard_worker("audio", self._audio_worker),
-                name=f"live-audio-{self.session_id[:8]}",
-            ),
-            asyncio.create_task(
+        self.audio_task = asyncio.create_task(
+            self._guard_worker("audio", self._audio_worker),
+            name=f"live-audio-{self.session_id[:8]}",
+        )
+        self.sender_task = asyncio.create_task(
+            self._sender_worker(), name=f"live-sender-{self.session_id[:8]}"
+        )
+        self.enhancement_task: asyncio.Task[None] | None = None
+        self.asr_task: asyncio.Task[None] | None = None
+        self.workers = [self.audio_task, self.sender_task]
+        if not streaming:
+            self.enhancement_task = asyncio.create_task(
                 self._guard_worker("enhancement", self._enhancement_worker),
                 name=f"live-enhancement-{self.session_id[:8]}",
-            ),
-            asyncio.create_task(
+            )
+            self.asr_task = asyncio.create_task(
                 self._guard_worker("asr", self._asr_worker),
                 name=f"live-asr-{self.session_id[:8]}",
-            ),
-            asyncio.create_task(
-                self._sender_worker(), name=f"live-sender-{self.session_id[:8]}"
-            ),
-        ]
+            )
+            self.workers.extend((self.enhancement_task, self.asr_task))
         self.log.info(
             "live_session_started",
             input_sample_rate=start.sample_rate,
@@ -243,12 +248,20 @@ class LiveTranscriptionSession:
         settings: LiveTranscriptionSettings,
         start: LiveSessionStart,
         emitter: Emitter,
+        *,
+        include_input_audio: bool = True,
     ) -> LiveTranscriptionSession:
         service = LiveTranscriptionService(context, settings)
         profile = service._profile(start.model_id)
         asr = await context.models.instances.require(start.instance_id)
-        if asr.info().model_id != profile.model_id or asr.info().state is not ModelState.READY:
+        asr_info = asr.info()
+        if asr_info.model_id != profile.model_id or asr_info.state is not ModelState.READY:
             raise ValueError("The selected ASR instance is not ready")
+        streamer: StreamingSpeechTranscription | None = None
+        if profile.streaming:
+            if not asr.supports(StreamingSpeechTranscription):
+                raise ValueError("The selected ASR instance does not support streaming")
+            streamer = asr.require(StreamingSpeechTranscription)  # type: ignore[type-abstract]
         detector: Detector
         if start.use_vad:
             if not start.vad_instance_id:
@@ -272,7 +285,16 @@ class LiveTranscriptionSession:
                 or enhancer.info().state is not ModelState.READY
             ):
                 raise ValueError("The selected DeepFilterNet3 instance is not ready")
-        return cls(context, settings, start, detector, emitter, streaming=profile.streaming)
+        return cls(
+            context,
+            service,
+            start,
+            detector,
+            emitter,
+            streaming=profile.streaming,
+            streamer=streamer,
+            include_input_audio=include_input_audio,
+        )
 
     async def enqueue(self, payload: bytes) -> None:
         failed = next((task for task in self.workers if task.done()), None)
@@ -308,20 +330,25 @@ class LiveTranscriptionSession:
             "live_session_stop_requested",
             active_utterance=self.active,
             raw_queue_size=self.raw.qsize(),
-            utterance_queue_size=self.utterances.qsize(),
-            asr_queue_size=self.asr.qsize(),
+            utterance_queue_size=self.utterances.qsize() if self.utterances else None,
+            asr_queue_size=self.asr.qsize() if self.asr else None,
         )
         self.closed = True
         await self.raw.put(None)
-        await self.workers[0]
-        await self.utterances.put(None)
-        await self.workers[1]
-        await self.asr.put(None)
-        await self.workers[2]
+        await self.audio_task
+        if not self.streaming:
+            assert self.utterances is not None
+            assert self.asr is not None
+            assert self.enhancement_task is not None
+            assert self.asr_task is not None
+            await self.utterances.put(None)
+            await self.enhancement_task
+            await self.asr.put(None)
+            await self.asr_task
         if self.stream_tasks:
             await asyncio.gather(*self.stream_tasks)
         await self.results.put(None)
-        await self.workers[3]
+        await self.sender_task
         self.log.info(
             "live_session_stopped",
             elapsed_ms=round((perf_counter() - self.started_at) * 1000, 3),
@@ -460,6 +487,7 @@ class LiveTranscriptionSession:
             await self.stream_queue.put(StreamEnd(item))
             self.stream_queue = None
         else:
+            assert self.utterances is not None
             await self.utterances.put(item)
 
     async def _commit_stream(self, frames: list[AudioFrame] | tuple[AudioFrame, ...]) -> None:
@@ -468,6 +496,8 @@ class LiveTranscriptionSession:
             await self.stream_queue.put(frame)
 
     async def _enhancement_worker(self) -> None:
+        assert self.utterances is not None
+        assert self.asr is not None
         self.log.debug("worker_started", worker="enhancement")
         while (item := await self.utterances.get()) is not None:
             audio, elapsed = _encode_wav(item.frames), None
@@ -504,6 +534,7 @@ class LiveTranscriptionSession:
         self.log.debug("worker_stopped", worker="enhancement")
 
     async def _asr_worker(self) -> None:
+        assert self.asr is not None
         self.log.debug("worker_started", worker="asr")
         while (work := await self.asr.get()) is not None:
             started = perf_counter()
@@ -517,9 +548,6 @@ class LiveTranscriptionSession:
                 work.audio,
                 model_id=self.start.model_id,
                 instance_id=self.start.instance_id,
-                use_vad=False,
-                use_enhancement=False,
-                include_input_audio=False,
             )
             self.log.info(
                 "utterance_asr_completed",
@@ -533,17 +561,19 @@ class LiveTranscriptionSession:
                 runtime=result.runtime,
                 device=result.device,
             )
-            data = result.model_dump(exclude={"input_audio_base64", "input_audio_media_type"})
+            data = result.model_dump()
             data.update(
                 type="transcript",
                 utterance_id=work.utterance.utterance_id,
+                speech_duration_seconds=(len(work.utterance.frames) * FRAME_SAMPLES / RATE),
                 vad_inference_ms=work.utterance.vad_ms,
                 enhancement_inference_ms=work.enhancement_ms,
                 audio_media_type="audio/wav",
                 audio_bytes=len(work.audio),
             )
             await self._publish(data)
-            await self._publish(_audio_message(work.utterance.utterance_id, work.audio))
+            if self.include_input_audio:
+                await self._publish(_audio_message(work.utterance.utterance_id, work.audio))
         self.log.debug("worker_stopped", worker="asr")
 
     async def _streaming_worker(
@@ -551,14 +581,14 @@ class LiveTranscriptionSession:
         utterance_id: int,
         queue: asyncio.Queue[AudioFrame | StreamEnd],
     ) -> None:
-        instance = await self.service._require_streaming_instance(
-            self.start.model_id, self.start.instance_id
-        )
-        streamer = instance.require(StreamingSpeechTranscription)  # type: ignore[type-abstract]
+        assert self.streamer is not None
+        streamer = self.streamer
         session = await streamer.start_stream()
         size = max(1, round(self.start.streaming_chunk_seconds * RATE / FRAME_SAMPLES))
         stream_started = perf_counter()
         chunks = 0
+        inference_ms = 0.0
+        preprocess_ms = 0.0
         self.log.info(
             "streaming_asr_started",
             utterance_id=utterance_id,
@@ -589,12 +619,15 @@ class LiveTranscriptionSession:
                     )
                 )
                 chunks += 1
+                chunk_inference_ms = last.timings.inference_ms or 0.0
+                inference_ms += chunk_inference_ms
+                preprocess_ms += last.timings.preprocess_ms or 0.0
                 self.log.debug(
                     "streaming_asr_chunk_completed",
                     utterance_id=utterance_id,
                     stream_session_id=session.session_id,
                     chunk_number=chunks,
-                    inference_ms=round(last.timings.inference_ms, 3),
+                    inference_ms=round(chunk_inference_ms, 3),
                     text_length=len(last.text),
                     delta_length=len(last.delta),
                 )
@@ -610,6 +643,8 @@ class LiveTranscriptionSession:
                     }
                 )
             final = await streamer.finish_stream(session.session_id)
+            inference_ms += final.timings.inference_ms or 0.0
+            preprocess_ms += final.timings.preprocess_ms or 0.0
         except asyncio.CancelledError:
             self.log.info(
                 "streaming_asr_cancelled",
@@ -629,7 +664,8 @@ class LiveTranscriptionSession:
             input_bytes=len(audio),
             text_length=len(final.text),
             generated_tokens=final.generated_tokens,
-            inference_ms=round(final.timings.inference_ms, 3),
+            inference_ms=round(inference_ms, 3),
+            preprocess_ms=round(preprocess_ms, 3),
             wall_ms=round((perf_counter() - stream_started) * 1000, 3),
         )
         await self._publish(
@@ -644,7 +680,8 @@ class LiveTranscriptionSession:
                 "sample_rate": final.sample_rate,
                 "duration_seconds": len(item.frames) * FRAME_SAMPLES / RATE,
                 "generated_tokens": final.generated_tokens,
-                "inference_ms": final.timings.inference_ms,
+                "preprocess_ms": preprocess_ms,
+                "inference_ms": inference_ms,
                 "languages": [last.detected_language] if last and last.detected_language else [],
                 "emotion": None,
                 "events": [],
@@ -655,7 +692,8 @@ class LiveTranscriptionSession:
                 "audio_bytes": len(audio),
             }
         )
-        await self._publish(_audio_message(item.utterance_id, audio))
+        if self.include_input_audio:
+            await self._publish(_audio_message(item.utterance_id, audio))
 
     async def _publish(self, message: Outbound) -> None:
         await self.results.put(message)

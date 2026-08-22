@@ -34,3 +34,4 @@ class ChatSettings(BaseSettings):
     max_image_bytes: int = Field(default=20 * 1024 * 1024, gt=0)
     max_images: int = Field(default=4, ge=1, le=16)
     max_prompt_characters: int = Field(default=32_000, ge=1)
+    asr_sensitivity: float = Field(default=0.65, ge=0, le=1)

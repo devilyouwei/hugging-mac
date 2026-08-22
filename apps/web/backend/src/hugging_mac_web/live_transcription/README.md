@@ -2,7 +2,7 @@
 
 ## 摘要
 
-`live_transcription` 为 Live Transcription 页面提供本地实时语音转写能力。页面在录音前通过 HTTP 查询、加载模型；录音开始后只使用一条 WebSocket，前端持续发送 PCM16 音频，后端统一负责重采样、VAD、切句、可选降噪、ASR 和模型输入音频回传。
+`live_transcription` 提供可复用的本地实时语音流水线，同时服务 Live Transcription 和 Chat。页面在录音前通过 HTTP 查询、加载模型；录音开始后只使用一条 WebSocket，前端持续发送 PCM16 音频，后端统一负责重采样、VAD、切句、可选降噪和 ASR。Live Transcription 还会回传实际模型输入音频，Chat 只消费文本事件。
 
 核心设计模式：
 
@@ -15,7 +15,8 @@
 
 ```mermaid
 flowchart LR
-    FE[浏览器录音] -->|WebSocket PCM16| RQ[raw queue]
+    LT[Live Transcription] -->|WebSocket PCM16| RQ[raw queue]
+    CH[Chat Voice Input] -->|WebSocket PCM16| RQ
     RQ --> RS[流式重采样<br/>16 kHz mono]
     RS --> AF[512-sample AudioFrame]
     AF --> VD[VAD / Energy Detector]
@@ -27,7 +28,8 @@ flowchart LR
     SG -->|Nemotron| NS[Streaming ASR Worker]
     ASR --> OQ[Result Queue]
     NS --> OQ
-    OQ -->|JSON + Binary WAV| FE
+    OQ -->|JSON + Binary WAV| LT
+    OQ -->|JSON| CH
 ```
 
 ## 功能与模型
@@ -48,21 +50,21 @@ Silero 未启用时仍需要切句，后端会改用 RMS Energy Detector。也�
 ```mermaid
 flowchart TB
     ROUTES[routes.py<br/>HTTP 管理接口与 /live/ws]
+    CHAT[chat/routes.py<br/>/chat/asr/ws consumer]
     SESSION[session.py<br/>连接级队列、状态机与 workers]
     SERVICE[service.py<br/>模型发现、加载与推理 façade]
     CONFIG[config.py<br/>ASR profiles 与运行配置]
     SCHEMAS[schemas.py<br/>HTTP/API views]
     MANIFEST[manifest.py<br/>App 与模型依赖声明]
-    AUDIO[audio_pipeline.py<br/>离线 VAD 音频整理 helper]
     SDK[Hugging Mac SDK<br/>模型实例与 capabilities]
 
     ROUTES --> SESSION
+    CHAT --> SESSION
     ROUTES --> SERVICE
     SESSION --> SERVICE
     SESSION --> SDK
     SERVICE --> CONFIG
     SERVICE --> SCHEMAS
-    SERVICE --> AUDIO
     SERVICE --> SDK
     MANIFEST --> SDK
 ```
@@ -74,6 +76,8 @@ flowchart TB
 - `service.py`：查询 variant/runtime、加载模型、校验实例并调用 ASR capability。
 - `config.py`：声明受支持的 ASR 模型及默认 runtime、variant、chunk 时长。
 - `manifest.py`：声明 App 依赖的必选 ASR 和可选 VAD/降噪模型。
+
+Chat 不再维护独立的逐句流式 ASR 实现。它使用同一个 `LiveTranscriptionSession`，关闭模型输入音频回传，并采用后端 Energy Detector 切句。
 
 ## 接口边界
 
@@ -88,7 +92,7 @@ HTTP 只负责模型管理：
 - `POST /vad/model/load`
 - `POST /enhancement/model/load`
 
-旧的 `/vad/detect`、`/transcribe` 和 `/stream/*` 不属于当前 Live Transcription 录音链路。
+录音期不提供 HTTP 音频处理接口；VAD、降噪和转写只由 WebSocket session pipeline 调度。
 
 ### 录音期 WebSocket
 
@@ -117,6 +121,8 @@ sequenceDiagram
 
 `start` 包含模型实例、输入采样率、VAD/降噪开关、阈值和 Nemotron chunk 时长。之后前端只发送小端单声道 PCM16；不发送逐块 ACK，也不在前端维护 utterance buffer。
 
+Chat 的 `/api/v1/apps/chat/asr/ws` 使用同一协议边界，但模型固定为 Nemotron，后端固定关闭 DeepFilterNet3，并使用 Energy Detector。Chat 前端同样只持续发送 PCM16，单句生命周期完全由后端管理。
+
 ## 音频数据结构与内存
 
 ### 队列
@@ -128,6 +134,8 @@ sequenceDiagram
 | `asr` | 8 | `AsrWorkItem` | 实际模型输入进入普通 ASR |
 | `results` | 64 | JSON 或 binary | 所有 worker 统一向 WebSocket sender 输出 |
 | `stream_queue` | 128 | `AudioFrame` / `StreamEnd` | 单个 Nemotron utterance 的实时输入 |
+
+流式模型不会创建空闲的 enhancement/普通 ASR worker；只有非流式模型创建这两级队列和 worker。
 
 `asyncio.Queue` 以 FIFO 方式消费，入队只保存 Python 对象引用，不复制音频正文。队列有界；下游变慢时 `put()` 等待，背压逐级传回 WebSocket，而不是静默丢帧。
 
@@ -194,15 +202,7 @@ flowchart LR
     I --> B[binary model-input WAV]
 ```
 
-降噪 worker 与 ASR worker 独立运行，因此录音/VAD 可以继续处理下一句话。`LiveTranscriptionService.transcribe()` 在该路径中明确使用：
-
-```text
-use_vad = false
-use_enhancement = false
-include_input_audio = false
-```
-
-原因是 VAD 和降噪已经由 session pipeline 完成，避免二次 VAD、二次降噪和 Base64 编码。worker 异常会产生 `error` 事件并关闭当前 session，不会静默回退到不同的模型输入。
+降噪 worker 与 ASR worker 独立运行，因此录音/VAD 可以继续处理下一句话。`LiveTranscriptionService.transcribe()` 只接收已经完成 VAD 切句和可选降噪的模型输入，不再暴露预处理开关。这样可以从接口层阻止二次 VAD、二次降噪和 Base64 编码。worker 异常会产生 `error` 事件并关闭当前 session，不会静默回退到不同的模型输入。
 
 ## Nemotron 流式路径
 
