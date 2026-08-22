@@ -39,6 +39,11 @@ const router = createRouter({
       component: () => import("./palm_thunder/index.vue"),
     },
     {
+      path: "/games/palm-trace",
+      name: "palm-trace",
+      component: () => import("./palm_trace/index.vue"),
+    },
+    {
       path: "/apps/chat",
       name: "chat",
       component: () => import("./chat/index.vue"),

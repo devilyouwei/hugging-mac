@@ -14,6 +14,7 @@ const icon = computed(() => {
     "yolo-pose-follow": "🕺",
     "yolo-fruit-slice": "🍉",
     "palm-thunder": "🛩️",
+    "palm-trace": "🧽",
     "live-transcription": "🎙️",
     "text-to-speech": "🔊",
     chat: "💬",

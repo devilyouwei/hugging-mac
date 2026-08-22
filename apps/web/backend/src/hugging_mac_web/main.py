@@ -29,6 +29,7 @@ from hugging_mac_web.middleware import TraceIdMiddleware
 from hugging_mac_web.models import create_models_router
 from hugging_mac_web.object_detection import create_blueprint as create_detection_blueprint
 from hugging_mac_web.palm_thunder import create_blueprint as create_palm_thunder_blueprint
+from hugging_mac_web.palm_trace import create_blueprint as create_palm_trace_blueprint
 from hugging_mac_web.pose_estimation import create_blueprint as create_pose_blueprint
 from hugging_mac_web.shared.utils.log_util import configure_logging
 from hugging_mac_web.system import create_system_router
@@ -80,6 +81,7 @@ def create_app(
             create_pose_follow_blueprint(),
             create_fruit_slice_blueprint(),
             create_palm_thunder_blueprint(),
+            create_palm_trace_blueprint(),
         )
     )
     registered_blueprints = tuple(

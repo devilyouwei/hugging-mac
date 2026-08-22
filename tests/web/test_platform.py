@@ -133,6 +133,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         qwen3_asr_inventory = client.get("/api/v1/catalog/models/qwen/qwen3-asr/inventory")
         apps = client.get("/api/v1/catalog/apps")
         games = client.get("/api/v1/catalog/games")
+        palm_trace_status = client.get("/api/v1/games/palm-trace/status")
         asr_models = client.get("/api/v1/apps/live-transcription/models")
         tts_models = client.get("/api/v1/apps/text-to-speech/models")
         chat_models = client.get("/api/v1/apps/chat/models")
@@ -209,8 +210,18 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     }
     assert all(item["supports_images"] for item in chat_models.json()["data"])
     assert games.status_code == 200
+    assert palm_trace_status.json()["data"] == {
+        "status": "ready",
+        "control": "mediapipe-palm-detection",
+        "landmarks": "disabled",
+    }
     game_summaries = {item["manifest"]["app_id"]: item for item in games.json()["data"]}
-    assert set(game_summaries) == {"palm-thunder", "yolo-fruit-slice", "yolo-pose-follow"}
+    assert set(game_summaries) == {
+        "palm-thunder",
+        "palm-trace",
+        "yolo-fruit-slice",
+        "yolo-pose-follow",
+    }
     assert game_summaries["yolo-pose-follow"]["manifest"]["category"] == "game"
     assert game_summaries["yolo-pose-follow"]["status"] == "available"
     fruit_slice = game_summaries["yolo-fruit-slice"]
@@ -218,6 +229,10 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     palm_thunder = game_summaries["palm-thunder"]
     assert palm_thunder["manifest"]["frontend_route"] == "/games/palm-thunder"
     assert palm_thunder["status"] == "available"
+    palm_trace = game_summaries["palm-trace"]
+    assert palm_trace["manifest"]["frontend_route"] == "/games/palm-trace"
+    assert palm_trace["manifest"]["required_models"][0]["capabilities"] == ["hand-detection"]
+    assert palm_trace["status"] == "available"
     assert fruit_slice["status"] == "available"
     assert fruit_slice["manifest"]["required_models"] == [
         {
