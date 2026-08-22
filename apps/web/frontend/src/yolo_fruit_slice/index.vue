@@ -31,7 +31,6 @@ const cameraReady = ref(false)
 const phase = ref<GamePhase>("lobby")
 const countdown = ref<string | number>(3)
 const error = ref("")
-const lifecycleMessage = ref("")
 const poseFrame = shallowRef<PoseFrame | null>(null)
 const snapshot = shallowRef<GameSnapshot | null>(null)
 const finishReason = ref<"lives" | "bomb">("lives")
@@ -75,7 +74,6 @@ async function ensureModelLoaded(): Promise<boolean> {
     return false
   }
   modelBusy.value = true
-  lifecycleMessage.value = ""
   try {
     if (modelInstanceId.value) await unloadCurrentModel()
     const candidates = availableGameRuntimes(resource.value)
@@ -86,7 +84,6 @@ async function ensureModelLoaded(): Promise<boolean> {
         modelInstanceId.value = loaded.instance_id
         loadedVariant.value = selectedVariant.value
         loadedRuntime.value = loaded.runtime === "coreml" ? "coreml" : "pytorch-mps"
-        lifecycleMessage.value = `YOLOv8 Pose ${selectedVariant.value.toUpperCase()} 已通过 ${runtimeLabel.value} 加载`
         return true
       } catch (caught) {
         lastError = caught
@@ -110,7 +107,6 @@ async function toggleModel(): Promise<void> {
   modelBusy.value = true
   try {
     await unloadCurrentModel()
-    lifecycleMessage.value = "模型已卸载"
   } catch (caught) {
     error.value = errorMessage(caught, "模型卸载失败")
   } finally {
@@ -129,7 +125,6 @@ async function selectModelVariant(variant: "n" | "m"): Promise<void> {
   if (variant === selectedVariant.value || modelBusy.value) return
   modelBusy.value = true
   error.value = ""
-  lifecycleMessage.value = ""
   try {
     await unloadCurrentModel()
     selectedVariant.value = variant
@@ -438,7 +433,6 @@ onBeforeUnmount(() => {
         <button class="fruit-start" type="button" :disabled="modelBusy || !modelAvailable" @click="startGame">
           <span>START CLASSIC</span><b>挥动双臂 →</b>
         </button>
-        <p v-if="lifecycleMessage" class="fruit-message">{{ lifecycleMessage }}</p>
         <p v-if="error" class="fruit-error" role="alert">{{ error }}</p>
       </section>
       <aside class="fruit-lobby__art" aria-hidden="true">

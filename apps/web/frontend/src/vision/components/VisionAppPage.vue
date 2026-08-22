@@ -57,7 +57,7 @@ const tertiaryResourceStatus = ref<ResourceStatus | null>(null)
 const loadedInstances = ref<Record<string, string>>({})
 const loadedRuntimes = ref<Record<string, string>>({})
 const lifecycleBusy = ref(false)
-const lifecycleMessage = ref<{ type: "success" | "error"; text: string } | null>(null)
+const lifecycleMessage = ref<{ type: "error"; text: string } | null>(null)
 const inferenceOptions = computed<VisionOptions>(() => ({
   runtime: runtime.value,
   variant: selectedVariant.value || resourceStatus.value?.variant || "n",
@@ -142,7 +142,6 @@ async function ensureModelLoaded(): Promise<string> {
     const loaded = await loadSharedModel(status.model_id, selectedVariant.value, runtime.value)
     loadedInstances.value[modelKey.value] = loaded.instance_id
     loadedRuntimes.value[modelKey.value] = loaded.runtime
-    lifecycleMessage.value = { type: "success", text: `模型加载成功 · ${loaded.runtime}` }
     return loaded.instance_id
   } catch (caught) {
     const message = errorMessage(caught, "模型加载失败")
@@ -166,7 +165,6 @@ async function toggleModel() {
     await unloadModel(instanceId)
     delete loadedInstances.value[modelKey.value]
     delete loadedRuntimes.value[modelKey.value]
-    lifecycleMessage.value = { type: "success", text: "模型卸载成功" }
   } catch (caught) {
     lifecycleMessage.value = { type: "error", text: errorMessage(caught, "模型卸载失败") }
   } finally {
@@ -186,7 +184,6 @@ async function ensureSecondaryModelLoaded(): Promise<string> {
     const loaded = await loadSharedModel(status.model_id, status.variant, "auto")
     loadedInstances.value[secondaryModelKey.value] = loaded.instance_id
     loadedRuntimes.value[secondaryModelKey.value] = loaded.runtime
-    lifecycleMessage.value = { type: "success", text: `RetinaFace 加载成功 · ${loaded.runtime}` }
     return loaded.instance_id
   } catch (caught) {
     lifecycleMessage.value = { type: "error", text: errorMessage(caught, "RetinaFace 加载失败") }
@@ -209,7 +206,6 @@ async function toggleSecondaryModel() {
     await unloadModel(instanceId)
     delete loadedInstances.value[secondaryModelKey.value]
     delete loadedRuntimes.value[secondaryModelKey.value]
-    lifecycleMessage.value = { type: "success", text: "RetinaFace 卸载成功" }
   } catch (caught) {
     lifecycleMessage.value = { type: "error", text: errorMessage(caught, "RetinaFace 卸载失败") }
   } finally {
@@ -229,10 +225,6 @@ async function ensureTertiaryModelLoaded(): Promise<string> {
     const loaded = await loadSharedModel(status.model_id, status.variant, "auto")
     loadedInstances.value[tertiaryModelKey.value] = loaded.instance_id
     loadedRuntimes.value[tertiaryModelKey.value] = loaded.runtime
-    lifecycleMessage.value = {
-      type: "success",
-      text: `MediaPipe Hand Detection 加载成功 · ${loaded.runtime}`,
-    }
     return loaded.instance_id
   } catch (caught) {
     lifecycleMessage.value = {
@@ -258,7 +250,6 @@ async function toggleTertiaryModel() {
     await unloadModel(instanceId)
     delete loadedInstances.value[tertiaryModelKey.value]
     delete loadedRuntimes.value[tertiaryModelKey.value]
-    lifecycleMessage.value = { type: "success", text: "MediaPipe Hand Detection 卸载成功" }
   } catch (caught) {
     lifecycleMessage.value = {
       type: "error",
@@ -518,7 +509,6 @@ onMounted(refreshResources)
 .model-field__control button:disabled { cursor:not-allowed; opacity:.4; }
 .model-field small { font:.52rem var(--font-mono); }
 .model-runtime { color:var(--muted); letter-spacing:.06em; }
-.lifecycle-success { color:#3c8b2f; }
 .lifecycle-error { color:#cf3f27; }
 
 .detection-page { padding-bottom:5rem; }

@@ -59,7 +59,7 @@ const roundOutcome = ref<"success" | "fail" | null>(null)
 const error = ref("")
 const modelInstanceId = ref<string | null>(null)
 const modelBusy = ref(false)
-const lifecycleMessage = ref<{ type: "success" | "error"; text: string } | null>(null)
+const lifecycleMessage = ref<{ type: "error"; text: string } | null>(null)
 const canvas = document.createElement("canvas")
 
 let gameGeneration = 0
@@ -156,7 +156,6 @@ async function ensureModelLoaded(): Promise<boolean> {
   try {
     const loadedModel = await loadSharedModel(resource.value.model_id, "m", "auto")
     modelInstanceId.value = loadedModel.instance_id
-    lifecycleMessage.value = { type: "success", text: "模型加载成功" }
     return true
   } catch (caught) {
     lifecycleMessage.value = { type: "error", text: errorMessage(caught, "模型加载失败") }
@@ -177,7 +176,6 @@ async function toggleModel() {
   try {
     await unloadModel(modelInstanceId.value)
     modelInstanceId.value = null
-    lifecycleMessage.value = { type: "success", text: "模型卸载成功" }
   } catch (caught) {
     lifecycleMessage.value = { type: "error", text: errorMessage(caught, "模型卸载失败") }
   } finally {
@@ -542,7 +540,7 @@ onBeforeUnmount(() => {
 .game-start b { font-size:1.3rem; }
 .game-start:disabled { cursor:not-allowed; filter:grayscale(1); opacity:.35; }
 .game-model-action { align-items:center; display:flex; font:.56rem var(--font-mono); justify-content:space-between; margin-top:1rem; }.game-model-action button { background:#0c0d0c; border:0; color:#fff; cursor:pointer; font:inherit; padding:.55rem .7rem; }.game-model-action button:disabled { cursor:not-allowed; opacity:.4; }
-.lifecycle-success { color:#3c8b2f; font:.54rem var(--font-mono); }.lifecycle-error { color:#cf3f27; font:.54rem var(--font-mono); }
+.lifecycle-error { color:#cf3f27; font:.54rem var(--font-mono); }
 .game-error { color:#ff8066!important; font: .65rem var(--font-mono); margin-top:1rem; }
 .game-lobby__preview { align-items:center; background:radial-gradient(circle at center,#c8ff4628 0,transparent 48%),linear-gradient(135deg,#181b17,#0d0e0d); display:flex; justify-content:center; min-height:520px; overflow:hidden; position:relative; }
 .game-lobby__preview :deep(.target-figure) { height:min(68vh,680px); position:relative; width:72%; z-index:2; }
