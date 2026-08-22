@@ -53,8 +53,9 @@ export async function fetchModelStructure(
   ).data
 }
 
-export async function downloadModelResource(modelId: string, resource: ResourceOption): Promise<ModelInventory> {
-  return (await request<ModelInventory>(`/api/v1/catalog/models/${modelPath(modelId)}/resources/download-one`, {
+export async function downloadModelResource(modelId: string, resource: ResourceOption, overwrite = false): Promise<ModelInventory> {
+  const query = overwrite ? "?overwrite=true" : ""
+  return (await request<ModelInventory>(`/api/v1/catalog/models/${modelPath(modelId)}/resources/download-one${query}`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(resource),
   })).data

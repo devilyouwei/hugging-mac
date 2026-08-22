@@ -1284,14 +1284,19 @@ button,select,a { touch-action:manipulation; }
 }
 
 .models-directory-page .model-expand-button span {
-  font-size: 1rem;
-  line-height: 1;
-  transform: translateY(-0.1rem);
-  transition: transform 180ms ease;
+  border-bottom: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  display: block;
+  font-size: 0;
+  height: 0.42rem;
+  transform: rotate(45deg);
+  transform-origin: center;
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  width: 0.42rem;
 }
 
 .models-directory-page .model-workspace--expanded .model-expand-button span {
-  transform: rotate(180deg) translateY(0.1rem);
+  transform: rotate(225deg);
 }
 
 .models-directory-page .model-identity__topline {
@@ -1329,6 +1334,7 @@ button,select,a { touch-action:manipulation; }
   border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
   border-radius: 13px;
   gap: 0.4rem;
+  min-width: 0;
   padding: 0.55rem;
 }
 
@@ -1338,15 +1344,16 @@ button,select,a { touch-action:manipulation; }
 }
 
 .models-directory-page .variant-tabs {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 0.25rem;
 }
 
 .models-directory-page .variant-tabs button {
   border-color: transparent;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   font-family: var(--font-display);
   font-size: 0.56rem;
+  max-width: 100%;
   min-height: 31px;
   padding: 0.26rem 0.5rem;
 }
@@ -1361,6 +1368,30 @@ button,select,a { touch-action:manipulation; }
 .models-directory-page .model-notice {
   font-size: 0.64rem;
   padding: 0.48rem 1rem;
+}
+
+.models-directory-page .model-workspace__details {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease-out;
+}
+
+.models-directory-page .model-workspace__details-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.models-directory-page .model-details-enter-from,
+.models-directory-page .model-details-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.models-directory-page .model-details-leave-active {
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1), ease-in;
 }
 
 .models-directory-page .model-workspace__body {
@@ -1474,6 +1505,17 @@ button,select,a { touch-action:manipulation; }
   padding: 0.4rem 0.58rem;
 }
 
+.models-directory-page .workflow-item__actions {
+  align-items: center;
+  display: flex;
+  gap: 0.45rem;
+}
+
+.models-directory-page .workflow-item__actions .text-action:disabled {
+  cursor: default;
+  opacity: 0.34;
+}
+
 .models-directory-page .workflow-empty {
   background: color-mix(in srgb, var(--ink) 3%, transparent);
   border: 0;
@@ -1522,6 +1564,13 @@ button,select,a { touch-action:manipulation; }
 
 .models-directory-page .runtime-requirements span.ready {
   color: #248a3d;
+}
+
+.models-directory-page .runtime-option__actions {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  min-height: 31px;
 }
 
 .models-directory-page .loaded-instance {

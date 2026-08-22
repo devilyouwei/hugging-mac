@@ -57,14 +57,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleKeydown))
       <section class="structure-modal" role="dialog" aria-modal="true" aria-labelledby="structure-title">
         <header class="structure-header">
           <div>
-            <span>MODEL STRUCTURE</span>
+            <span>MODEL ARCHITECTURE</span>
             <h2 id="structure-title">{{ modelName }}</h2>
             <code v-if="structure">{{ structure.variant }} · {{ structure.runtime }} · {{ structure.artifact_id }}</code>
           </div>
-          <button type="button" aria-label="Close model structure" @click="emit('close')">×</button>
+          <button type="button" aria-label="Close model architecture" @click="emit('close')">×</button>
         </header>
 
-        <div v-if="loading" class="structure-state">Inspecting model artifact…</div>
+        <div v-if="loading" class="structure-state">Inspecting model architecture…</div>
         <div v-else-if="error" class="structure-state structure-state--error">{{ error }}</div>
         <div v-else-if="structure" class="structure-content">
           <div class="structure-summary">

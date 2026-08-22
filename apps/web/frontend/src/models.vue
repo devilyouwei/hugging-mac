@@ -105,9 +105,17 @@ function selectVariant(model: ModelSummary, variant: string): void {
   delete notices.value[model.model_id]
 }
 
-function variantResources(model: ModelSummary): ResourceOption[] {
+function sourceResources(model: ModelSummary): ResourceOption[] {
   return (inventories.value[model.model_id]?.resources ?? []).filter(
-    (resource) => resource.variant === selectedVariant(model),
+    (resource) => resource.shared || resource.variant === selectedVariant(model),
+  )
+}
+
+function resourceArtifact(model: ModelSummary, resource: ResourceOption): ArtifactInventoryItem | undefined {
+  return (inventories.value[model.model_id]?.artifacts ?? []).find(
+    (artifact) => artifact.variant === resource.variant
+      && artifact.runtime === resource.runtime
+      && artifact.artifact_id === resource.artifact_id,
   )
 }
 
@@ -124,6 +132,7 @@ function sharedArtifacts(model: ModelSummary): ArtifactInventoryItem[] {
 }
 
 function resourceReady(model: ModelSummary, resource: ResourceOption): boolean {
+  if (resource.shared) return resource.available
   return resource.available && sharedArtifacts(model).every((artifact) => artifact.available)
 }
 
@@ -131,15 +140,15 @@ function conversionTargets(model: ModelSummary): ArtifactInventoryItem[] {
   return variantArtifacts(model).filter((artifact) => artifact.convertible)
 }
 
-function localArtifacts(model: ModelSummary): ArtifactInventoryItem[] {
-  return [...variantArtifacts(model), ...sharedArtifacts(model)].filter(
-    (artifact) => artifact.available,
-  )
-}
-
 function artifactInspectable(artifact: ArtifactInventoryItem): boolean {
   return ["coreml", "onnx", "pytorch", "torchscript", "mlx", "safetensors"].includes(
     artifact.format,
+  )
+}
+
+function runtimeArchitectureArtifact(model: ModelSummary, runtime: string): ArtifactInventoryItem | undefined {
+  return runtimeArtifacts(model, runtime).find(
+    (artifact) => artifact.available && artifactInspectable(artifact),
   )
 }
 
@@ -195,6 +204,11 @@ function artifactHasInstances(model: ModelSummary, artifact: ArtifactInventoryIt
   return model.instances.some(
     (instance) => instance.variant === artifact.variant && instance.runtime === artifact.runtime,
   )
+}
+
+function resourceRemoveDisabled(model: ModelSummary, resource: ResourceOption): boolean {
+  const artifact = resourceArtifact(model, resource)
+  return !artifact?.available || artifactHasInstances(model, artifact)
 }
 
 function sourceReady(model: ModelSummary): boolean {
@@ -302,7 +316,11 @@ async function runOperation(
 async function handleDownload(model: ModelSummary, resource: ResourceOption): Promise<void> {
   const key = operationKey("download", model.model_id, resource.resource_id)
   await runOperation(model, key, "Resource installed.", async () => {
-    inventories.value[model.model_id] = await downloadModelResource(model.model_id, resource)
+    inventories.value[model.model_id] = await downloadModelResource(
+      model.model_id,
+      resource,
+      resourceReady(model, resource),
+    )
   })
 }
 
@@ -322,6 +340,11 @@ async function handleDelete(model: ModelSummary, artifact: ArtifactInventoryItem
   await runOperation(model, key, "Local artifact removed.", async () => {
     inventories.value[model.model_id] = await deleteModelArtifact(model.model_id, artifact)
   })
+}
+
+async function handleDeleteResource(model: ModelSummary, resource: ResourceOption): Promise<void> {
+  const artifact = resourceArtifact(model, resource)
+  if (artifact) await handleDelete(model, artifact)
 }
 
 async function handleLoad(model: ModelSummary, runtime: RuntimeSummary): Promise<void> {
@@ -353,10 +376,15 @@ async function handleInspect(model: ModelSummary, artifact: ArtifactInventoryIte
   } catch (caught) {
     inspectionError.value = caught instanceof Error
       ? caught.message
-      : "The model structure could not be inspected."
+      : "The model architecture could not be inspected."
   } finally {
     inspectionLoading.value = false
   }
+}
+
+async function handleInspectRuntime(model: ModelSummary, runtime: string): Promise<void> {
+  const artifact = runtimeArchitectureArtifact(model, runtime)
+  if (artifact) await handleInspect(model, artifact)
 }
 
 function closeInspection(): void {
@@ -471,23 +499,26 @@ onMounted(async () => {
         </button>
       </header>
 
-      <div
-        v-if="isExpanded(model.model_id) && notices[model.model_id]"
-        class="model-notice"
-        :class="`model-notice--${notices[model.model_id].tone}`"
-        role="status"
-      >
-        {{ notices[model.model_id].text }}
-      </div>
+      <Transition name="model-details">
+        <div v-if="isExpanded(model.model_id)" class="model-workspace__details">
+          <div class="model-workspace__details-inner">
+            <div
+              v-if="notices[model.model_id]"
+              class="model-notice"
+              :class="`model-notice--${notices[model.model_id].tone}`"
+              role="status"
+            >
+              {{ notices[model.model_id].text }}
+            </div>
 
-      <div v-if="isExpanded(model.model_id)" :id="`model-details-${model.model_id}`" class="model-workspace__body">
+      <div :id="`model-details-${model.model_id}`" class="model-workspace__body">
         <section class="workflow-panel">
           <div class="workflow-panel__heading">
             <span class="step-number">01</span>
             <div><h3>Source files</h3><p>Install each ready-to-use artifact and its required files.</p></div>
           </div>
           <div class="workflow-list">
-            <div v-for="resource in variantResources(model)" :key="resource.resource_id" class="workflow-item">
+            <div v-for="resource in sourceResources(model)" :key="resource.resource_id" class="workflow-item">
               <div class="workflow-item__icon">↓</div>
               <div class="workflow-item__content">
                 <strong>{{ formatName(resource.artifact_id) }}</strong>
@@ -500,16 +531,27 @@ onMounted(async () => {
                   :tone="resourceReady(model, resource) ? 'ready' : 'warning'"
                 />
               </div>
-              <button
-                class="button button--compact"
-                :disabled="isPending(operationKey('download', model.model_id, resource.resource_id))"
-                type="button"
-                @click="handleDownload(model, resource)"
-              >
-                {{ isPending(operationKey('download', model.model_id, resource.resource_id)) ? 'Installing…' : resourceReady(model, resource) ? 'Reinstall' : resource.available ? 'Install shared files' : 'Install' }}
-              </button>
+              <div class="workflow-item__actions">
+                <button
+                  class="button button--compact"
+                  :disabled="isPending(operationKey('download', model.model_id, resource.resource_id))"
+                  type="button"
+                  @click="handleDownload(model, resource)"
+                >
+                  {{ isPending(operationKey('download', model.model_id, resource.resource_id)) ? 'Installing…' : resourceReady(model, resource) ? 'Reinstall' : resource.available ? 'Install shared files' : 'Install' }}
+                </button>
+                <button
+                  class="text-action text-action--danger"
+                  :disabled="resourceRemoveDisabled(model, resource) || isPending(operationKey('delete', model.model_id, resource.resource_id))"
+                  :title="resourceRemoveDisabled(model, resource) ? 'Install the artifact and unload matching instances before removing it' : 'Remove from local storage'"
+                  type="button"
+                  @click="handleDeleteResource(model, resource)"
+                >
+                  {{ isPending(operationKey('delete', model.model_id, resource.resource_id)) ? 'Removing…' : 'Remove' }}
+                </button>
+              </div>
             </div>
-            <p v-if="!variantResources(model).length" class="workflow-empty">No downloadable resources are declared.</p>
+            <p v-if="!sourceResources(model).length" class="workflow-empty">No downloadable resources are declared.</p>
           </div>
         </section>
 
@@ -529,14 +571,24 @@ onMounted(async () => {
                 <span>{{ formatBytes(artifact.size_bytes) }}</span>
                 <StatusPill :label="artifact.available ? 'Built' : sourceReady(model) ? 'Available' : 'Source required'" :tone="artifact.available ? 'ready' : sourceReady(model) ? 'idle' : 'warning'" />
               </div>
-              <button
-                class="button button--compact"
-                :disabled="variantHasInstances(model) || !sourceReady(model) || isPending(operationKey('convert', model.model_id, artifactKey(artifact)))"
-                type="button"
-                @click="handleConvert(model, artifact)"
-              >
-                {{ isPending(operationKey('convert', model.model_id, artifactKey(artifact))) ? 'Building…' : artifact.available ? 'Rebuild' : 'Build' }}
-              </button>
+              <div class="workflow-item__actions">
+                <button
+                  class="button button--compact"
+                  :disabled="variantHasInstances(model) || !sourceReady(model) || isPending(operationKey('convert', model.model_id, artifactKey(artifact)))"
+                  type="button"
+                  @click="handleConvert(model, artifact)"
+                >
+                  {{ isPending(operationKey('convert', model.model_id, artifactKey(artifact))) ? 'Building…' : artifact.available ? 'Rebuild' : 'Build' }}
+                </button>
+                <button
+                  class="text-action text-action--danger"
+                  :disabled="!artifact.available || artifactHasInstances(model, artifact) || isPending(operationKey('delete', model.model_id, artifactKey(artifact)))"
+                  type="button"
+                  @click="handleDelete(model, artifact)"
+                >
+                  {{ isPending(operationKey('delete', model.model_id, artifactKey(artifact))) ? 'Removing…' : 'Remove' }}
+                </button>
+              </div>
             </div>
             <p v-if="!conversionTargets(model).length" class="workflow-empty">This model ships ready-to-use artifacts. No build step is required.</p>
           </div>
@@ -561,15 +613,25 @@ onMounted(async () => {
                   {{ artifact.available ? '✓' : '○' }} {{ formatName(artifact.artifact_id) }}{{ artifact.shared ? ' · shared' : '' }}
                 </span>
               </div>
-              <button
-                class="button button--compact runtime-load-button"
-                :title="runtimeBlockReason(model, runtime) ?? 'Load a local instance'"
-                :disabled="Boolean(runtimeBlockReason(model, runtime)) || isPending(operationKey('load', model.model_id, `${selectedVariant(model)}:${runtime.name}`))"
-                type="button"
-                @click="handleLoad(model, runtime)"
-              >
-                {{ isPending(operationKey('load', model.model_id, `${selectedVariant(model)}:${runtime.name}`)) ? 'Loading…' : matchingInstances(model, runtime.name).length ? 'Loaded' : 'Load instance' }}
-              </button>
+              <div class="runtime-option__actions">
+                <button
+                  class="button button--compact runtime-load-button"
+                  :title="runtimeBlockReason(model, runtime) ?? 'Load a local instance'"
+                  :disabled="Boolean(runtimeBlockReason(model, runtime)) || isPending(operationKey('load', model.model_id, `${selectedVariant(model)}:${runtime.name}`))"
+                  type="button"
+                  @click="handleLoad(model, runtime)"
+                >
+                  {{ isPending(operationKey('load', model.model_id, `${selectedVariant(model)}:${runtime.name}`)) ? 'Loading…' : matchingInstances(model, runtime.name).length ? 'Loaded' : 'Load instance' }}
+                </button>
+                <button
+                  v-if="runtimeArchitectureArtifact(model, runtime.name)"
+                  class="text-action"
+                  type="button"
+                  @click="handleInspectRuntime(model, runtime.name)"
+                >
+                  Architecture
+                </button>
+              </div>
               <div v-for="instance in matchingInstances(model, runtime.name)" :key="instance.instance_id" class="loaded-instance">
                 <code>{{ instance.instance_id.slice(0, 8) }}</code>
                 <span>{{ instance.reference_count }} references</span>
@@ -587,38 +649,9 @@ onMounted(async () => {
         </section>
       </div>
 
-      <footer v-if="isExpanded(model.model_id)" class="local-files">
-        <div class="local-files__title">
-          <span>LOCAL FILES</span>
-          <small>{{ localArtifacts(model).length }} installed · {{ formatBytes(localVariantBytes(model)) }}</small>
-        </div>
-        <div v-if="localArtifacts(model).length" class="local-file-list">
-          <div v-for="artifact in localArtifacts(model)" :key="artifactKey(artifact)" class="local-file">
-            <div><strong>{{ formatName(artifact.artifact_id) }}</strong><small>{{ formatName(artifact.format) }} · {{ formatName(artifact.runtime) }}</small></div>
-            <span>{{ formatBytes(artifact.size_bytes) }}</span>
-            <div class="local-file__actions">
-              <button
-                v-if="artifactInspectable(artifact)"
-                class="text-action"
-                type="button"
-                @click="handleInspect(model, artifact)"
-              >
-                Structure
-              </button>
-              <button
-                class="text-action text-action--danger"
-                :disabled="artifactHasInstances(model, artifact) || isPending(operationKey('delete', model.model_id, artifactKey(artifact)))"
-                :title="artifactHasInstances(model, artifact) ? 'Unload this runtime before removing its files' : 'Remove from local storage'"
-                type="button"
-                @click="handleDelete(model, artifact)"
-              >
-                {{ isPending(operationKey('delete', model.model_id, artifactKey(artifact))) ? 'Removing…' : 'Remove' }}
-              </button>
-            </div>
           </div>
         </div>
-        <p v-else>No files installed for this variant.</p>
-      </footer>
+      </Transition>
     </article>
     <ModelStructureModal
       v-if="inspectionOpen"
