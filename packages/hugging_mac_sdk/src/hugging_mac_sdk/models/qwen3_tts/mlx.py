@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import gc
 import tempfile
 import threading
 from pathlib import Path
@@ -12,6 +11,7 @@ from typing import Any
 
 from hugging_mac_sdk.errors import UnsupportedRuntimeError
 from hugging_mac_sdk.resources.views import merged_directory_view
+from hugging_mac_sdk.runtime.mlx import MlxProvider, MlxSession
 from hugging_mac_sdk.schemas.speech_synthesis import SpeechSynthesisRequest
 from hugging_mac_sdk.schemas.transcription import AudioInput
 
@@ -31,6 +31,7 @@ class MlxQwen3TtsEngine:
         self._config = config
         self._resources = resources
         self._model: Any | None = None
+        self._session: MlxSession | None = None
 
     @property
     def device(self) -> str:
@@ -49,11 +50,14 @@ class MlxQwen3TtsEngine:
                 "Qwen3-TTS requires mlx-audio with qwen3_tts support"
             ) from error
 
-        def _load() -> Any:
-            with merged_directory_view(artifact, (self._resources.tokenizer_path,)) as model_view:
+        def _load(source: Path, _mlx: Any) -> Any:
+            with merged_directory_view(source, (self._resources.tokenizer_path,)) as model_view:
                 return load(str(model_view), model_type="qwen3_tts")
 
-        self._model = await asyncio.to_thread(_load)
+        self._session = await MlxProvider().create_session(
+            artifact, device=None, options={"model_loader": _load}
+        )
+        self._model = self._session.value
 
     async def infer(self, request: SpeechSynthesisRequest) -> Qwen3TtsEngineOutput:
         cancelled = threading.Event()
@@ -68,13 +72,9 @@ class MlxQwen3TtsEngine:
 
     async def close(self) -> None:
         self._model = None
-        await asyncio.to_thread(gc.collect)
-        try:
-            import mlx.core as mx
-
-            mx.clear_cache()
-        except ImportError:
-            pass
+        session, self._session = self._session, None
+        if session is not None:
+            await session.close()
 
     def _infer_sync(
         self,

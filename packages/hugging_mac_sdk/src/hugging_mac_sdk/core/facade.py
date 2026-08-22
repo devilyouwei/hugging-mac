@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import TypeVar
 
 from hugging_mac_sdk.core.catalog import ModelCatalogService
+from hugging_mac_sdk.core.inspection import ModelInspectionService
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelInstanceInfo, ModelState
 from hugging_mac_sdk.core.manager import InstanceManager, ReusePolicy
 from hugging_mac_sdk.core.registry import ModelRegistry
@@ -74,6 +75,7 @@ class ModelSdk:
         self.runtime_policy = runtime_policy or RuntimePolicy()
         self.instances = instances or InstanceManager(self.registry, self.runtime_policy)
         self.resources = ModelResourceService(self.registry)
+        self.inspection = ModelInspectionService(self.registry)
         self.catalog = ModelCatalogService(
             self.registry,
             self.instances,

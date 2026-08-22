@@ -16,6 +16,7 @@ from .instance import YoloV8Instance
 from .onnx import OnnxYoloV8Engine
 from .resources import YoloV8ResourceProvider, YoloV8ResourceResolver
 from .torch import TorchYoloV8Engine
+from .utils.checkpoint import inspect_yolov8_checkpoint
 
 YOLOV8_CONFIG = load_model_config(Path(__file__).with_name("model.yaml"))
 YOLOV8_MANIFEST = YOLOV8_CONFIG.manifest
@@ -57,6 +58,7 @@ YOLOV8_DEFINITION = ModelDefinition(
         "coreml": _create_coreml,
         "onnx": _create_onnx,
     },
+    artifact_inspectors={"pytorch-mps": inspect_yolov8_checkpoint},
     artifacts=YOLOV8_CONFIG.artifacts,
     converter_ids=("ultralytics.yolov8",),
     resource_provider=YoloV8ResourceProvider(

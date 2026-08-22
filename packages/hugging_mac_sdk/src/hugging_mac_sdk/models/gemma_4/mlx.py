@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from hugging_mac_sdk.resources.views import merged_directory_view
+from hugging_mac_sdk.runtime.mlx import MlxProvider, MlxSession, materialize_mlx
 from hugging_mac_sdk.schemas.chat import ChatRequest
 
 from .config import Gemma4MlxInstanceConfig
@@ -65,6 +66,7 @@ class MlxGemma4Engine:
         self._config, self._resources = config, resources
         self._model: Any | None = None
         self._processor: Any | None = None
+        self._session: MlxSession | None = None
 
     @property
     def device(self) -> str:
@@ -76,20 +78,22 @@ class MlxGemma4Engine:
         return artifact.path
 
     async def load(self, artifact: Path) -> None:
-        def _load() -> tuple[Any, Any]:
-            import mlx.core as mx
+        def _load(source: Path, mx: Any) -> tuple[Any, Any]:
             from mlx_vlm import load
 
-            with merged_directory_view(artifact, (self._resources.tokenizer_path,)) as model_view:
+            with merged_directory_view(source, (self._resources.tokenizer_path,)) as model_view:
                 model, processor = load(str(model_view), lazy=True, strict=False)
                 weights = _sanitize_vision_weights(
-                    model, mx.load(str(artifact / "optiq" / "optiq_vision.safetensors"))
+                    model, mx.load(str(source / "optiq" / "optiq_vision.safetensors"))
                 )
                 model.load_weights(list(weights.items()), strict=False)
-                mx.eval(model.parameters())
+                materialize_mlx(model, mx)
                 return model, processor
 
-        self._model, self._processor = await asyncio.to_thread(_load)
+        self._session = await MlxProvider().create_session(
+            artifact, device=None, options={"model_loader": _load}
+        )
+        self._model, self._processor = self._session.value
 
     async def infer(self, request: ChatRequest) -> GenerationOutput:
         return await asyncio.to_thread(lambda: next(self._generate(request, final_only=True)))
@@ -122,12 +126,9 @@ class MlxGemma4Engine:
 
     async def close(self) -> None:
         self._model = self._processor = None
-        try:
-            import mlx.core as mx
-
-            mx.clear_cache()
-        except ImportError:
-            pass
+        session, self._session = self._session, None
+        if session is not None:
+            await session.close()
 
     def _generate(
         self, request: ChatRequest, *, final_only: bool = False

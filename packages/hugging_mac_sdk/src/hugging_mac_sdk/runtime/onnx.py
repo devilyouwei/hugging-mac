@@ -11,6 +11,7 @@ from typing import Any
 
 from hugging_mac_sdk.errors import UnsupportedRuntimeError
 from hugging_mac_sdk.runtime.base import RuntimeBackend
+from hugging_mac_sdk.schemas.model_structure import ModelComponentStructure, TensorStructure
 
 
 class OnnxRuntimeSession:
@@ -92,3 +93,62 @@ class OnnxRuntimeProvider(RuntimeBackend):
             providers=list(providers),
         )
         return OnnxRuntimeSession(session, providers)
+
+
+def inspect_onnx_artifact(path: Path) -> tuple[ModelComponentStructure, ...]:
+    if not importlib.util.find_spec("onnx"):
+        raise UnsupportedRuntimeError("ONNX structure inspection requires the onnx package")
+    onnx = importlib.import_module("onnx")
+    candidates = (path,) if path.suffix == ".onnx" else tuple(sorted(path.rglob("*.onnx")))
+    if not candidates:
+        raise UnsupportedRuntimeError("No .onnx model was found in this artifact")
+    components: list[ModelComponentStructure] = []
+    for candidate in candidates:
+        model = onnx.load(str(candidate), load_external_data=False)
+        graph = model.graph
+        initializers = {item.name: item for item in graph.initializer}
+        operators: dict[str, int] = {}
+        for node in graph.node:
+            operators[node.op_type] = operators.get(node.op_type, 0) + 1
+        parameter_count = sum(
+            _shape_size(tuple(int(value) for value in item.dims)) for item in initializers.values()
+        )
+        components.append(
+            ModelComponentStructure(
+                name=candidate.name,
+                model_type="onnx",
+                inputs=tuple(
+                    _onnx_tensor(item, onnx)
+                    for item in graph.input
+                    if item.name not in initializers
+                ),
+                outputs=tuple(_onnx_tensor(item, onnx) for item in graph.output),
+                node_count=len(graph.node),
+                parameter_count=parameter_count,
+                operator_counts=dict(
+                    sorted(operators.items(), key=lambda item: (-item[1], item[0]))
+                ),
+                metadata={"ir_version": int(model.ir_version)},
+            )
+        )
+    return tuple(components)
+
+
+def _onnx_tensor(value: Any, onnx: Any) -> TensorStructure:
+    tensor = value.type.tensor_type
+    shape = tuple(
+        int(dim.dim_value) if dim.HasField("dim_value") else (dim.dim_param or "?")
+        for dim in tensor.shape.dim
+    )
+    return TensorStructure(
+        name=value.name,
+        dtype=str(onnx.TensorProto.DataType.Name(tensor.elem_type)).lower(),
+        shape=shape,
+    )
+
+
+def _shape_size(shape: tuple[int, ...]) -> int:
+    total = 1
+    for value in shape:
+        total *= value
+    return total

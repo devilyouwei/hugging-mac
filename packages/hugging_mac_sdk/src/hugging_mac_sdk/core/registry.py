@@ -23,8 +23,10 @@ from hugging_mac_sdk.schemas.manifest import ModelManifest
 
 if TYPE_CHECKING:
     from hugging_mac_sdk.core.resources import ModelResourceProvider
+    from hugging_mac_sdk.schemas.model_structure import ModelComponentStructure
 
 InstanceFactory = Callable[[dict[str, object]], BaseModelInstance]
+ArtifactInspector = Callable[[Path], tuple["ModelComponentStructure", ...]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,11 +38,14 @@ class ModelDefinition:
     converter_ids: tuple[str, ...] = ()
     resource_provider: ModelResourceProvider | None = None
     runtime_factories: Mapping[str, InstanceFactory] = field(default_factory=dict)
+    artifact_inspectors: Mapping[str, ArtifactInspector] = field(default_factory=dict)
     artifacts: tuple[ModelArtifact, ...] = ()
 
     def __post_init__(self) -> None:
         factories = MappingProxyType(dict(self.runtime_factories))
+        inspectors = MappingProxyType(dict(self.artifact_inspectors))
         object.__setattr__(self, "runtime_factories", factories)
+        object.__setattr__(self, "artifact_inspectors", inspectors)
         declared = {runtime.name for runtime in self.manifest.runtimes}
         implemented = set(factories)
         unknown = implemented - declared
@@ -48,6 +53,12 @@ class ModelDefinition:
             raise ManifestError(
                 f"Runtime factories are not declared by {self.manifest.model_id}",
                 details={"runtimes": sorted(unknown)},
+            )
+        unknown_inspectors = set(inspectors) - declared
+        if unknown_inspectors:
+            raise ManifestError(
+                f"Artifact inspectors are not declared by {self.manifest.model_id}",
+                details={"runtimes": sorted(unknown_inspectors)},
             )
         if factories and implemented != declared:
             raise ManifestError(
@@ -82,9 +93,7 @@ class ModelDefinition:
             )
         shared_ids = [artifact.artifact_id for artifact in self.artifacts if artifact.shared]
         if len(shared_ids) != len(set(shared_ids)):
-            raise ManifestError(
-                f"Shared artifact IDs must be unique for {self.manifest.model_id}"
-            )
+            raise ManifestError(f"Shared artifact IDs must be unique for {self.manifest.model_id}")
         scoped_ids = {artifact.artifact_id for artifact in self.artifacts if not artifact.shared}
         overlapping_ids = sorted(set(shared_ids) & scoped_ids)
         if overlapping_ids:

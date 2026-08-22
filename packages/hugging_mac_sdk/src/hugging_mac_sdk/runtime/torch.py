@@ -12,6 +12,11 @@ from typing import Any
 
 from hugging_mac_sdk.errors import UnsupportedRuntimeError
 from hugging_mac_sdk.runtime.base import RuntimeBackend
+from hugging_mac_sdk.schemas.model_structure import (
+    ModelComponentStructure,
+    ModelLayerStructure,
+    TensorStructure,
+)
 
 ModelLoader = Callable[[Path, Any], Any]
 OutputAdapter = Callable[[Any], Mapping[str, Any]]
@@ -109,3 +114,152 @@ class TorchProvider(RuntimeBackend):
 
 def _default_output_adapter(output: Any) -> Mapping[str, Any]:
     return {"output": output}
+
+
+def inspect_torch_artifact(path: Path) -> tuple[ModelComponentStructure, ...]:
+    if not importlib.util.find_spec("torch"):
+        raise UnsupportedRuntimeError("PyTorch structure inspection requires torch")
+    torch = importlib.import_module("torch")
+    candidates = (
+        (path,)
+        if path.suffix in {".pt", ".pth", ".torchscript"}
+        else tuple(
+            candidate
+            for candidate in sorted(
+                (*path.rglob("*.pt"), *path.rglob("*.pth"), *path.rglob("*.torchscript"))
+            )
+            if "voices" not in candidate.relative_to(path).parts
+        )
+    )
+    if not candidates:
+        raise UnsupportedRuntimeError("No TorchScript artifact was found")
+    components: list[ModelComponentStructure] = []
+    for candidate in candidates:
+        try:
+            model = torch.jit.load(str(candidate), map_location="cpu")
+        except Exception as script_error:
+            try:
+                checkpoint = _safe_torch_load(torch, candidate)
+                components.append(_inspect_state_dict(checkpoint, candidate.name))
+                continue
+            except Exception as checkpoint_error:
+                raise UnsupportedRuntimeError(
+                    "This PyTorch checkpoint needs a model-specific structure inspector",
+                    details={"path": str(candidate)},
+                    cause=checkpoint_error,
+                ) from script_error
+        graph = model.inlined_graph
+        operators: dict[str, int] = {}
+        for node in graph.nodes():
+            kind = str(node.kind())
+            operators[kind] = operators.get(kind, 0) + 1
+        parameter_count = sum(int(parameter.numel()) for parameter in model.parameters())
+        components.append(
+            ModelComponentStructure(
+                name=candidate.name,
+                model_type="torchscript",
+                inputs=tuple(_torch_value(value) for value in graph.inputs()),
+                outputs=tuple(_torch_value(value) for value in graph.outputs()),
+                node_count=sum(operators.values()),
+                parameter_count=parameter_count,
+                operator_counts=dict(
+                    sorted(operators.items(), key=lambda item: (-item[1], item[0]))
+                ),
+            )
+        )
+    return tuple(components)
+
+
+def inspect_torch_module(model: Any, name: str) -> ModelComponentStructure:
+    """Summarize an already loaded module without running a forward pass."""
+
+    operators: dict[str, int] = {}
+    layers: list[ModelLayerStructure] = []
+    for module_name, module in model.named_modules():
+        if not module_name:
+            continue
+        kind = type(module).__name__
+        operators[kind] = operators.get(kind, 0) + 1
+        direct_parameters = tuple(module.parameters(recurse=False))
+        layers.append(
+            ModelLayerStructure(
+                name=module_name,
+                layer_type=kind,
+                parameter_count=sum(int(parameter.numel()) for parameter in direct_parameters),
+            )
+        )
+    parameters = tuple(model.parameters())
+    return ModelComponentStructure(
+        name=name,
+        model_type="pytorch-module",
+        layers=tuple(layers),
+        parameter_count=sum(int(parameter.numel()) for parameter in parameters),
+        operator_counts=dict(sorted(operators.items(), key=lambda item: (-item[1], item[0]))),
+        metadata={"module_count": len(layers), "tensor_count": len(parameters)},
+    )
+
+
+def inspect_torch_checkpoint(
+    path: Path, loader: ModelLoader
+) -> tuple[ModelComponentStructure, ...]:
+    """Inspect a checkpoint through a model package's constrained loader."""
+
+    if not importlib.util.find_spec("torch"):
+        raise UnsupportedRuntimeError("PyTorch structure inspection requires torch")
+    torch = importlib.import_module("torch")
+    model = loader(path, torch)
+    return (inspect_torch_module(model, path.name),)
+
+
+def _safe_torch_load(torch: Any, path: Path) -> Any:
+    try:
+        return torch.load(path, map_location="cpu", weights_only=True, mmap=True)
+    except (RuntimeError, ValueError):
+        return torch.load(path, map_location="cpu", weights_only=True)
+
+
+def _inspect_state_dict(checkpoint: Any, name: str) -> ModelComponentStructure:
+    state = checkpoint
+    if isinstance(checkpoint, Mapping):
+        for key in ("state_dict", "model_state_dict", "model"):
+            nested = checkpoint.get(key)
+            if isinstance(nested, Mapping):
+                state = nested
+                break
+    tensors = list(_named_tensors(state))
+    if not tensors:
+        raise TypeError("Checkpoint state dictionary contains no tensors")
+    return ModelComponentStructure(
+        name=name,
+        model_type="pytorch-state-dict",
+        outputs=tuple(
+            TensorStructure(
+                name=tensor_name,
+                dtype=str(tensor.dtype).removeprefix("torch."),
+                shape=tuple(int(value) for value in tensor.shape),
+            )
+            for tensor_name, tensor in tensors
+        ),
+        parameter_count=sum(int(tensor.numel()) for _, tensor in tensors),
+        metadata={"tensor_count": len(tensors)},
+    )
+
+
+def _named_tensors(value: Any, prefix: str = "") -> tuple[tuple[str, Any], ...]:
+    if hasattr(value, "numel") and hasattr(value, "shape"):
+        return ((prefix or "tensor", value),)
+    if not isinstance(value, Mapping):
+        return ()
+    tensors: list[tuple[str, Any]] = []
+    for key, nested in value.items():
+        name = f"{prefix}.{key}" if prefix else str(key)
+        tensors.extend(_named_tensors(nested, name))
+    return tuple(tensors)
+
+
+def _torch_value(value: Any) -> TensorStructure:
+    value_type = value.type()
+    sizes = getattr(value_type, "sizes", lambda: None)()
+    shape = tuple("?" if item is None else int(item) for item in sizes or ())
+    dtype = getattr(value_type, "dtype", lambda: None)()
+    return TensorStructure(name=str(value.debugName()), dtype=str(dtype or value_type), shape=shape)

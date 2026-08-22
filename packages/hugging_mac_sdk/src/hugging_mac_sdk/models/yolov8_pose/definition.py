@@ -16,6 +16,7 @@ from .instance import YoloV8PoseInstance
 from .onnx import OnnxYoloV8PoseEngine
 from .resources import YoloV8PoseResourceProvider, YoloV8PoseResourceResolver
 from .torch import TorchYoloV8PoseEngine
+from .utils.checkpoint import inspect_yolov8_checkpoint
 
 YOLOV8_POSE_CONFIG = load_model_config(Path(__file__).with_name("model.yaml"))
 YOLOV8_POSE_MANIFEST = YOLOV8_POSE_CONFIG.manifest
@@ -57,6 +58,7 @@ YOLOV8_POSE_DEFINITION = ModelDefinition(
         "coreml": _create_coreml,
         "onnx": _create_onnx,
     },
+    artifact_inspectors={"pytorch-mps": inspect_yolov8_checkpoint},
     artifacts=YOLOV8_POSE_CONFIG.artifacts,
     converter_ids=("ultralytics.yolov8-pose",),
     resource_provider=YoloV8PoseResourceProvider(

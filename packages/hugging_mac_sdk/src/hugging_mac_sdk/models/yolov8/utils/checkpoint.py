@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from hugging_mac_sdk.errors import UnsupportedRuntimeError
+from hugging_mac_sdk.runtime.torch import inspect_torch_checkpoint
 
 
 def load_yolov8_checkpoint(path: Path, torch: Any) -> Any:
@@ -61,6 +62,10 @@ def load_yolov8_checkpoint(path: Path, torch: Any) -> Any:
     for parameter in model.parameters():
         parameter.requires_grad_(False)
     return model
+
+
+def inspect_yolov8_checkpoint(path: Path) -> tuple[Any, ...]:
+    return inspect_torch_checkpoint(path, load_yolov8_checkpoint)
 
 
 def normalize_yolov8_output(output: Any) -> dict[str, Any]:

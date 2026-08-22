@@ -3,6 +3,7 @@
 from hugging_mac_sdk.converters import ConversionService, ConverterRegistry, ModelConverter
 from hugging_mac_sdk.core.config import ModelPackageConfig, load_model_config
 from hugging_mac_sdk.core.facade import ModelHandle, ModelSdk
+from hugging_mac_sdk.core.inspection import ModelInspectionService
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelInstanceInfo, ModelState
 from hugging_mac_sdk.core.manager import InstanceManager, ReusePolicy
 from hugging_mac_sdk.core.registry import ModelDefinition, ModelRegistry
@@ -27,6 +28,8 @@ from hugging_mac_sdk.runtime import (
     CoreMLSession,
     DeviceInfo,
     DeviceKind,
+    MlxProvider,
+    MlxSession,
     OnnxRuntimeProvider,
     OnnxRuntimeSession,
     RuntimeAdapter,
@@ -76,6 +79,12 @@ from hugging_mac_sdk.schemas.hand import (
 )
 from hugging_mac_sdk.schemas.health import HealthReport, HealthStatus
 from hugging_mac_sdk.schemas.manifest import ModelManifest, ModelVariantSpec, RuntimeSpec
+from hugging_mac_sdk.schemas.model_structure import (
+    ModelComponentStructure,
+    ModelLayerStructure,
+    ModelStructure,
+    TensorStructure,
+)
 from hugging_mac_sdk.schemas.pose import Keypoint, Pose, PoseEstimationResponse, PoseRequest
 from hugging_mac_sdk.schemas.resources import (
     CompositeResource,
@@ -173,13 +182,18 @@ __all__ = [
     "LifecycleMetrics",
     "LifecycleOperation",
     "ManifestError",
+    "MlxProvider",
+    "MlxSession",
     "ModelArtifact",
     "ModelArtifactStatus",
     "ModelCatalogSnapshot",
+    "ModelComponentStructure",
     "ModelConverter",
     "ModelDefinition",
     "ModelHandle",
+    "ModelInspectionService",
     "ModelInstanceInfo",
+    "ModelLayerStructure",
     "ModelLoadError",
     "ModelManifest",
     "ModelPackageConfig",
@@ -189,6 +203,7 @@ __all__ = [
     "ModelResourceStatus",
     "ModelSdk",
     "ModelState",
+    "ModelStructure",
     "ModelSummary",
     "ModelVariantSpec",
     "OnnxRuntimeProvider",
@@ -227,6 +242,7 @@ __all__ = [
     "StreamingTranscriptionRequest",
     "StreamingTranscriptionResponse",
     "StreamingTranscriptionSession",
+    "TensorStructure",
     "TorchProvider",
     "TorchSession",
     "TranscriptionRequest",

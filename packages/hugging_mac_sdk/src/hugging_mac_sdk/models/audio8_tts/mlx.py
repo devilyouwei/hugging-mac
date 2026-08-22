@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import gc
 import tempfile
 import threading
 from contextlib import AbstractContextManager
@@ -13,6 +12,7 @@ from typing import Any
 
 from hugging_mac_sdk.errors import UnsupportedRuntimeError
 from hugging_mac_sdk.resources.views import merged_directory_view
+from hugging_mac_sdk.runtime.mlx import MlxProvider, MlxSession
 from hugging_mac_sdk.schemas.speech_synthesis import SpeechSynthesisRequest
 from hugging_mac_sdk.schemas.transcription import AudioInput
 
@@ -33,6 +33,7 @@ class MlxAudio8TtsEngine:
         self._config = config
         self._resources = resources
         self._model: Any | None = None
+        self._session: MlxSession | None = None
         self._model_view: AbstractContextManager[Path] | None = None
         self._voices = VoiceStore(config.voice_home)
 
@@ -53,10 +54,8 @@ class MlxAudio8TtsEngine:
                 "Audio8-TTS MLX requires an mlx-audio build with arktts support"
             ) from error
 
-        def _load() -> tuple[Any, AbstractContextManager[Path]]:
-            model_view = merged_directory_view(
-                artifact, (self._resources.tokenizer_path,)
-            )
+        def _load(source: Path, _mlx: Any) -> tuple[Any, AbstractContextManager[Path]]:
+            model_view = merged_directory_view(source, (self._resources.tokenizer_path,))
             path = model_view.__enter__()
             try:
                 return load(str(path)), model_view
@@ -64,7 +63,10 @@ class MlxAudio8TtsEngine:
                 model_view.__exit__(None, None, None)
                 raise
 
-        self._model, self._model_view = await asyncio.to_thread(_load)
+        self._session = await MlxProvider().create_session(
+            artifact, device=None, options={"model_loader": _load}
+        )
+        self._model, self._model_view = self._session.value
 
     async def infer(self, request: SpeechSynthesisRequest) -> TtsEngineOutput:
         cancelled = threading.Event()
@@ -79,16 +81,12 @@ class MlxAudio8TtsEngine:
 
     async def close(self) -> None:
         self._model = None
+        session, self._session = self._session, None
+        if session is not None:
+            await session.close()
         model_view, self._model_view = self._model_view, None
         if model_view is not None:
             await asyncio.to_thread(model_view.__exit__, None, None, None)
-        await asyncio.to_thread(gc.collect)
-        try:
-            import mlx.core as mx
-
-            mx.clear_cache()
-        except ImportError:
-            pass
 
     def _infer_sync(
         self, request: SpeechSynthesisRequest, cancelled: threading.Event

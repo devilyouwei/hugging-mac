@@ -16,6 +16,7 @@ from .instance import YoloV8SegInstance
 from .onnx import OnnxYoloV8SegEngine
 from .resources import YoloV8SegResourceProvider, YoloV8SegResourceResolver
 from .torch import TorchYoloV8SegEngine
+from .utils.checkpoint import inspect_yolov8_checkpoint
 
 YOLOV8_SEG_CONFIG = load_model_config(Path(__file__).with_name("model.yaml"))
 YOLOV8_SEG_MANIFEST = YOLOV8_SEG_CONFIG.manifest
@@ -57,6 +58,7 @@ YOLOV8_SEG_DEFINITION = ModelDefinition(
         "coreml": _create_coreml,
         "onnx": _create_onnx,
     },
+    artifact_inspectors={"pytorch-mps": inspect_yolov8_checkpoint},
     artifacts=YOLOV8_SEG_CONFIG.artifacts,
     converter_ids=("ultralytics.yolov8-seg",),
     resource_provider=YoloV8SegResourceProvider(
