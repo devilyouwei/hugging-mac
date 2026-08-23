@@ -173,6 +173,12 @@ recursively frozen/sorted option mapping.
 | `DEDICATED` | Always create a new instance. |
 | `SHARED` | Return an equivalent managed instance in any state. |
 | `REUSE_IF_READY` | Return an equivalent instance only when it is `READY`; otherwise create another. |
+| `MODEL_SINGLETON` | Keep one instance per model ID, replacing an unreferenced instance when its revision, variant, runtime, device, or options change. |
+
+Model-singleton operations are serialized per model ID. Loading a changed
+configuration is transactional: the replacement becomes ready before the old
+instance is detached, a failed replacement leaves the old instance available,
+and an actively referenced conflicting instance prevents replacement.
 
 ### Load flow
 

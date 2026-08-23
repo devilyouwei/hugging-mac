@@ -178,8 +178,8 @@ storage path before removing it and refuses targets outside `model_home`.
 ## Instance lifecycle
 
 The load endpoint passes runtime, variant, optional device, warmup, and model
-home to `InstanceManager`. `shared=false` creates a dedicated instance;
-`shared=true` requests shared reuse. Loading returns only after the instance is
+home to `InstanceManager`. Equivalent model configurations reuse one shared
+instance. Loading returns only after the instance is
 ready or raises an SDK error. Unload can be forced by the explicit API flag;
 normal calls preserve active handles.
 

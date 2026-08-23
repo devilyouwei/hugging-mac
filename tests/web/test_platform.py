@@ -1072,12 +1072,12 @@ def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path)
 
         loaded = client.post(
             "/api/v1/catalog/models/ultralytics/yolov8/instances",
-            json={"runtime": "coreml", "variant": "s", "warmup": False, "shared": True},
+            json={"runtime": "coreml", "variant": "s", "warmup": False},
         )
         instance_id = loaded.json()["data"]["instance_id"]
         reused = client.post(
             "/api/v1/catalog/models/ultralytics/yolov8/instances",
-            json={"runtime": "coreml", "variant": "s", "shared": True},
+            json={"runtime": "coreml", "variant": "s"},
         )
         catalog = client.get("/api/v1/catalog/models")
         blocked_delete = client.delete(

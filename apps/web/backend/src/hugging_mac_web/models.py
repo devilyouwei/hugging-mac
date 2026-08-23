@@ -37,7 +37,6 @@ class LoadModelCommand(BaseModel):
     variant: str | None = None
     device: str | None = None
     warmup: bool = False
-    shared: bool = False
 
 
 class ArtifactCommand(BaseModel):
@@ -346,7 +345,7 @@ def create_models_router() -> APIRouter:
             runtime=command.runtime,
             device=command.device,
             options={"model_home": context.settings.model_home},
-            reuse=ReusePolicy.SHARED if command.shared else ReusePolicy.DEDICATED,
+            reuse=ReusePolicy.SHARED,
             warmup=command.warmup,
         )
         snapshot = await context.models.instances.snapshot(str(instance.instance_id))

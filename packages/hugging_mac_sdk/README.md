@@ -365,6 +365,12 @@ another model-specific input can change loaded state.
 | `DEDICATED` | Always create a new instance | Release the reference and unload when it reaches zero |
 | `SHARED` | Reuse an equivalent managed instance, regardless of whether loading is already in progress | Release the reference; the shared instance remains managed |
 | `REUSE_IF_READY` | Reuse only an equivalent `READY` instance, otherwise create another managed instance | Release the reference; no automatic unload |
+| `MODEL_SINGLETON` | Keep one managed instance per model ID; equivalent requests reuse it and configuration changes replace it | Release the reference; no automatic unload |
+
+`MODEL_SINGLETON` serializes replacement requests per model ID. A replacement
+is loaded before the previous unreferenced instance is removed, so a failed load
+keeps the previous instance available. Replacement is rejected while a
+conflicting instance has active references.
 
 `ModelHandle` increments the manager reference count and is an async context
 manager. `close()` is idempotent. Normal unload and runtime/variant switching are

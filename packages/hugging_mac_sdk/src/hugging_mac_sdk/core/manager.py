@@ -36,6 +36,7 @@ class ReusePolicy(StrEnum):
     DEDICATED = "dedicated"
     SHARED = "shared"
     REUSE_IF_READY = "reuse-if-ready"
+    MODEL_SINGLETON = "model-singleton"
 
 
 @dataclass(slots=True)
@@ -50,6 +51,25 @@ class _InstanceRecord:
     load_metrics: LifecycleMetrics | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _InstanceRequest:
+    model_id: str
+    revision: str
+    variant: str
+    runtime: str
+    options: dict[str, object]
+
+    @property
+    def key(self) -> tuple[object, ...]:
+        return InstanceManager._instance_key(
+            self.model_id,
+            self.revision,
+            self.variant,
+            self.runtime,
+            self.options,
+        )
+
+
 class InstanceManager:
     def __init__(
         self,
@@ -61,6 +81,7 @@ class InstanceManager:
         self._instances: dict[str, BaseModelInstance] = {}
         self._shared: dict[tuple[object, ...], BaseModelInstance] = {}
         self._records: dict[str, _InstanceRecord] = {}
+        self._model_singleton_locks: dict[str, asyncio.Lock] = {}
         self._lock = asyncio.Lock()
 
     async def create(
@@ -74,6 +95,30 @@ class InstanceManager:
         options: Mapping[str, object] | None = None,
         reuse: ReusePolicy = ReusePolicy.DEDICATED,
     ) -> BaseModelInstance:
+        request = self._resolve_request(
+            model_id,
+            revision=revision,
+            variant=variant,
+            runtime=runtime,
+            device=device,
+            options=options,
+        )
+        if reuse is ReusePolicy.MODEL_SINGLETON:
+            singleton_lock = await self._model_singleton_lock(model_id)
+            async with singleton_lock:
+                return await self._create_model_singleton(request)
+        return await self._create_resolved(request, reuse)
+
+    def _resolve_request(
+        self,
+        model_id: str,
+        *,
+        revision: str | None,
+        variant: str | None,
+        runtime: str | None,
+        device: str | None,
+        options: Mapping[str, object] | None,
+    ) -> _InstanceRequest:
         normalized = dict(options or {})
         manifest = self._registry.get(model_id, revision).manifest
         resolved_revision = manifest.revision
@@ -99,7 +144,7 @@ class InstanceManager:
             selected_device = self._runtime_policy.select_device(runtime_spec, device)
             if selected_device is not None:
                 normalized["device"] = selected_device
-        key = self._instance_key(
+        return _InstanceRequest(
             model_id,
             resolved_revision,
             selected_variant,
@@ -107,8 +152,13 @@ class InstanceManager:
             normalized,
         )
 
+    async def _create_resolved(
+        self,
+        request: _InstanceRequest,
+        reuse: ReusePolicy,
+    ) -> BaseModelInstance:
         async with self._lock:
-            existing = self._shared.get(key)
+            existing = self._shared.get(request.key)
             if existing is not None and (
                 reuse is ReusePolicy.SHARED
                 or (reuse is ReusePolicy.REUSE_IF_READY and existing.state is ModelState.READY)
@@ -116,25 +166,61 @@ class InstanceManager:
                 return existing
 
             instance = self._registry.create_instance(
-                model_id,
-                revision=resolved_revision,
-                variant=selected_variant,
-                runtime=selected_runtime,
-                options=normalized,
+                request.model_id,
+                revision=request.revision,
+                variant=request.variant,
+                runtime=request.runtime,
+                options=request.options,
             )
             instance_id = str(instance.instance_id)
             self._instances[instance_id] = instance
             self._records[instance_id] = _InstanceRecord(
-                model_id=model_id,
-                revision=resolved_revision,
-                variant=selected_variant,
-                runtime=selected_runtime,
+                model_id=request.model_id,
+                revision=request.revision,
+                variant=request.variant,
+                runtime=request.runtime,
                 created_at=datetime.now(UTC),
-                options=normalized,
+                options=request.options,
             )
             if reuse is not ReusePolicy.DEDICATED:
-                self._shared[key] = instance
+                self._shared[request.key] = instance
             return instance
+
+    async def _create_model_singleton(self, request: _InstanceRequest) -> BaseModelInstance:
+        async with self._lock:
+            matching = self._model_records(request.model_id)
+            existing = next(
+                (
+                    instance
+                    for _, instance, record in matching
+                    if self._record_key(record) == request.key
+                ),
+                None,
+            )
+            conflicts = [item for item in matching if item[1] is not existing]
+            self._reject_retained_singleton_conflicts(request.model_id, conflicts)
+            if existing is None:
+                existing = self._registry.create_instance(
+                    request.model_id,
+                    revision=request.revision,
+                    variant=request.variant,
+                    runtime=request.runtime,
+                    options=request.options,
+                )
+                instance_id = str(existing.instance_id)
+                self._instances[instance_id] = existing
+                self._records[instance_id] = _InstanceRecord(
+                    model_id=request.model_id,
+                    revision=request.revision,
+                    variant=request.variant,
+                    runtime=request.runtime,
+                    created_at=datetime.now(UTC),
+                    options=request.options,
+                )
+                self._shared[request.key] = existing
+            detached = self._detach_instances(conflicts)
+        await self._unload_detached(detached)
+        return existing
 
     async def load(
         self,
@@ -209,6 +295,18 @@ class InstanceManager:
         reuse: ReusePolicy,
         warmup: bool,
     ) -> BaseModelInstance:
+        if reuse is ReusePolicy.MODEL_SINGLETON:
+            request = self._resolve_request(
+                model_id,
+                revision=revision,
+                variant=variant,
+                runtime=runtime,
+                device=device,
+                options=options,
+            )
+            singleton_lock = await self._model_singleton_lock(model_id)
+            async with singleton_lock:
+                return await self._load_model_singleton(request, warmup=warmup)
         instance = await self.create(
             model_id,
             revision=revision,
@@ -227,6 +325,49 @@ class InstanceManager:
             with contextlib.suppress(Exception):
                 await self.unload(str(instance.instance_id))
             raise
+
+    async def _load_model_singleton(
+        self,
+        request: _InstanceRequest,
+        *,
+        warmup: bool,
+    ) -> BaseModelInstance:
+        async with self._lock:
+            matching = self._model_records(request.model_id)
+            instance = next(
+                (
+                    candidate
+                    for _, candidate, record in matching
+                    if self._record_key(record) == request.key
+                ),
+                None,
+            )
+            conflicts = [item for item in matching if item[1] is not instance]
+            self._reject_retained_singleton_conflicts(request.model_id, conflicts)
+
+        created = instance is None
+        if instance is None:
+            instance = await self._create_resolved(request, ReusePolicy.SHARED)
+        try:
+            await self.ensure_loaded(str(instance.instance_id), warmup=warmup)
+            async with self._lock:
+                current_conflicts = [
+                    item
+                    for item in self._model_records(request.model_id)
+                    if item[1] is not instance
+                ]
+                self._reject_retained_singleton_conflicts(
+                    request.model_id,
+                    current_conflicts,
+                )
+                detached = self._detach_instances(current_conflicts)
+        except BaseException:
+            if created:
+                with contextlib.suppress(Exception):
+                    await self.unload(str(instance.instance_id))
+            raise
+        await self._unload_detached(detached)
+        return instance
 
     async def ensure_loaded(
         self,
@@ -486,6 +627,77 @@ class InstanceManager:
                 reference_count=record.reference_count,
                 load_metrics=record.load_metrics,
             )
+
+    async def _model_singleton_lock(self, model_id: str) -> asyncio.Lock:
+        async with self._lock:
+            return self._model_singleton_locks.setdefault(model_id, asyncio.Lock())
+
+    def _model_records(
+        self,
+        model_id: str,
+    ) -> list[tuple[str, BaseModelInstance, _InstanceRecord]]:
+        return [
+            (instance_id, self._instances[instance_id], record)
+            for instance_id, record in self._records.items()
+            if record.model_id == model_id
+        ]
+
+    @classmethod
+    def _record_key(cls, record: _InstanceRecord) -> tuple[object, ...]:
+        return cls._instance_key(
+            record.model_id,
+            record.revision,
+            record.variant,
+            record.runtime,
+            record.options,
+        )
+
+    @staticmethod
+    def _reject_retained_singleton_conflicts(
+        model_id: str,
+        conflicts: list[tuple[str, BaseModelInstance, _InstanceRecord]],
+    ) -> None:
+        retained = [
+            {
+                "instance_id": instance_id,
+                "reference_count": record.reference_count,
+            }
+            for instance_id, _, record in conflicts
+            if record.reference_count
+        ]
+        if retained:
+            raise UnsupportedRuntimeError(
+                f"Cannot replace retained model singleton for {model_id}",
+                details={"model_id": model_id, "instances": retained},
+            )
+
+    def _detach_instances(
+        self,
+        records: list[tuple[str, BaseModelInstance, _InstanceRecord]],
+    ) -> tuple[BaseModelInstance, ...]:
+        instances = tuple(instance for _, instance, _ in records)
+        for instance_id, _, _ in records:
+            self._instances.pop(instance_id, None)
+            self._records.pop(instance_id, None)
+        if instances:
+            detached_ids = {id(instance) for instance in instances}
+            stale_keys = [
+                key for key, instance in self._shared.items() if id(instance) in detached_ids
+            ]
+            for key in stale_keys:
+                del self._shared[key]
+        return instances
+
+    @staticmethod
+    async def _unload_detached(instances: tuple[BaseModelInstance, ...]) -> None:
+        failures: list[Exception] = []
+        for instance in instances:
+            try:
+                await instance.unload()
+            except Exception as error:
+                failures.append(error)
+        if failures:
+            raise ExceptionGroup("One or more replaced model instances failed to unload", failures)
 
     @staticmethod
     def _instance_key(

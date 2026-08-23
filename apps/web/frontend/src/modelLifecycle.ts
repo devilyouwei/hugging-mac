@@ -20,7 +20,7 @@ export async function loadSharedModel(
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ variant, runtime, shared: true }),
+        body: JSON.stringify({ variant, runtime }),
       },
     )
   ).data

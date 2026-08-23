@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping
 from pathlib import Path
@@ -432,6 +433,108 @@ async def test_failed_runtime_switch_keeps_original_instance_ready() -> None:
 
     assert original.info().state is ModelState.READY
     assert await manager.get(str(original.instance_id)) is original
+
+
+async def test_model_singleton_reuses_equivalent_instance() -> None:
+    registry = ModelRegistry()
+    registry.register(_definition())
+    manager = InstanceManager(registry)
+
+    first, second = await asyncio.gather(
+        manager.load(
+            "example/multi-runtime",
+            runtime="alpha",
+            reuse=ReusePolicy.MODEL_SINGLETON,
+        ),
+        manager.load(
+            "example/multi-runtime",
+            runtime="alpha",
+            reuse=ReusePolicy.MODEL_SINGLETON,
+        ),
+    )
+
+    assert first is second
+    assert await manager.list() == (first,)
+
+
+async def test_model_singleton_replaces_different_runtime() -> None:
+    registry = ModelRegistry()
+    registry.register(_definition())
+    manager = InstanceManager(registry)
+    original = await manager.load(
+        "example/multi-runtime",
+        runtime="alpha",
+        reuse=ReusePolicy.MODEL_SINGLETON,
+    )
+
+    replacement = await manager.load(
+        "example/multi-runtime",
+        runtime="beta",
+        reuse=ReusePolicy.MODEL_SINGLETON,
+    )
+
+    assert replacement is not original
+    assert replacement.info().runtime == "beta"
+    assert original.state is ModelState.UNLOADED
+    assert await manager.list() == (replacement,)
+
+
+async def test_model_singleton_rejects_replacing_retained_instance() -> None:
+    registry = ModelRegistry()
+    registry.register(_definition())
+    manager = InstanceManager(registry)
+    original = await manager.load(
+        "example/multi-runtime",
+        runtime="alpha",
+        reuse=ReusePolicy.MODEL_SINGLETON,
+    )
+    await manager.retain(str(original.instance_id))
+
+    with pytest.raises(UnsupportedRuntimeError, match="retained model singleton"):
+        await manager.load(
+            "example/multi-runtime",
+            runtime="beta",
+            reuse=ReusePolicy.MODEL_SINGLETON,
+        )
+
+    assert original.state is ModelState.READY
+    assert await manager.list() == (original,)
+
+
+async def test_failed_model_singleton_replacement_keeps_original_ready() -> None:
+    manifest = ModelManifest(
+        model_id="example/multi-runtime",
+        display_name="Safe Singleton",
+        family="test",
+        capabilities=frozenset({"test"}),
+        runtimes=(RuntimeSpec(name="alpha"), RuntimeSpec(name="broken")),
+    )
+    registry = ModelRegistry()
+    registry.register(
+        ModelDefinition(
+            manifest=manifest,
+            runtime_factories={
+                "alpha": DummyInstance,
+                "broken": FailingInstance,
+            },
+        )
+    )
+    manager = InstanceManager(registry)
+    original = await manager.load(
+        "example/multi-runtime",
+        runtime="alpha",
+        reuse=ReusePolicy.MODEL_SINGLETON,
+    )
+
+    with pytest.raises(ModelLoadError):
+        await manager.load(
+            "example/multi-runtime",
+            runtime="broken",
+            reuse=ReusePolicy.MODEL_SINGLETON,
+        )
+
+    assert original.state is ModelState.READY
+    assert await manager.list() == (original,)
 
 
 async def test_manager_reports_load_and_unload_metrics() -> None:
