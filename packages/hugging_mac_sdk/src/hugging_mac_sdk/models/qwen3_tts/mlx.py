@@ -90,19 +90,21 @@ class MlxQwen3TtsEngine:
         sample_rate: int | None = None
         generated_tokens = 0
         try:
-            results = self._model.generate(
-                text=request.text,
-                voice=request.voice,
-                speed=request.speed,
-                lang_code=request.language or "auto",
-                ref_audio=str(reference_path) if reference_path is not None else None,
-                ref_text=request.reference_text,
-                temperature=request.temperature,
-                top_k=request.top_k,
-                top_p=request.top_p,
-                max_tokens=request.max_new_tokens,
-                verbose=False,
-            )
+            generation_options: dict[str, object] = {
+                "text": request.text,
+                "voice": request.voice,
+                "speed": request.speed,
+                "lang_code": request.language or "auto",
+                "temperature": request.temperature,
+                "top_k": request.top_k,
+                "top_p": request.top_p,
+                "max_tokens": request.max_new_tokens,
+                "verbose": False,
+            }
+            if reference_path is not None:
+                generation_options["ref_audio"] = str(reference_path)
+                generation_options["ref_text"] = request.reference_text
+            results = self._model.generate(**generation_options)
             for result in results:
                 if cancelled.is_set():
                     break

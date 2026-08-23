@@ -3,9 +3,11 @@
 This package exposes `SpeechSynthesis` over MLX and Core ML engine protocols.
 `model.yaml` is the only owner of runtime compatibility and static resource facts.
 
-`mlx.py` owns autoregressive generation, speech tokenization, and reference-audio
-conditioning. `coreml.py` owns the compiled autoregressive state, embedding and
-decoder execution order, supported request checks, and waveform decoding.
+`mlx.py` owns autoregressive generation, speech tokenization, and optional
+reference-audio conditioning. It omits both reference arguments for direct
+generation and supplies both for voice cloning. `coreml.py` owns the compiled
+autoregressive state, embedding and decoder execution order, supported request
+checks, and waveform decoding.
 `instance.py` keeps capability validation, lifecycle, locking, and response
 construction common to both paths.
 

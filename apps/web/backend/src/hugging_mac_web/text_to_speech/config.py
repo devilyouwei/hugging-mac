@@ -109,7 +109,7 @@ QWEN3_TTS_0_6B_BASE_4BIT_PROFILE = TtsModelProfile(
     model_id="qwen/qwen3-tts-12hz",
     display_name="Qwen3-TTS",
     short_name="Qwen3-TTS",
-    description="支持 MLX 声音克隆与 Core ML 默认音色合成。",
+    description="支持 MLX 直接生成、可选声音克隆与 Core ML 默认音色合成。",
     variant="0.6b-base",
     runtime="mlx",
     required_artifact_id="mlx-4bit",
@@ -127,7 +127,6 @@ QWEN3_TTS_0_6B_BASE_4BIT_PROFILE = TtsModelProfile(
         "italian",
     ),
     supports_reference_audio=True,
-    requires_reference_audio=True,
     requires_reference_text=True,
     max_new_tokens=2048,
 )

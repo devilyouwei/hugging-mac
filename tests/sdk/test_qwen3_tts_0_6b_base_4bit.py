@@ -25,6 +25,7 @@ from hugging_mac_sdk.models.qwen3_tts.resources import (
 from hugging_mac_sdk.models.qwen3_tts.utils.tokenizer import Qwen3CoreMlTokenizer
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource
 from hugging_mac_sdk.schemas.speech_synthesis import SpeechSynthesisRequest
+from hugging_mac_sdk.schemas.transcription import AudioInput
 
 QWEN3_TTS_MODEL_ID = QWEN3_TTS_MANIFEST.model_id
 QWEN3_TTS_REVISION = QWEN3_TTS_MANIFEST.revision
@@ -60,8 +61,6 @@ class FakeModel:
             "voice": None,
             "speed": 1.0,
             "lang_code": "english",
-            "ref_audio": None,
-            "ref_text": None,
             "temperature": 0.8,
             "top_k": 50,
             "top_p": 0.95,
@@ -153,6 +152,36 @@ def test_qwen3_tts_engine_maps_generation_request(tmp_path: Path) -> None:
     assert output.duration_seconds == 1.0
     assert output.generated_tokens == 25
     assert len(output.audio) == 24000 * 4
+
+
+def test_qwen3_tts_engine_passes_reference_pair_only_when_present(tmp_path: Path) -> None:
+    calls: list[dict[str, object]] = []
+
+    class ReferenceModel:
+        def generate(self, **kwargs: object):
+            calls.append(kwargs)
+            yield FakeResult()
+
+    engine = MlxQwen3TtsEngine(
+        Qwen3TtsInstanceConfig(source_path=tmp_path),
+        object(),  # type: ignore[arg-type]
+    )
+    engine._model = ReferenceModel()
+    reference = tmp_path / "speaker.wav"
+    reference.touch()
+
+    engine._infer_sync(
+        SpeechSynthesisRequest(
+            text="Hello in the cloned voice.",
+            language="english",
+            reference_audio=AudioInput(path=reference),
+            reference_text="This is the reference voice.",
+        ),
+        Event(),
+    )
+
+    assert calls[0]["ref_audio"] == str(reference)
+    assert calls[0]["ref_text"] == "This is the reference voice."
 
 
 def test_qwen3_tts_resource_validation_accepts_weight_shards(tmp_path: Path) -> None:

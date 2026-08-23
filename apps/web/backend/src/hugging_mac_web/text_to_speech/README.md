@@ -28,7 +28,7 @@ The App manifest requires these model integrations and the
 |---|---|
 | `audio8/audio8-tts-preview` | PyTorch/MLX multilingual synthesis and voice-profile support |
 | `hexgrad/kokoro` | Named voices and language selection |
-| `qwen/qwen3-tts-12hz` | MLX reference cloning or a runtime-specific default path |
+| `qwen/qwen3-tts-12hz` | MLX direct generation with optional reference cloning, or a Core ML bundled voice |
 | `openmoss-team/moss-tts-nano-100m` | MLX direct generation with optional reference-audio voice cloning |
 
 Profiles in `config.py` contain App presentation and request constraints. Variant
@@ -95,8 +95,9 @@ generation limit.
 
 - Audio8 MLX profiles that use persistent reference voices require a voice
   profile name.
-- Qwen3-TTS on MLX requires uploaded reference audio and its transcript; another
-  declared runtime may provide a default-voice path.
+- Qwen3-TTS on MLX generates directly without a reference; when reference audio
+  is uploaded, its transcript is required for voice cloning. Core ML uses its
+  bundled speaker and rejects reference inputs.
 - MOSS-TTS-Nano generates directly without reference audio, or clones the
   uploaded reference voice without consuming a transcript.
 - Kokoro uses the profile's named voice and language choices without reference

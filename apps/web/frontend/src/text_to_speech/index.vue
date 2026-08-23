@@ -355,7 +355,9 @@ async function generateSpeech() {
           ? referenceAudio.value
           : null,
         referenceText: (isAudio8Clone.value && !useSavedProfile.value)
-          || (supportsDirectReferenceAudio.value && model.requires_reference_text)
+          || (supportsDirectReferenceAudio.value
+            && referenceAudio.value !== null
+            && model.requires_reference_text)
           ? referenceText.value.trim()
           : null,
       },
@@ -630,7 +632,7 @@ onBeforeUnmount(() => {
             controls
             preload="metadata"
           ></audio>
-          <label v-if="selectedModel?.requires_reference_text">
+          <label v-if="referenceAudio && selectedModel?.requires_reference_text">
             <span>ACCURATE TRANSCRIPT</span>
             <textarea
               v-model="referenceText"
@@ -646,7 +648,7 @@ onBeforeUnmount(() => {
               </option>
             </select>
           </label>
-          <p>{{ isQwen3 ? "Qwen3-TTS uses this audio and transcript for the current generation." : "MOSS-TTS-Nano can generate directly, or clone a voice when optional reference audio is provided." }}</p>
+          <p>{{ isQwen3 ? "Qwen3-TTS can generate directly, or use optional reference audio and its transcript for voice cloning." : "MOSS-TTS-Nano can generate directly, or clone a voice when optional reference audio is provided." }}</p>
         </div>
         <div v-else class="audio8-note">
           <strong>Natural multilingual mode</strong>

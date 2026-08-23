@@ -191,6 +191,9 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         item for item in tts_models.json()["data"] if item["model_id"] == "qwen/qwen3-tts-12hz"
     )
     assert qwen3_tts_view["display_name"] == "Qwen3-TTS"
+    assert qwen3_tts_view["supports_reference_audio"]
+    assert not qwen3_tts_view["requires_reference_audio"]
+    assert qwen3_tts_view["requires_reference_text"]
     assert {item["runtime"] for item in qwen3_tts_view["resource"]["runtimes"]} == {
         "mlx",
         "coreml",
@@ -831,7 +834,9 @@ def test_audio8_tts_uses_one_canonical_model_requirement() -> None:
     assert requirements[AUDIO8_TTS_PROFILE.model_id].preferred_runtime == "pytorch"
     assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.runtime == "mlx"
     assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.variant == "0.6b-base"
-    assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.requires_reference_audio
+    assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.supports_reference_audio
+    assert not QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.requires_reference_audio
+    assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.requires_reference_text
     assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.display_name == "Qwen3-TTS"
     assert QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.short_name == "Qwen3-TTS"
     assert requirements[QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.model_id].preferred_runtime == "mlx"
@@ -1047,6 +1052,56 @@ def test_qwen3_tts_accepts_direct_reference_and_language(
     request = captured["request"]
     assert request.voice is None
     assert request.language == "english"
+
+
+def test_qwen3_tts_accepts_synthesis_without_reference(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_synthesize(
+        _: object,
+        request: object,
+        *,
+        reference_audio: bytes | None = None,
+        reference_text: str | None = None,
+    ) -> tuple[bytes, dict[str, str]]:
+        captured["request"] = request
+        captured["reference_audio"] = reference_audio
+        captured["reference_text"] = reference_text
+        return (
+            float32le_to_wav(np.zeros(2400, dtype=np.float32).tobytes(), 24000),
+            {
+                "x-model-id": QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.model_id,
+                "x-runtime": "mlx",
+                "x-device": "gpu",
+                "x-duration-seconds": "0.1",
+                "x-inference-ms": "20.0",
+            },
+        )
+
+    monkeypatch.setattr(
+        "hugging_mac_web.text_to_speech.service.TextToSpeechService.synthesize",
+        fake_synthesize,
+    )
+    app = create_app(_settings(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/apps/text-to-speech/synthesize",
+            json={
+                "model_id": QWEN3_TTS_0_6B_BASE_4BIT_PROFILE.model_id,
+                "instance_id": "qwen-instance",
+                "text": "Hello without a reference voice.",
+                "language": "english",
+                "speed": 1.0,
+            },
+        )
+
+    assert response.status_code == 200
+    assert captured["reference_audio"] is None
+    assert captured["reference_text"] is None
 
 
 def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path) -> None:

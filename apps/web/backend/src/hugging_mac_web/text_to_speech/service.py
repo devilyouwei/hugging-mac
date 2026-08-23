@@ -176,8 +176,8 @@ class TextToSpeechService:
                 "The selected TTS model requires reference audio",
                 details={"model_id": profile.model_id, "runtime": info.runtime},
             )
-        requires_reference_text = profile.requires_reference_text or (
-            profile.requires_reference_voice and reference_audio is not None
+        requires_reference_text = reference_audio is not None and (
+            profile.requires_reference_text or profile.requires_reference_voice
         )
         if requires_reference_text and not reference_text:
             raise ResourceNotFoundError(

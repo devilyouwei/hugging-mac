@@ -55,9 +55,11 @@ asyncio.run(main())
 
 ## Notes and limits
 
-Reference-audio cloning is available through MLX. The Core ML runtime supports a
-fixed voice and a more limited request set; unsupported reference or speed
-options are rejected explicitly.
+MLX can generate directly without a reference, or clone a voice when both
+reference audio and its transcript are supplied. Reference parameters are
+omitted entirely for direct generation. The Core ML runtime supports a fixed
+voice and a more limited request set; unsupported reference or speed options are
+rejected explicitly.
 
 ## License
 
