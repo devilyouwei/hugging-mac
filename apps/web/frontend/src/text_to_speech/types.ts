@@ -28,7 +28,9 @@ export interface TtsModel {
   voices: string[]
   languages: string[]
   requires_reference_voice: boolean
+  supports_reference_audio: boolean
   requires_reference_audio: boolean
+  requires_reference_text: boolean
   max_new_tokens: number
   variants: Array<{
     name: string

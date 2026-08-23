@@ -97,7 +97,9 @@ class TtsModelView(BaseModel):
     voices: tuple[str, ...]
     languages: tuple[str, ...]
     requires_reference_voice: bool
+    supports_reference_audio: bool
     requires_reference_audio: bool
+    requires_reference_text: bool
     max_new_tokens: int
     variants: tuple[TtsVariantView, ...] = ()
     resource: TtsResourceView

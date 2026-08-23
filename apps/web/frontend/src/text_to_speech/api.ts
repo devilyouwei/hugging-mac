@@ -39,7 +39,7 @@ export async function synthesizeSpeech(
     form.append("instance_id", options.instance_id)
     form.append("text", options.text)
     if (options.voice) form.append("voice", options.voice)
-    form.append("reference_text", options.referenceText ?? "")
+    if (options.referenceText) form.append("reference_text", options.referenceText)
     form.append("speed", String(options.speed))
     if (options.language) form.append("language", options.language)
     endpoint = `${PREFIX}/synthesize/reference`

@@ -18,7 +18,9 @@ class TtsModelProfile:
     voices: tuple[str, ...] = ()
     languages: tuple[str, ...] = ()
     requires_reference_voice: bool = False
+    supports_reference_audio: bool = False
     requires_reference_audio: bool = False
+    requires_reference_text: bool = False
     max_new_tokens: int = 1024
 
 
@@ -30,7 +32,7 @@ AUDIO8_TTS_PROFILE = TtsModelProfile(
         "多语言生成与声音克隆模型；PyTorch 默认使用 CPU，也可选择 MPS，"
         "异常时回退 CPU，0.6B 另支持 MLX。"
     ),
-    variant="0.6b-preview",
+    variant="0.1b-preview",
     runtime="pytorch",
     required_artifact_id="source",
     languages=("auto",),
@@ -124,8 +126,22 @@ QWEN3_TTS_0_6B_BASE_4BIT_PROFILE = TtsModelProfile(
         "spanish",
         "italian",
     ),
+    supports_reference_audio=True,
     requires_reference_audio=True,
+    requires_reference_text=True,
     max_new_tokens=2048,
+)
+
+MOSS_TTS_NANO_PROFILE = TtsModelProfile(
+    model_id="openmoss-team/moss-tts-nano-100m",
+    display_name="MOSS-TTS-Nano",
+    short_name="MOSS-TTS-Nano",
+    description="MLX 多语言语音生成模型，可选用参考音频克隆目标音色。",
+    variant="nano-100m",
+    runtime="mlx",
+    required_artifact_id="mlx-fp16",
+    supports_reference_audio=True,
+    max_new_tokens=1024,
 )
 
 TTS_MODEL_PROFILES = {
@@ -134,6 +150,7 @@ TTS_MODEL_PROFILES = {
         AUDIO8_TTS_PROFILE,
         KOKORO_82M_PROFILE,
         QWEN3_TTS_0_6B_BASE_4BIT_PROFILE,
+        MOSS_TTS_NANO_PROFILE,
     )
 }
 

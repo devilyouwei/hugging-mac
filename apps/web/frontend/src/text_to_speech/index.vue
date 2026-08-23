@@ -132,11 +132,13 @@ const isKokoro = computed(
   () => Boolean(selectedModel.value?.voices.length) && !selectedModel.value?.requires_reference_voice,
 )
 const isAudio8Clone = computed(() => Boolean(selectedModel.value?.requires_reference_voice))
-const isQwen3 = computed(() => Boolean(selectedModel.value?.requires_reference_audio))
+const isQwen3 = computed(() => selectedModel.value?.model_id === "qwen/qwen3-tts-12hz")
 const isQwen3CoreMl = computed(() =>
   isQwen3.value && selectedModel.value !== null && runtimeForModel(selectedModel.value) === "coreml",
 )
-const isQwen3Clone = computed(() => isQwen3.value && !isQwen3CoreMl.value)
+const supportsDirectReferenceAudio = computed(() =>
+  Boolean(selectedModel.value?.supports_reference_audio) && !isQwen3CoreMl.value,
+)
 const qwen3CoreMlLanguages = computed(() =>
   (selectedModel.value?.languages ?? []).filter((item) => item === "english" || item === "chinese"),
 )
@@ -146,14 +148,19 @@ const availableVoices = computed(() => {
   return prefix ? voices.filter((item) => item.startsWith(prefix)) : voices
 })
 const characterCount = computed(() => text.value.length)
-const referenceReady = computed(() =>
-  isQwen3Clone.value
-    ? referenceAudio.value !== null && Boolean(referenceText.value.trim())
-    : !isAudio8Clone.value
+const referenceReady = computed(() => {
+  if (supportsDirectReferenceAudio.value) {
+    const hasReference = referenceAudio.value !== null
+    return (!selectedModel.value?.requires_reference_audio || hasReference)
+      && (!hasReference
+        || !selectedModel.value?.requires_reference_text
+        || Boolean(referenceText.value.trim()))
+  }
+  return !isAudio8Clone.value
     || (Boolean(voiceProfile.value.trim())
-    && (useSavedProfile.value
-      || (referenceAudio.value !== null && Boolean(referenceText.value.trim())))),
-)
+      && (useSavedProfile.value
+        || (referenceAudio.value !== null && Boolean(referenceText.value.trim()))))
+})
 const canGenerate = computed(() =>
   Boolean(text.value.trim()) && referenceReady.value && !synthesisBusy.value && !loadingModel.value
     && Boolean(sourceArtifact.value?.available),
@@ -344,10 +351,11 @@ async function generateSpeech() {
           : isKokoro.value ? voice.value : null,
         language: isKokoro.value || isQwen3.value ? language.value : null,
         speed: speed.value,
-        referenceAudio: (isAudio8Clone.value && !useSavedProfile.value) || isQwen3Clone.value
+        referenceAudio: (isAudio8Clone.value && !useSavedProfile.value) || supportsDirectReferenceAudio.value
           ? referenceAudio.value
           : null,
-        referenceText: (isAudio8Clone.value && !useSavedProfile.value) || isQwen3Clone.value
+        referenceText: (isAudio8Clone.value && !useSavedProfile.value)
+          || (supportsDirectReferenceAudio.value && model.requires_reference_text)
           ? referenceText.value.trim()
           : null,
       },
@@ -361,7 +369,9 @@ async function generateSpeech() {
       text: text.value.trim(),
       voice: isAudio8Clone.value
         ? voiceProfile.value.trim()
-        : isKokoro.value ? voice.value : isQwen3Clone.value ? "reference" : null,
+        : isKokoro.value
+          ? voice.value
+          : supportsDirectReferenceAudio.value && referenceAudio.value ? "reference" : null,
       runtime: response.headers.get("x-runtime") ?? instance.runtime,
       device: response.headers.get("x-device") ?? instance.device,
       durationSeconds: Number(response.headers.get("x-duration-seconds") ?? 0),
@@ -405,7 +415,7 @@ onBeforeUnmount(() => {
         <RouterLink class="back-link" to="/apps">← Neural Apps</RouterLink>
         <p class="kicker">LOCAL TEXT-TO-SPEECH · MULTI-RUNTIME VOICE STUDIO</p>
         <h1>Type it. <em>Hear it.</em></h1>
-        <p>Compare Audio8, Kokoro, and Qwen3-TTS in one local studio. Your text, reference voice, and generated audio stay on this Mac.</p>
+        <p>Compare Audio8, Kokoro, Qwen3-TTS, and MOSS-TTS-Nano in one local studio. Your text, reference voice, and generated audio stay on this Mac.</p>
       </div>
       <section class="tts-model-picker" aria-label="Select a text-to-speech model">
         <article
@@ -593,9 +603,9 @@ onBeforeUnmount(() => {
             <p>Core ML uses the model's built-in voice and supports English and Chinese.</p>
           </div>
         </div>
-        <div v-else-if="isQwen3Clone" class="reference-controls">
+        <div v-else-if="supportsDirectReferenceAudio" class="reference-controls">
           <label class="reference-file">
-            <span>REFERENCE AUDIO · CLEAR SPEECH</span>
+            <span>{{ selectedModel?.requires_reference_audio ? "REFERENCE AUDIO · CLEAR SPEECH" : "REFERENCE AUDIO · OPTIONAL" }}</span>
             <input
               type="file"
               accept=".wav,.flac,.mp3,.ogg,audio/wav,audio/flac,audio/mpeg,audio/ogg"
@@ -606,6 +616,12 @@ onBeforeUnmount(() => {
           <div class="reference-actions">
             <button type="button" :disabled="referenceRecording" @click="startReferenceRecording">Record reference</button>
             <button v-if="referenceRecording" type="button" class="recording" @click="stopReferenceRecording">Stop recording</button>
+            <button
+              v-if="referenceAudio && !selectedModel?.requires_reference_audio"
+              type="button"
+              :disabled="referenceRecording"
+              @click="setReferenceAudio(null)"
+            >Use default voice</button>
           </div>
           <audio
             v-if="referenceAudioUrl"
@@ -614,7 +630,7 @@ onBeforeUnmount(() => {
             controls
             preload="metadata"
           ></audio>
-          <label>
+          <label v-if="selectedModel?.requires_reference_text">
             <span>ACCURATE TRANSCRIPT</span>
             <textarea
               v-model="referenceText"
@@ -622,7 +638,7 @@ onBeforeUnmount(() => {
               placeholder="Enter exactly what is spoken in the reference audio…"
             ></textarea>
           </label>
-          <label class="reference-language">
+          <label v-if="isQwen3" class="reference-language">
             <span>LANGUAGE</span>
             <select v-model="language">
               <option v-for="item in selectedModel?.languages" :key="item" :value="item">
@@ -630,7 +646,7 @@ onBeforeUnmount(() => {
               </option>
             </select>
           </label>
-          <p>Qwen3-TTS uses this reference for the current generation; it is not saved as a profile.</p>
+          <p>{{ isQwen3 ? "Qwen3-TTS uses this audio and transcript for the current generation." : "MOSS-TTS-Nano can generate directly, or clone a voice when optional reference audio is provided." }}</p>
         </div>
         <div v-else class="audio8-note">
           <strong>Natural multilingual mode</strong>
@@ -668,7 +684,7 @@ onBeforeUnmount(() => {
       </div>
       <article v-for="result in results" :key="result.id" class="audio-result">
         <div class="result-model">
-          <span>{{ result.modelId.includes("kokoro") ? "K" : result.modelId.includes("qwen3-tts") ? "Q3" : "A8" }}</span>
+          <span>{{ result.modelId.includes("kokoro") ? "K" : result.modelId.includes("qwen3-tts") ? "Q3" : result.modelId.includes("moss-tts") ? "M" : "A8" }}</span>
           <div>
             <strong>{{ result.modelName }}</strong>
             <small>{{ result.runtime }} · {{ result.voice ?? "automatic voice" }}</small>

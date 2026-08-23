@@ -161,8 +161,8 @@ class TextToSpeechService:
                 "Audio8 MLX requires a voice profile name",
                 details={"model_id": profile.model_id},
             )
-        if (reference_audio is None) != (reference_text is None):
-            raise ValueError("reference_audio and reference_text must be provided together")
+        if reference_text is not None and reference_audio is None:
+            raise ValueError("reference_text requires reference_audio")
         instance = await self._context.models.instances.require(request.instance_id)
         info = instance.info()
         if info.model_id != profile.model_id or info.state is not ModelState.READY:
@@ -170,13 +170,18 @@ class TextToSpeechService:
                 "The selected TTS instance is not ready for this model",
                 details={"instance_id": request.instance_id},
             )
-        if (
-            profile.requires_reference_audio
-            and info.runtime != "coreml"
-            and (reference_audio is None or reference_text is None)
-        ):
+        requires_reference_audio = profile.requires_reference_audio and info.runtime != "coreml"
+        if requires_reference_audio and reference_audio is None:
             raise ResourceNotFoundError(
-                "Qwen3-TTS MLX requires reference audio and its transcript",
+                "The selected TTS model requires reference audio",
+                details={"model_id": profile.model_id, "runtime": info.runtime},
+            )
+        requires_reference_text = profile.requires_reference_text or (
+            profile.requires_reference_voice and reference_audio is not None
+        )
+        if requires_reference_text and not reference_text:
+            raise ResourceNotFoundError(
+                "The selected TTS model requires a reference transcript",
                 details={"model_id": profile.model_id, "runtime": info.runtime},
             )
         synthesizer = instance.require(SpeechSynthesis)  # type: ignore[type-abstract]

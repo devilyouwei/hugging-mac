@@ -14,7 +14,7 @@ Use the capabilities of these models to create useful, creative, and playful **_
 
 ## Models
 
-Hugging Mac currently integrates 16 model families across vision, speech,
+Hugging Mac currently integrates 17 model families across vision, speech,
 language, and multimodal intelligence. Each integration exposes a consistent
 local lifecycle while retaining the runtime choices that make sense for that
 model and Apple Silicon.
@@ -27,6 +27,7 @@ model and Apple Silicon.
 | **Gemma 4**                                      | Chat                                   | MLX                                |
 | **Kokoro 82M v1.0**                              | Speech synthesis                       | PyTorch MPS, Core ML               |
 | **MediaPipe Hand Detection**                     | Hand detection and tracking            | ONNX Runtime, Core ML              |
+| **MOSS-TTS-Nano 100M**                          | Speech synthesis                       | MLX                                |
 | **Nemotron 3.5 ASR Streaming Multilingual 0.6B** | Streaming speech transcription         | Core ML                            |
 | **Qwen3.5**                                      | Chat and vision-language generation    | MLX                                |
 | **Qwen3-ASR**                                    | Speech transcription                   | Core ML                            |
@@ -59,7 +60,7 @@ The Studio turns those model integrations into complete local workflows:
 - **Live Transcription** — compare multiple ASR models with optional voice
   activity detection and speech enhancement in one streaming pipeline.
 - **Text to Speech** — synthesize and compare local voices across Audio8 TTS,
-  Kokoro, and Qwen3-TTS.
+  Kokoro, Qwen3-TTS, and MOSS-TTS-Nano.
 - **Local Chat** — talk privately with Qwen3.5 or Gemma 4, with optional camera
   understanding, speech input, and spoken responses. Watch the
   [Digital Human demo](https://youtu.be/YPr6fYPnCMQ).

@@ -70,7 +70,7 @@ def create_router(settings: TextToSpeechSettings) -> APIRouter:
         model_id: Annotated[str, Form()],
         instance_id: Annotated[str, Form()],
         text: Annotated[str, Form(min_length=1, max_length=2000)],
-        reference_text: Annotated[str, Form(min_length=1, max_length=2000)],
+        reference_text: Annotated[str | None, Form(max_length=2000)] = None,
         voice: Annotated[str | None, Form(max_length=64)] = None,
         language: Annotated[str | None, Form(max_length=64)] = None,
         speed: Annotated[float, Form(ge=0.5, le=2.0)] = 1.0,

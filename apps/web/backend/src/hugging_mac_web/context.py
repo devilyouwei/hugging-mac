@@ -12,6 +12,7 @@ from hugging_mac_sdk.models.deepfilternet3 import register_deepfilternet3
 from hugging_mac_sdk.models.gemma_4 import register_gemma_4
 from hugging_mac_sdk.models.kokoro import register_kokoro
 from hugging_mac_sdk.models.mediapipe_hand_detection import register_mediapipe_hand_detection
+from hugging_mac_sdk.models.moss_tts_nano import register_moss_tts_nano
 from hugging_mac_sdk.models.nemotron_3_5_asr import register_nemotron_3_5_asr
 from hugging_mac_sdk.models.qwen3_5 import register_qwen3_5
 from hugging_mac_sdk.models.qwen3_asr import register_qwen3_asr
@@ -57,6 +58,7 @@ def create_context(settings: WebSettings) -> PlatformContext:
     register_gemma_4(models.registry)
     register_kokoro(models.registry)
     register_mediapipe_hand_detection(models.registry, converters)
+    register_moss_tts_nano(models.registry)
     register_nemotron_3_5_asr(models.registry)
     register_qwen3_asr(models.registry)
     register_qwen3_tts(models.registry)

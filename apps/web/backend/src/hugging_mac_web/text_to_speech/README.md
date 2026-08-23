@@ -2,7 +2,8 @@
 
 ## Summary
 
-`text_to_speech` exposes one App protocol over Audio8 TTS, Kokoro, and Qwen3-TTS.
+`text_to_speech` exposes one App protocol over Audio8 TTS, Kokoro, Qwen3-TTS,
+and MOSS-TTS-Nano.
 It discovers variants/runtimes from the SDK, loads shared instances explicitly,
 normalizes model-specific reference requirements, invokes `SpeechSynthesis`, and
 returns playable WAV bytes with inference metadata in headers.
@@ -28,6 +29,7 @@ The App manifest requires these model integrations and the
 | `audio8/audio8-tts-preview` | PyTorch/MLX multilingual synthesis and voice-profile support |
 | `hexgrad/kokoro` | Named voices and language selection |
 | `qwen/qwen3-tts-12hz` | MLX reference cloning or a runtime-specific default path |
+| `openmoss-team/moss-tts-nano-100m` | MLX direct generation with optional reference-audio voice cloning |
 
 Profiles in `config.py` contain App presentation and request constraints. Variant
 and runtime support is resolved against the current SDK manifest before every
@@ -54,10 +56,10 @@ excluding tokenizer artifacts.
 | GET | `/api/v1/apps/text-to-speech/resources` | Resource status for one model/variant |
 | POST | `/api/v1/apps/text-to-speech/models/load` | Load/reuse a selected runtime |
 | POST | `/api/v1/apps/text-to-speech/synthesize` | JSON synthesis without an uploaded reference |
-| POST | `/api/v1/apps/text-to-speech/synthesize/reference` | Multipart synthesis with reference audio and transcript |
+| POST | `/api/v1/apps/text-to-speech/synthesize/reference` | Multipart synthesis with reference audio and an optional transcript |
 
-The reference endpoint reads the upload with the App byte limit. Reference audio
-and reference transcript are an inseparable pair; partial pairs are rejected.
+The reference endpoint reads the upload with the App byte limit. Profiles declare
+whether a transcript is required alongside reference audio.
 Text is limited to 2,000 characters and speed to the public request range.
 
 ## Resource and load flow
@@ -95,6 +97,8 @@ generation limit.
   profile name.
 - Qwen3-TTS on MLX requires uploaded reference audio and its transcript; another
   declared runtime may provide a default-voice path.
+- MOSS-TTS-Nano generates directly without reference audio, or clones the
+  uploaded reference voice without consuming a transcript.
 - Kokoro uses the profile's named voice and language choices without reference
   audio.
 - The service does not inspect codec tokens or runtime-private engine objects.
@@ -132,6 +136,6 @@ language/reference mapping.
 
 1. Resource/runtime selection must stay manifest-driven.
 2. Every synthesis path must return a valid WAV, never raw framework arrays.
-3. Reference audio and text pairing must be validated before capability calls.
+3. Reference audio and profile-specific transcript requirements must be validated before capability calls.
 4. Model-specific rules belong in the App profile/service boundary, not routes.
 5. Do not log text, reference audio, generated waveform bytes, or local paths.
