@@ -83,117 +83,117 @@ artifacts:
   format: coreml
   kind: directory
   path: nvidia/nemotron-3.5-asr-streaming-0.6b/latin-560ms/coreml/coreml-mixed
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
   source:
     kind: huggingface
     repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
     allow_patterns:
     - latin/560ms/**
     strip_prefix: latin/560ms
-  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
-    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
-    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
 - artifact_id: coreml-mixed
   variant: latin-1120ms
   runtime: coreml
   format: coreml
   kind: directory
   path: nvidia/nemotron-3.5-asr-streaming-0.6b/latin-1120ms/coreml/coreml-mixed
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
   source:
     kind: huggingface
     repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
     allow_patterns:
     - latin/1120ms/**
     strip_prefix: latin/1120ms
-  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
-    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
-    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
 - artifact_id: coreml-mixed
   variant: latin-2240ms
   runtime: coreml
   format: coreml
   kind: directory
   path: nvidia/nemotron-3.5-asr-streaming-0.6b/latin-2240ms/coreml/coreml-mixed
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
   source:
     kind: huggingface
     repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
     allow_patterns:
     - latin/2240ms/**
     strip_prefix: latin/2240ms
-  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
-    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
-    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
 - artifact_id: coreml-mixed
   variant: latin-4480ms
   runtime: coreml
   format: coreml
   kind: directory
   path: nvidia/nemotron-3.5-asr-streaming-0.6b/latin-4480ms/coreml/coreml-mixed
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
   source:
     kind: huggingface
     repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
     allow_patterns:
     - latin/4480ms/**
     strip_prefix: latin/4480ms
-  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
-    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
-    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
 - artifact_id: coreml-mixed
   variant: multilingual-560ms
   runtime: coreml
   format: coreml
   kind: directory
   path: nvidia/nemotron-3.5-asr-streaming-0.6b/multilingual-560ms/coreml/coreml-mixed
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
   source:
     kind: huggingface
     repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
     allow_patterns:
     - multilingual/560ms/**
     strip_prefix: multilingual/560ms
-  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
-    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
-    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
 - artifact_id: coreml-mixed
   variant: multilingual-1120ms
   runtime: coreml
   format: coreml
   kind: directory
   path: nvidia/nemotron-3.5-asr-streaming-0.6b/multilingual-1120ms/coreml/coreml-mixed
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
   source:
     kind: huggingface
     repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
     allow_patterns:
     - multilingual/1120ms/**
     strip_prefix: multilingual/1120ms
-  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
-    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
-    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
 - artifact_id: coreml-mixed
   variant: multilingual-2240ms
   runtime: coreml
   format: coreml
   kind: directory
   path: nvidia/nemotron-3.5-asr-streaming-0.6b/multilingual-2240ms/coreml/coreml-mixed
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
   source:
     kind: huggingface
     repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
     allow_patterns:
     - multilingual/2240ms/**
     strip_prefix: multilingual/2240ms
-  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
-    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
-    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
 - artifact_id: coreml-mixed
   variant: multilingual-4480ms
   runtime: coreml
   format: coreml
   kind: directory
   path: nvidia/nemotron-3.5-asr-streaming-0.6b/multilingual-4480ms/coreml/coreml-mixed
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
   source:
     kind: huggingface
     repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
     allow_patterns:
     - multilingual/4480ms/**
     strip_prefix: multilingual/4480ms
-  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
-    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
-    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]

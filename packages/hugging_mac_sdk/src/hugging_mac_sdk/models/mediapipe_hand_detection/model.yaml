@@ -55,6 +55,7 @@ artifacts:
   format: coreml
   kind: directory
   path: qualcomm/mediapipe-hand-detection/float/coreml/coreml-fp32
+  required_files: [hand_detector.mlpackage/Manifest.json, hand_landmark_detector.mlpackage/Manifest.json]
   source:
     kind: huggingface
     repo_id: hugging-mac/mediapipe-hand-coreml
@@ -62,4 +63,3 @@ artifacts:
     - coreml/hand_detector.mlpackage/**
     - coreml/hand_landmark_detector.mlpackage/**
     strip_prefix: coreml
-  required_files: [hand_detector.mlpackage/Manifest.json, hand_landmark_detector.mlpackage/Manifest.json]

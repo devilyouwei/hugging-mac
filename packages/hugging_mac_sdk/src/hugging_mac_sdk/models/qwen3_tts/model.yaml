@@ -57,13 +57,6 @@ artifacts:
   format: coreml
   kind: directory
   path: qwen/qwen3-tts-12hz/0.6b-base/coreml/coreml-w8a16
-  source:
-    kind: huggingface
-    repo_id: aufklarer/Qwen3-TTS-CoreML
-    allow_patterns:
-    - '*.mlmodelc/**'
-    - '*.npy'
-    - config.json
   required_files: [TextProjector.mlmodelc/model.mil, TextProjector.mlmodelc/coremldata.bin, TextProjector.mlmodelc/weights/weight.bin,
     CodeEmbedder.mlmodelc/model.mil, CodeEmbedder.mlmodelc/coremldata.bin, CodeEmbedder.mlmodelc/weights/weight.bin, MultiCodeEmbedder.mlmodelc/model.mil,
     MultiCodeEmbedder.mlmodelc/coremldata.bin, MultiCodeEmbedder.mlmodelc/weights/weight.bin, CodeDecoder.mlmodelc/model.mil,
@@ -71,6 +64,13 @@ artifacts:
     MultiCodeDecoder.mlmodelc/weights/weight.bin, SpeechDecoder.mlmodelc/model.mil, SpeechDecoder.mlmodelc/coremldata.bin,
     SpeechDecoder.mlmodelc/weights/weight.bin, config.json, speaker_embedding.npy, tts_pad_embed.npy, tts_bos_embed.npy, tts_eos_embed.npy]
   required_shares: [tokenizers]
+  source:
+    kind: huggingface
+    repo_id: aufklarer/Qwen3-TTS-CoreML
+    allow_patterns:
+    - '*.mlmodelc/**'
+    - '*.npy'
+    - config.json
 - artifact_id: tokenizers
   shared: true
   format: tokenizer

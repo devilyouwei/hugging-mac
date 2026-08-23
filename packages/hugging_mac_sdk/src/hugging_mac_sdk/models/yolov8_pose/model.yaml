@@ -65,6 +65,7 @@ artifacts:
   format: coreml
   kind: directory
   path: ultralytics/yolov8-pose/n/coreml/coreml
+  required_files: [Manifest.json]
   source:
     kind: huggingface
     repo_id: hugging-mac/yolov8-pose-coreml
@@ -72,7 +73,6 @@ artifacts:
     - yolov8n-pose.mlpackage/Manifest.json
     - yolov8n-pose.mlpackage/Data/**
     strip_prefix: yolov8n-pose.mlpackage
-  required_files: [Manifest.json]
 - artifact_id: onnx
   convert: true
   variant: n
@@ -96,6 +96,7 @@ artifacts:
   format: coreml
   kind: directory
   path: ultralytics/yolov8-pose/s/coreml/coreml
+  required_files: [Manifest.json]
   source:
     kind: huggingface
     repo_id: hugging-mac/yolov8-pose-coreml
@@ -103,7 +104,6 @@ artifacts:
     - yolov8s-pose.mlpackage/Manifest.json
     - yolov8s-pose.mlpackage/Data/**
     strip_prefix: yolov8s-pose.mlpackage
-  required_files: [Manifest.json]
 - artifact_id: onnx
   convert: true
   variant: s
@@ -127,6 +127,7 @@ artifacts:
   format: coreml
   kind: directory
   path: ultralytics/yolov8-pose/m/coreml/coreml
+  required_files: [Manifest.json]
   source:
     kind: huggingface
     repo_id: hugging-mac/yolov8-pose-coreml
@@ -134,7 +135,6 @@ artifacts:
     - yolov8m-pose.mlpackage/Manifest.json
     - yolov8m-pose.mlpackage/Data/**
     strip_prefix: yolov8m-pose.mlpackage
-  required_files: [Manifest.json]
 - artifact_id: onnx
   convert: true
   variant: m

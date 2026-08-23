@@ -54,6 +54,7 @@ artifacts:
   format: coreml
   kind: directory
   path: py-feat/retinaface/mobilenet0.25/coreml/coreml-fp16
+  required_files: [Manifest.json]
   source:
     kind: huggingface
     repo_id: hugging-mac/retinaface-coreml
@@ -61,4 +62,3 @@ artifacts:
     - retinaface.mlpackage/Manifest.json
     - retinaface.mlpackage/Data/**
     strip_prefix: retinaface.mlpackage
-  required_files: [Manifest.json]

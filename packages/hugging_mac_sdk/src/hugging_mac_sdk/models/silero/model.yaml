@@ -51,10 +51,10 @@ artifacts:
   format: coreml
   kind: directory
   path: snakers4/silero-vad/v6.2.1/coreml/coreml
+  required_files: [coremldata.bin, metadata.json, model.mil, weights/weight.bin]
   source:
     kind: huggingface
     repo_id: aufklarer/Silero-VAD-v6.2.1-CoreML
     allow_patterns:
     - silero_vad.mlmodelc/**
     strip_prefix: silero_vad.mlmodelc
-  required_files: [coremldata.bin, metadata.json, model.mil, weights/weight.bin]

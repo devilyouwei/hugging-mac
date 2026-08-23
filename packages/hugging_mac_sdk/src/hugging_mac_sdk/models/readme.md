@@ -121,7 +121,7 @@ The common template contains only fields that have the same meaning for every mo
 
 - `manifest`: canonical identity, presentation, license, capabilities, variants,
   runtimes, defaults, and upstream source links;
-- `artifacts`: runtime/variant ownership, format, canonical managed path, kind, optional source,
+- `artifacts`: runtime/variant ownership, format, kind, canonical managed path, optional source,
   conversion support, sharing, required files, and required shares;
 - `extensions`: an optional namespaced area for model-private declarative data that does not belong
   in the common schema.
@@ -133,39 +133,50 @@ manifest:
   schema_version: '1'
   model_id: upstream/example-model
   display_name: Example Model
+  description: Example embedding model for Apple Silicon.
+  tags: [embedding, coreml]
   family: example
   capabilities: [embedding]
+  source_url: https://huggingface.co/upstream/example-model
+  license: Apache-2.0
+
   runtimes:
   - name: coreml
+    devices: [all, cpu-and-neural-engine, cpu-and-gpu, cpu-only]
+    dtypes: [float16]
+    platforms: [darwin]
+    architectures: [arm64]
     required_modules: [coremltools, numpy]
+  default_runtime: coreml
   variants:
   - name: base
     display_name: Base
+    description: Base FP16 model.
+    metadata:
+      parameters_millions: 100
   default_variant: base
-  default_runtime: coreml
 
 artifacts:
 - artifact_id: coreml-fp16
+  convert: true
   variant: base
   runtime: coreml
   format: coreml
-  path: upstream/example-model/base/coreml/coreml-fp16
   kind: directory
+  path: upstream/example-model/base/coreml/coreml-fp16
   required_files: [Manifest.json, Data/model.mlmodel]
   required_shares: [tokenizer]
-  convert: true
   source:
     kind: huggingface
     repo_id: upstream/example-model-coreml
     allow_patterns:
     - example.mlpackage/**
     strip_prefix: example.mlpackage
-
 - artifact_id: tokenizer
-  format: tokenizer
-  path: upstream/example-model/_shared/tokenizer
-  kind: directory
   shared: true
+  format: tokenizer
+  kind: directory
+  path: upstream/example-model/_shared/tokenizer
   required_files: [tokenizer.json, tokenizer_config.json]
   source:
     kind: huggingface
@@ -174,6 +185,41 @@ artifacts:
     - tokenizer.json
     - tokenizer_config.json
 ```
+
+Field order and blank lines are part of the `model.yaml` review contract. Use this exact structure:
+
+1. The first visual section of `manifest` is model identity and presentation, in this order:
+   `schema_version`, `model_id`, `display_name`, `description`, `tags`, `family`, `capabilities`,
+   `source_url`, and `license`. `license` is the final field in this section, followed by one blank
+   line.
+2. Declare `runtimes`, then put `default_runtime` immediately after the runtime list. Declare
+   `variants` immediately after `default_runtime`, and put `default_variant` immediately after the
+   variant list. Do not insert blank lines between these four fields.
+3. Runtime fields use this order: `name`, `devices`, `dtypes`, optional `quantizations`, `platforms`,
+   `architectures`, and `required_modules`. Variant fields use this order: `name`, `display_name`,
+   optional `description`, and optional `metadata`.
+4. Separate the completed `manifest` mapping and the top-level `artifacts:` key with one blank
+   line.
+5. A scoped artifact uses this field order: `artifact_id`, optional `convert: true`, `variant`,
+   `runtime`, `format`, `kind`, `path`, optional `required_files`, optional `required_shares`,
+   optional `source`, and optional `metadata`.
+6. A shared artifact uses this field order: `artifact_id`, `shared: true`, `format`, `kind`, `path`,
+   `required_files`, optional `source`, and optional `metadata`. It never declares `variant`,
+   `runtime`, `convert`, or `required_shares`.
+7. `shared: true` and `convert: true` always appear directly after `artifact_id`. `kind` always
+   appears before `path`. When present, `required_shares` appears directly after `required_files`.
+8. A `source` mapping starts with `kind`, followed by its locator (`repo_id` or `url`), selection
+   (`filename` or `allow_patterns`), and any extraction options (`format`, `strip_prefix`, or
+   `strip_components`) used by that source type.
+9. `required_files`, `required_modules`, and `required_shares` use YAML flow-array syntax. A
+   source's `allow_patterns` uses a block list with one `- pattern` entry per line.
+10. Artifact mappings are consecutive entries in the `artifacts` list, without blank lines between
+   entries. Blank lines are reserved for separating the manifest identity section and the top-level
+   `manifest`/`artifacts` sections.
+
+Reordering must never change field values, artifact paths, required-file inventories, source
+selection, or runtime/variant ownership. Formatting-only cleanup must still pass package parsing and
+the model-package convention tests.
 
 Every directory artifact declares its complete `required_files` inventory as a YAML flow array,
 for example `required_files: [config.json, model.safetensors]`. Every runtime declares
