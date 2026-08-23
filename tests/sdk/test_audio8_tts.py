@@ -58,6 +58,7 @@ class FakeTtsEngine:
 
 def test_audio8_tts_artifact_declares_its_source() -> None:
     assert AUDIO8_TTS_MANIFEST.default_variant == "0.1b-preview"
+    assert Audio8TtsInstanceConfig().variant == "0.1b-preview"
     assert AUDIO8_TTS_MANIFEST.capabilities == {"speech-synthesis"}
     assert AUDIO8_TTS_MANIFEST.license == "Apache-2.0"
     runtime = AUDIO8_TTS_MANIFEST.runtimes[0]
@@ -137,8 +138,8 @@ async def test_audio8_tts_resource_status_exposes_both_runtimes(tmp_path: Path) 
     assert {item.runtime for item in status.runtimes} == {"pytorch", "mlx"}
 
 
-def test_synthesis_request_requires_complete_reference_pair() -> None:
-    with pytest.raises(ValueError, match="provided together"):
+def test_synthesis_request_rejects_reference_text_without_audio() -> None:
+    with pytest.raises(ValueError, match="requires reference_audio"):
         SpeechSynthesisRequest(text="hello", reference_text="reference")
 
 

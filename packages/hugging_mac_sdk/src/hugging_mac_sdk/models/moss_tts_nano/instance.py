@@ -1,4 +1,4 @@
-"""Runtime-independent Audio8-TTS speech synthesis instance."""
+"""Runtime-independent MOSS-TTS-Nano instance."""
 
 from __future__ import annotations
 
@@ -17,11 +17,11 @@ from hugging_mac_sdk.schemas.speech_synthesis import (
     SpeechSynthesisTimings,
 )
 
-from .config import Audio8TtsInstanceConfig, Audio8TtsMlxInstanceConfig
-from .utils.types import TtsEngineOutput
+from .config import MossTtsNanoInstanceConfig
+from .utils.types import MossTtsNanoEngineOutput
 
 
-class Audio8TtsEngine(Protocol):
+class MossTtsNanoEngine(Protocol):
     runtime_name: str
 
     @property
@@ -31,18 +31,16 @@ class Audio8TtsEngine(Protocol):
 
     async def load(self, artifact: Path) -> None: ...
 
-    async def infer(self, request: SpeechSynthesisRequest) -> TtsEngineOutput: ...
+    async def infer(self, request: SpeechSynthesisRequest) -> MossTtsNanoEngineOutput: ...
 
     async def close(self) -> None: ...
 
 
-class Audio8TtsInstance(BaseModelInstance):
-    """SpeechSynthesis capability composed with one runtime engine."""
-
+class MossTtsNanoInstance(BaseModelInstance):
     def __init__(
         self,
-        config: Audio8TtsInstanceConfig | Audio8TtsMlxInstanceConfig,
-        engine: Audio8TtsEngine,
+        config: MossTtsNanoInstanceConfig,
+        engine: MossTtsNanoEngine,
         manifest: ModelManifest,
     ) -> None:
         assert manifest.model_id is not None
@@ -63,9 +61,7 @@ class Audio8TtsInstance(BaseModelInstance):
 
     async def synthesize(self, request: SpeechSynthesisRequest) -> SpeechSynthesisResponse:
         if self.state is not ModelState.READY:
-            raise InferenceError("Audio8-TTS instance must be READY before synthesize")
-        if request.reference_audio is not None and request.reference_text is None:
-            raise InferenceError("Audio8-TTS reference audio requires a transcript")
+            raise InferenceError("MOSS-TTS-Nano instance must be READY before synthesize")
         preprocess_started = perf_counter()
         preprocess_ms = (perf_counter() - preprocess_started) * 1000
         async with self._inference_lock:
@@ -76,13 +72,13 @@ class Audio8TtsInstance(BaseModelInstance):
                 raise
             except Exception as error:
                 raise InferenceError(
-                    "Audio8-TTS synthesis failed",
+                    "MOSS-TTS-Nano synthesis failed",
                     details={"reason": str(error)},
                     cause=error,
                 ) from error
             inference_ms = (perf_counter() - inference_started) * 1000
         postprocess_started = perf_counter()
-        response = SpeechSynthesisResponse(
+        return SpeechSynthesisResponse(
             model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
@@ -97,7 +93,6 @@ class Audio8TtsInstance(BaseModelInstance):
                 postprocess_ms=(perf_counter() - postprocess_started) * 1000,
             ),
         )
-        return response
 
     async def _resolve(self) -> None:
         self._set_runtime_context(artifact_path=await self._engine.resolve())

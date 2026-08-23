@@ -1,0 +1,61 @@
+manifest:
+  schema_version: '1'
+  model_id: openmoss-team/moss-tts-nano-100m
+  display_name: MOSS-TTS-Nano
+  description: MOSS-TTS-Nano 100M 的 MLX 多语言语音生成与可选声音克隆实现。
+  tags: [audio, tts, voice-cloning, multilingual, moss-tts-nano, mlx]
+  family: moss-tts-nano
+  capabilities: [speech-synthesis]
+  source_url: https://huggingface.co/OpenMOSS-Team/MOSS-TTS-Nano-100M
+  license: Apache-2.0
+
+  runtimes:
+  - name: mlx
+    devices: [gpu]
+    dtypes: [float16]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [mlx, mlx_audio, numpy]
+  default_runtime: mlx
+  variants:
+  - name: nano-100m
+    display_name: MOSS-TTS-Nano 100M
+    description: 100M 级纯自回归多语言声音克隆模型。
+    metadata:
+      parameters_millions: 142
+      sample_rate: 48000
+      channels: 2
+      languages: 20
+      voice_cloning: true
+  default_variant: nano-100m
+
+artifacts:
+- artifact_id: mlx-fp16
+  variant: nano-100m
+  runtime: mlx
+  format: mlx
+  kind: directory
+  path: openmoss-team/moss-tts-nano-100m/nano-100m/mlx/mlx-fp16
+  required_files: [config.json, model.safetensors, special_tokens_map.json, tokenizer.model, tokenizer_config.json]
+  required_shares: [audio-tokenizer]
+  source:
+    kind: huggingface
+    repo_id: mlx-community/MOSS-TTS-Nano-100M
+    allow_patterns:
+    - config.json
+    - model.safetensors
+    - special_tokens_map.json
+    - tokenizer.model
+    - tokenizer_config.json
+- artifact_id: audio-tokenizer
+  shared: true
+  format: tokenizer
+  kind: directory
+  path: openmoss-team/moss-tts-nano-100m/_shared/audio-tokenizer
+  required_files: [config.json, model.safetensors]
+  source:
+    kind: huggingface
+    repo_id: mlx-community/MOSS-Audio-Tokenizer-Nano
+    allow_patterns:
+    - config.json
+    - model.safetensors

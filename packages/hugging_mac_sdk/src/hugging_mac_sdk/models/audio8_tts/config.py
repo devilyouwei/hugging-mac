@@ -17,7 +17,7 @@ class Audio8TtsInstanceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
 
     runtime: Literal["pytorch"] = "pytorch"
-    variant: str = "0.6b-preview"
+    variant: str = "0.1b-preview"
     model_home: Path = Field(default_factory=lambda: user_cache_path("hugging-mac") / "models")
     source_path: Path | None = None
     tokenizer_path: Path | None = None

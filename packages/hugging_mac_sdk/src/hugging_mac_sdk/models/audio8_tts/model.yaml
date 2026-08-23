@@ -6,7 +6,7 @@ manifest:
   tags: [audio, tts, voice-cloning, zero-shot, multilingual, arktts]
   family: audio8-tts
   capabilities: [speech-synthesis]
-  source_url: https://huggingface.co/Audio8/Audio8-TTS-Preview-0.6b
+  source_url: https://huggingface.co/Audio8/Audio8-TTS-Preview-0.1b
   license: Apache-2.0
 
   runtimes:

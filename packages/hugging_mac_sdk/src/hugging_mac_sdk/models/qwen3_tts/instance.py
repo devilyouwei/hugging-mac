@@ -59,6 +59,8 @@ class Qwen3TtsInstance(BaseModelInstance):
     async def synthesize(self, request: SpeechSynthesisRequest) -> SpeechSynthesisResponse:
         if self.state is not ModelState.READY:
             raise InferenceError("Qwen3-TTS instance must be READY before synthesize")
+        if request.reference_audio is not None and request.reference_text is None:
+            raise InferenceError("Qwen3-TTS reference audio requires a transcript")
         preprocess_started = perf_counter()
         preprocess_ms = (perf_counter() - preprocess_started) * 1000
         async with self._inference_lock:

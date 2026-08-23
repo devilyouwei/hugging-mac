@@ -11,6 +11,7 @@ files, load a handle, require a capability, and submit a typed request.
 | Audio8 TTS | Speech synthesis | [Audio8 TTS](audio8-tts.md) |
 | DeepFilterNet3 | Speech enhancement | [DeepFilterNet3](deepfilternet3.md) |
 | Kokoro | Speech synthesis | [Kokoro](kokoro.md) |
+| MOSS-TTS-Nano | Speech synthesis | [MOSS-TTS-Nano](moss-tts-nano.md) |
 | Nemotron 3.5 ASR | Streaming transcription | [Nemotron 3.5 ASR](nemotron-3.5-asr.md) |
 | Qwen3 ASR | Speech transcription | [Qwen3 ASR](qwen3-asr.md) |
 | Qwen3 TTS | Speech synthesis | [Qwen3 TTS](qwen3-tts.md) |

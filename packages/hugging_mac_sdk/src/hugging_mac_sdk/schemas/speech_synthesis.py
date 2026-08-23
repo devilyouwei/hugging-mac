@@ -26,8 +26,8 @@ class SpeechSynthesisRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_reference(self) -> SpeechSynthesisRequest:
-        if (self.reference_audio is None) != (self.reference_text is None):
-            raise ValueError("reference_audio and reference_text must be provided together")
+        if self.reference_text is not None and self.reference_audio is None:
+            raise ValueError("reference_text requires reference_audio")
         if self.reference_text is not None and not self.reference_text.strip():
             raise ValueError("reference_text must not be blank")
         return self

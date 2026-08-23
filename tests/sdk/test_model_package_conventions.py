@@ -20,6 +20,7 @@ ASR_MODEL_PACKAGES = ("audio8_asr", "sensevoice", "qwen3_asr", "nemotron_3_5_asr
 TTS_MODEL_PACKAGES = (
     "audio8_tts",
     "kokoro",
+    "moss_tts_nano",
     "qwen3_tts",
 )
 LLM_MODEL_PACKAGES = ("qwen3_5",)
@@ -393,6 +394,15 @@ def test_kokoro_follows_the_integration_layout() -> None:
         "coreml.py",
         "torch.py",
     }
+    assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
+    assert (package / "utils" / "__init__.py").is_file()
+
+
+def test_moss_tts_nano_follows_the_integration_layout() -> None:
+    package = MODEL_ROOT / "moss_tts_nano"
+    root_files = {path.name for path in package.iterdir() if path.is_file()}
+
+    assert root_files >= REQUIRED_INTEGRATION_FILES | {"resources.py", "mlx.py"}
     assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
     assert (package / "utils" / "__init__.py").is_file()
 

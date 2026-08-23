@@ -71,6 +71,7 @@ nav:
           - Audio8 TTS: sdk/models/audio8-tts.md
           - DeepFilterNet3: sdk/models/deepfilternet3.md
           - Kokoro: sdk/models/kokoro.md
+          - MOSS-TTS-Nano: sdk/models/moss-tts-nano.md
           - Nemotron 3.5 ASR: sdk/models/nemotron-3.5-asr.md
           - Qwen3 ASR: sdk/models/qwen3-asr.md
           - Qwen3 TTS: sdk/models/qwen3-tts.md

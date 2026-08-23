@@ -37,7 +37,8 @@ def _write_snapshot(path: Path) -> None:
 
 
 def test_manifest_contains_mlx_bf16_artifact_source() -> None:
-    assert AUDIO8_TTS_MANIFEST.default_variant == "0.6b-preview"
+    assert AUDIO8_TTS_MANIFEST.default_variant == "0.1b-preview"
+    assert Audio8TtsMlxInstanceConfig().variant == "0.6b-preview"
     assert "mlx" in {runtime.name for runtime in AUDIO8_TTS_MANIFEST.runtimes}
     assert AUDIO8_TTS_MANIFEST.capabilities == {"speech-synthesis"}
     source = _source()

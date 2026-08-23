@@ -26,6 +26,7 @@ MODEL_DOC_NAMES = {
     "gemma_4": "gemma-4.md",
     "kokoro": "kokoro.md",
     "mediapipe_hand_detection": "mediapipe-hand-detection.md",
+    "moss_tts_nano": "moss-tts-nano.md",
     "nemotron_3_5_asr": "nemotron-3.5-asr.md",
     "qwen3_5": "qwen3.5.md",
     "qwen3_asr": "qwen3-asr.md",
