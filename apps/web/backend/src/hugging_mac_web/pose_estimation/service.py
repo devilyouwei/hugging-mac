@@ -9,11 +9,6 @@ from contextlib import AsyncExitStack
 
 from hugging_mac_sdk import ReusePolicy
 from hugging_mac_sdk.capabilities import FaceDetection, HandDetection, PoseEstimation
-from hugging_mac_sdk.models.mediapipe_hand_detection.config import (
-    MEDIAPIPE_HAND_DETECTION_MODEL_ID,
-)
-from hugging_mac_sdk.models.retinaface.config import RETINAFACE_MODEL_ID
-from hugging_mac_sdk.models.yolov8_pose.config import YOLOV8_POSE_MODEL_ID
 from hugging_mac_sdk.schemas.detection import (
     DetectionRequest,
     FaceDetectionResponse,
@@ -23,6 +18,7 @@ from hugging_mac_sdk.schemas.hand import HandDetectionRequest, HandDetectionResp
 from hugging_mac_sdk.schemas.pose import PoseEstimationResponse
 
 from hugging_mac_web.context import PlatformContext
+from hugging_mac_web.pose_estimation.manifest import POSE_ESTIMATION_MANIFEST
 from hugging_mac_web.pose_estimation.schemas import (
     ParallelTimingsView,
     PoseCommand,
@@ -31,6 +27,10 @@ from hugging_mac_web.pose_estimation.schemas import (
     RuntimeChoice,
     VariantView,
 )
+
+YOLOV8_POSE_MODEL_ID = POSE_ESTIMATION_MANIFEST.required_models[0].model_id
+RETINAFACE_MODEL_ID = POSE_ESTIMATION_MANIFEST.required_models[1].model_id
+MEDIAPIPE_HAND_DETECTION_MODEL_ID = POSE_ESTIMATION_MANIFEST.required_models[2].model_id
 
 
 class PoseEstimationService:
@@ -145,9 +145,7 @@ class PoseEstimationService:
         # ``variant`` belongs to the pose model on this aggregate endpoint.  Hand-only
         # clients use the MediaPipe variant name (``float``), so do not validate it
         # against YOLO Pose when pose inference is disabled.
-        selected_variant = (
-            self._resolve_variant(command.variant) if command.pose_enabled else "n"
-        )
+        selected_variant = self._resolve_variant(command.variant) if command.pose_enabled else "n"
         pose_response = None
         face_response = None
         hand_response = None

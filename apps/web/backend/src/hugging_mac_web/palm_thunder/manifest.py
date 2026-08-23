@@ -1,4 +1,3 @@
-# ruff: noqa: RUF001
 """Static metadata for Palm Thunder."""
 
 from hugging_mac_web.app_registry import AppCategory, AppManifest, AppModelRequirement

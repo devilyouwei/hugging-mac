@@ -17,7 +17,6 @@ from hugging_mac_sdk import (
     ModelDefinition,
 )
 from hugging_mac_sdk.errors import InferenceError
-from hugging_mac_sdk.models.yolov8.config import YOLOV8_SHA256
 from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
 from hugging_mac_sdk.models.yolov8.instance import YoloV8Instance
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
@@ -66,8 +65,6 @@ from hugging_mac_web.text_to_speech.config import (
 )
 from hugging_mac_web.text_to_speech.manifest import TEXT_TO_SPEECH_MANIFEST
 from PIL import Image
-
-YOLOV8_N_SHA256 = YOLOV8_SHA256["n"]
 
 
 def test_live_transcription_stability_override_does_not_change_audio8(tmp_path: Path) -> None:
@@ -307,6 +304,8 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         "pytorch-mps",
     }
     assert silero["default_runtime"] == "coreml"
+    assert silero["license"] == "MIT"
+    assert silero["source_url"].startswith("https://")
     assert {runtime["name"] for runtime in silero["runtimes"]} == {"coreml", "onnx"}
     assert deepfilternet["default_runtime"] == "coreml"
     assert [variant["name"] for variant in deepfilternet["variants"]] == ["default"]
@@ -329,18 +328,18 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         "tokenizer",
     ]
     assert qwen3_asr_inventory.status_code == 200
-    assert [item["artifact_id"] for item in qwen3_asr_inventory.json()["data"]["resources"]] == [
+    inventory_artifacts = qwen3_asr_inventory.json()["data"]["artifacts"]
+    assert [item["artifact_id"] for item in inventory_artifacts] == [
         "coreml-int8",
         "tokenizer",
     ]
-    assert qwen3_asr_inventory.json()["data"]["resources"][0]["source"]["kind"] == ("huggingface")
-    assert not qwen3_asr_inventory.json()["data"]["resources"][0]["shared"]
-    assert qwen3_asr_inventory.json()["data"]["resources"][1]["shared"]
-    assert [item["artifact_id"] for item in qwen3_asr_inventory.json()["data"]["artifacts"]] == [
-        "coreml-int8",
-        "tokenizer",
-    ]
-    assert qwen3_asr_inventory.json()["data"]["artifacts"][1]["shared"]
+    assert inventory_artifacts[0]["source"]["kind"] == "huggingface"
+    assert not inventory_artifacts[0]["shared"]
+    assert inventory_artifacts[0]["required_shares"] == ["tokenizer"]
+    assert inventory_artifacts[1]["source"]["kind"] == "huggingface"
+    assert inventory_artifacts[1]["shared"]
+    assert inventory_artifacts[1]["variant"] is None
+    assert inventory_artifacts[1]["runtime"] is None
     assert preflight.status_code == 200
     assert preflight.headers["access-control-allow-origin"] == "http://localhost:5173"
 
@@ -538,14 +537,15 @@ def test_models_catalog_exposes_all_nemotron_download_variants(tmp_path: Path) -
         )
 
     assert inventory.status_code == 200
-    resources = inventory.json()["data"]["resources"]
-    assert len(resources) == 8
-    assert {item["variant"] for item in resources} == {
+    artifacts = inventory.json()["data"]["artifacts"]
+    assert len(artifacts) == 8
+    assert {item["variant"] for item in artifacts} == {
         f"{script}-{chunk_ms}ms"
         for script in ("latin", "multilingual")
         for chunk_ms in (560, 1120, 2240, 4480)
     }
-    assert all(item["runtime"] == "coreml" for item in resources)
+    assert all(item["runtime"] == "coreml" for item in artifacts)
+    assert all(item["source"]["kind"] == "huggingface" for item in artifacts)
 
 
 def test_models_catalog_downloads_one_shared_artifact_independently(
@@ -582,9 +582,9 @@ def test_models_catalog_downloads_one_shared_artifact_independently(
         )
 
     assert response.status_code == 200
-    resources = {item["artifact_id"]: item for item in response.json()["data"]["resources"]}
-    assert resources["tokenizer"]["available"]
-    assert not resources["coreml-int8"]["available"]
+    artifacts = {item["artifact_id"]: item for item in response.json()["data"]["artifacts"]}
+    assert artifacts["tokenizer"]["available"]
+    assert not artifacts["coreml-int8"]["available"]
 
 
 def test_chat_streams_nemotron_over_websocket(
@@ -971,7 +971,12 @@ def test_platform_loads_and_unloads_model_instances_with_metrics(tmp_path: Path)
         )
         blocked_convert = client.post(
             "/api/v1/catalog/models/ultralytics/yolov8/resources/convert",
-            json={"target_format": "coreml", "variant": "s"},
+            json={
+                "variant": "s",
+                "runtime": "coreml",
+                "artifact_id": "coreml",
+                "overwrite": True,
+            },
         )
         unloaded = client.delete(f"/api/v1/catalog/instances/{instance_id}")
 
@@ -1032,18 +1037,21 @@ def test_platform_downloads_overwrites_and_deletes_model_resources(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
+    download_overwrite_values: list[bool] = []
+
     async def fake_download(
         _: ResourceDownloader,
         source: Any,
         destination: Path,
-        **__: object,
+        **kwargs: object,
     ) -> ResolvedResource:
+        download_overwrite_values.append(bool(kwargs.get("overwrite")))
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(b"replacement weights")
         return ResolvedResource(
             path=destination,
             source=source,
-            digest=YOLOV8_N_SHA256,
+            digest="downloaded",
             size_bytes=destination.stat().st_size,
         )
 
@@ -1067,36 +1075,59 @@ def test_platform_downloads_overwrites_and_deletes_model_resources(
 
     monkeypatch.setattr(ResourceDownloader, "download", fake_download)
     monkeypatch.setattr(YoloV8Converter, "convert", fake_convert)
-    monkeypatch.setattr(
-        "hugging_mac_sdk.models.yolov8.resources.file_sha256",
-        lambda _: YOLOV8_N_SHA256,
-    )
     app = create_app(_settings(tmp_path))
+    source_command = {
+        "variant": "n",
+        "runtime": "pytorch-mps",
+        "artifact_id": "source",
+    }
+    coreml_command = {
+        "variant": "n",
+        "runtime": "coreml",
+        "artifact_id": "coreml",
+        "overwrite": True,
+    }
+    onnx_command = {
+        "variant": "n",
+        "runtime": "onnx",
+        "artifact_id": "onnx",
+        "overwrite": True,
+    }
 
     with TestClient(app) as client:
         initial = client.get("/api/v1/catalog/models/ultralytics/yolov8/resources")
-        downloaded = client.post("/api/v1/catalog/models/ultralytics/yolov8/resources/download")
-        redownloaded = client.post("/api/v1/catalog/models/ultralytics/yolov8/resources/download")
+        downloaded = client.post(
+            "/api/v1/catalog/models/ultralytics/yolov8/resources/download-one?overwrite=true",
+            json=source_command,
+        )
+        redownloaded = client.post(
+            "/api/v1/catalog/models/ultralytics/yolov8/resources/download-one?overwrite=true",
+            json=source_command,
+        )
         converted = client.post(
             "/api/v1/catalog/models/ultralytics/yolov8/resources/convert",
-            json={"target_format": "coreml"},
+            json=coreml_command,
         )
         reconverted = client.post(
             "/api/v1/catalog/models/ultralytics/yolov8/resources/convert",
-            json={"target_format": "coreml"},
+            json=coreml_command,
         )
         onnx_conversion = client.post(
             "/api/v1/catalog/models/ultralytics/yolov8/resources/convert",
-            json={"target_format": "onnx"},
+            json=onnx_command,
         )
         deleted = client.delete("/api/v1/catalog/models/ultralytics/yolov8/resources")
 
     assert initial.status_code == 200
     assert initial.json()["data"]["total_size_bytes"] == 0
     assert downloaded.status_code == 200
-    assert downloaded.json()["data"]["total_size_bytes"] == len(b"replacement weights")
+    assert next(
+        item
+        for item in downloaded.json()["data"]["artifacts"]
+        if item["artifact_id"] == "source" and item["variant"] == "n"
+    )["available"]
     assert redownloaded.status_code == 200
-    assert redownloaded.json()["data"]["artifacts"][0]["available"]
+    assert download_overwrite_values == [True, True]
     assert converted.status_code == 200
     conversion_target = converted.json()["data"]["conversion_targets"][0]
     assert conversion_target["target_format"] == "coreml"

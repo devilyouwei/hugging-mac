@@ -42,8 +42,8 @@ def _add_millisecond_timestamp(
 ) -> EventDict:
     """Use local wall time with timezone and stable millisecond precision."""
 
-    event_dict["timestamp"] = datetime.now().astimezone().isoformat(
-        sep=" ", timespec="milliseconds"
+    event_dict["timestamp"] = (
+        datetime.now().astimezone().isoformat(sep=" ", timespec="milliseconds")
     )
     return event_dict
 

@@ -372,6 +372,7 @@ onMounted(refreshResources)
             <option value="auto">Auto · Core ML first</option>
             <option value="coreml">Core ML</option>
             <option value="pytorch-mps">PyTorch MPS</option>
+            <option value="onnx">ONNX</option>
           </select>
         </label>
 

@@ -5,6 +5,7 @@ import { useRouter } from "vue-router"
 import { ApiError } from "@/api/client"
 import { captureVideoFrame, waitForNextVideoFrame } from "@/object_detection/frame"
 import { estimatePoses, fetchResourceStatus } from "@/pose_estimation/api"
+import { availableGameRuntimes, firstAvailableModel, type GameRuntime } from "@/pose_estimation/gameModelOptions"
 import PoseSkeletonLayer from "@/pose_estimation/components/PoseSkeletonLayer.vue"
 import type { PoseResult } from "@/pose_estimation/types"
 import type { ResourceStatus } from "@/vision/types"
@@ -41,6 +42,9 @@ const stream = ref<MediaStream | null>(null)
 const cameraReady = ref(false)
 const templates = ref<PoseTemplate[]>([])
 const resource = ref<ResourceStatus | null>(null)
+const resources = ref<ResourceStatus[]>([])
+const selectedVariant = ref("")
+const selectedRuntime = ref<GameRuntime | "">("")
 const phase = ref<GamePhase>("lobby")
 const difficulty = ref<Difficulty>("normal")
 const prepCount = ref(3)
@@ -72,9 +76,14 @@ let audioContext: AudioContext | null = null
 let previousTemplateId = ""
 
 const selectedLevel = computed(() => LEVELS[difficulty.value])
-const sourceReady = computed(() =>
-  resource.value?.artifacts.some((artifact) => artifact.artifact_id === "source" && artifact.available),
-)
+const variantOptions = computed(() => resources.value.map((item) => ({
+  ...item.variants.find((variant) => variant.name === item.variant),
+  name: item.variant,
+  available: availableGameRuntimes(item).length > 0,
+})))
+const runtimeOptions = computed(() => availableGameRuntimes(resource.value))
+const modelAvailable = computed(() => firstAvailableModel(resources.value) !== null)
+const selectionAvailable = computed(() => Boolean(selectedRuntime.value && runtimeOptions.value.includes(selectedRuntime.value)))
 const progress = computed(() => roundIndex.value / selectedLevel.value.rounds)
 const timerProgress = computed(() => {
   const duration = currentRoundDuration()
@@ -111,12 +120,25 @@ function playTone(kind: "tick" | "go" | "success" | "fail") {
 
 async function loadGame() {
   try {
-    const [nextTemplates, nextResource] = await Promise.all([
+    const [nextTemplates, initial] = await Promise.all([
       fetchPoseTemplates(),
-      fetchResourceStatus("m"),
+      fetchResourceStatus(),
     ])
     templates.value = nextTemplates
-    resource.value = nextResource
+    const variants = initial.variants.length ? initial.variants : [{ name: initial.variant }]
+    resources.value = await Promise.all(variants.map((variant) =>
+      variant.name === initial.variant ? Promise.resolve(initial) : fetchResourceStatus(variant.name),
+    ))
+    const selection = firstAvailableModel(resources.value)
+    if (selection) {
+      selectedVariant.value = selection.variant
+      selectedRuntime.value = selection.runtime
+      resource.value = resources.value.find((item) => item.variant === selection.variant) ?? null
+    } else {
+      selectedVariant.value = initial.variants[0]?.name ?? initial.variant
+      resource.value = resources.value.find((item) => item.variant === selectedVariant.value) ?? initial
+      selectedRuntime.value = ""
+    }
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "游戏资源加载失败"
   }
@@ -150,16 +172,46 @@ async function openCamera(): Promise<boolean> {
 
 async function ensureModelLoaded(): Promise<boolean> {
   if (modelInstanceId.value) return true
-  if (!resource.value || !sourceReady.value) return false
+  if (!resource.value || !selectionAvailable.value) return false
   modelBusy.value = true
   lifecycleMessage.value = null
   try {
-    const loadedModel = await loadSharedModel(resource.value.model_id, "m", "auto")
+    const loadedModel = await loadSharedModel(resource.value.model_id, selectedVariant.value, selectedRuntime.value)
     modelInstanceId.value = loadedModel.instance_id
     return true
   } catch (caught) {
     lifecycleMessage.value = { type: "error", text: errorMessage(caught, "模型加载失败") }
     return false
+  } finally {
+    modelBusy.value = false
+  }
+}
+
+async function selectModelVariant() {
+  if (modelBusy.value) return
+  modelBusy.value = true
+  error.value = ""
+  try {
+    if (modelInstanceId.value) await unloadModel(modelInstanceId.value)
+    modelInstanceId.value = null
+    resource.value = resources.value.find((item) => item.variant === selectedVariant.value) ?? null
+    selectedRuntime.value = availableGameRuntimes(resource.value)[0] ?? ""
+  } catch (caught) {
+    lifecycleMessage.value = { type: "error", text: errorMessage(caught, "模型配置切换失败") }
+  } finally {
+    modelBusy.value = false
+  }
+}
+
+async function selectModelRuntime() {
+  if (modelBusy.value || !modelInstanceId.value) return
+  modelBusy.value = true
+  error.value = ""
+  try {
+    await unloadModel(modelInstanceId.value)
+    modelInstanceId.value = null
+  } catch (caught) {
+    lifecycleMessage.value = { type: "error", text: errorMessage(caught, "模型配置切换失败") }
   } finally {
     modelBusy.value = false
   }
@@ -202,8 +254,8 @@ function stopActiveWork() {
 }
 
 async function startGame() {
-  if (!sourceReady.value) {
-    error.value = "模型不可用，请前往 Models 页面下载、转换并加载 YOLOv8 Pose M"
+  if (!selectionAvailable.value) {
+    error.value = "没有可加载的 YOLOv8 Pose 模型，请前往 Models 页面下载任一 variant 和 runtime"
     return
   }
   if (!await ensureModelLoaded()) return
@@ -319,8 +371,8 @@ async function inferenceLoop(generation: number) {
       const currentGestureTarget = gestureTarget.value
       inferenceRequest = new AbortController()
       const nextResult = await estimatePoses(frame, {
-        runtime: "auto",
-        variant: "m",
+        runtime: selectedRuntime.value as GameRuntime,
+        variant: selectedVariant.value,
         confidence: 0.28,
         iouThreshold: 0.7,
         maxDetections: currentGestureTarget ? 2 : 1,
@@ -415,7 +467,7 @@ onBeforeUnmount(() => {
 
     <main v-if="phase === 'lobby'" class="game-lobby">
       <section class="game-lobby__intro">
-        <p class="kicker">NEURAL CAMERA GAME · YOLOV8 POSE M</p>
+        <p class="kicker">NEURAL CAMERA GAME · YOLOV8 POSE</p>
         <h1>Follow the pose. <em>Beat the clock.</em></h1>
         <p>镜头中的你就是控制器。每轮会随机出现身体姿态或左右手手势挑战，一次专注完成一个目标。</p>
         <div class="difficulty-picker" aria-label="选择难度">
@@ -430,18 +482,36 @@ onBeforeUnmount(() => {
             <span>{{ level.rounds }} poses · {{ Math.round(level.gestureChance * 100) }}% gestures</span>
           </button>
         </div>
-        <div v-if="!sourceReady" class="game-model-setup">
-          <div><span></span><strong>YOLOv8 Pose M weights required</strong></div>
-          <p class="game-error">模型不可用，请前往 Models 页面管理 YOLOv8 Pose M。</p>
+        <div class="game-model-picker" aria-label="选择 YOLO Pose 模型">
+          <label>
+            <span>VARIANT</span>
+            <select v-model="selectedVariant" :disabled="modelBusy || !modelAvailable" @change="selectModelVariant">
+              <option v-for="variant in variantOptions" :key="variant.name" :value="variant.name" :disabled="!variant.available">
+                {{ variant.display_name ?? `YOLOv8 Pose ${variant.name.toUpperCase()}` }}{{ variant.available ? "" : " · 未下载" }}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>RUNTIME</span>
+            <select v-model="selectedRuntime" :disabled="modelBusy || !runtimeOptions.length" @change="selectModelRuntime">
+              <option v-for="runtime in runtimeOptions" :key="runtime" :value="runtime">
+                {{ runtime === "coreml" ? "Core ML" : runtime === "onnx" ? "ONNX" : "PyTorch MPS" }}
+              </option>
+            </select>
+          </label>
+        </div>
+        <div v-if="!modelAvailable" class="game-model-setup">
+          <div><span></span><strong>YOLOv8 Pose model required</strong></div>
+          <p class="game-error">没有可加载的模型，请前往 Models 页面下载任一 variant 和 runtime。</p>
         </div>
         <div class="game-model-action">
-          <span>YOLOv8 Pose M · AUTO</span>
-          <button type="button" :disabled="modelBusy || (!modelInstanceId && !sourceReady)" @click="toggleModel">
+          <span>YOLOv8 Pose {{ selectedVariant.toUpperCase() }} · {{ selectedRuntime ? selectedRuntime.toUpperCase() : "UNAVAILABLE" }}</span>
+          <button type="button" :disabled="modelBusy || (!modelInstanceId && !selectionAvailable)" @click="toggleModel">
             {{ modelBusy ? "WAIT…" : modelInstanceId ? "UNLOAD" : "LOAD" }}
           </button>
         </div>
         <small v-if="lifecycleMessage" :class="`lifecycle-${lifecycleMessage.type}`">{{ lifecycleMessage.text }}</small>
-        <button class="game-start" type="button" :disabled="modelBusy || !sourceReady || !templates.length" @click="startGame">
+        <button class="game-start" type="button" :disabled="modelBusy || !selectionAvailable || !templates.length" @click="startGame">
           <span>START {{ selectedLevel.label.toUpperCase() }}</span><b>→</b>
         </button>
         <p v-if="error" class="game-error" role="alert">{{ error }}</p>
@@ -532,6 +602,11 @@ onBeforeUnmount(() => {
 .difficulty-picker strong,.difficulty-picker span { display:block; }
 .difficulty-picker strong { font-size:.78rem; text-transform:uppercase; }
 .difficulty-picker span { font: .52rem/1.4 var(--font-mono); margin-top:.3rem; }
+.game-model-picker { display:grid; gap:.5rem; grid-template-columns:1fr 1fr; margin:.8rem 0; }
+.game-model-picker label { background:#171917; border:1px solid #ffffff22; display:flex; flex-direction:column; gap:.35rem; padding:.6rem .75rem; }
+.game-model-picker label > span { color:#888; font:.5rem var(--font-mono); }
+.game-model-picker select { background:#101210; border:1px solid #ffffff20; color:#fff; font:.58rem var(--font-mono); padding:.45rem; }
+.game-model-picker select:disabled { cursor:not-allowed; opacity:.45; }
 .game-model-setup { align-items:center; background:#211d13; border:1px solid #f6bf4f55; display:flex; justify-content:space-between; margin:1rem 0; padding:.8rem; }
 .game-model-setup div { align-items:center; display:flex; font-size:.72rem; gap:.55rem; }
 .game-model-setup div span { background:#f6bf4f; border-radius:50%; height:.5rem; width:.5rem; }
@@ -635,6 +710,7 @@ onBeforeUnmount(() => {
 .difficulty-picker button:hover,.difficulty-picker button.active{border-color:rgb(41 151 255 / 42%);}
 .difficulty-picker button.active{background:rgb(10 132 255 / 11%);box-shadow:inset 0 -2px #2997ff,0 9px 24px rgb(0 0 0 / 14%);}
 .game-model-setup,.game-model-action{background:rgb(255 255 255 / 5%);border:1px solid rgb(255 255 255 / 9%);border-radius:12px;padding:.75rem;}
+.game-model-picker label{background:rgb(255 255 255 / 5%);border-color:rgb(255 255 255 / 9%);border-radius:12px;}
 .game-model-action button{background:rgb(255 255 255 / 9%);border-radius:9px;}
 .game-start{background:linear-gradient(180deg,#2997ff,#0878e8);border-radius:14px;box-shadow:0 14px 36px rgb(0 105 220 / 28%);color:white;font-family:var(--font-display);transition:transform .18s var(--ease-spring),box-shadow .18s ease;}
 .game-start:hover:not(:disabled){box-shadow:0 18px 45px rgb(0 126 255 / 38%);transform:translateY(-2px);}

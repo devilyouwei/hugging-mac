@@ -30,10 +30,17 @@ export interface TtsModel {
   requires_reference_voice: boolean
   requires_reference_audio: boolean
   max_new_tokens: number
+  variants: Array<{
+    name: string
+    display_name: string
+    available: boolean
+    available_runtimes: string[]
+  }>
   resource: TtsResource
   ready_instance_id: string | null
   ready_instances?: Array<{
     instance_id: string
+    variant: string
     runtime: string
   }>
 }

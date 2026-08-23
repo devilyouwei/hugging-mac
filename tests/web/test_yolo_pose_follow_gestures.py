@@ -20,9 +20,7 @@ def _hand(
         points[mcp] = GestureLandmark(x=x, y=1)
         points[pip] = GestureLandmark(x=x, y=2)
         points[tip] = (
-            GestureLandmark(x=x, y=4)
-            if extended[finger]
-            else GestureLandmark(x=x + 0.5, y=1.5)
+            GestureLandmark(x=x, y=4) if extended[finger] else GestureLandmark(x=x + 0.5, y=1.5)
         )
     return GestureHand(
         handedness=side,  # type: ignore[arg-type]

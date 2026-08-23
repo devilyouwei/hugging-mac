@@ -15,12 +15,13 @@ export async function fetchTtsModels(): Promise<TtsModel[]> {
 
 export async function loadTtsModel(
   modelId: string,
+  variant: string,
   runtime: string,
 ): Promise<LoadedTtsModel> {
   return (await request<LoadedTtsModel>(`${PREFIX}/models/load`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model_id: modelId, runtime }),
+    body: JSON.stringify({ model_id: modelId, variant, runtime }),
   })).data
 }
 

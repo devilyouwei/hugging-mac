@@ -12,8 +12,8 @@ from hugging_mac_web.yolo_pose_follow.schemas import (
 )
 
 FINGER_JOINTS = (
-    (5, 6, 8),   # index: MCP, PIP, tip
-    (9, 10, 12), # middle
+    (5, 6, 8),  # index: MCP, PIP, tip
+    (9, 10, 12),  # middle
     (13, 14, 16),
     (17, 18, 20),
 )
@@ -44,9 +44,7 @@ def match_gesture(request: GestureMatchRequest) -> GestureMatchResult:
         detected_gesture=detected,
         hand_found=True,
         feedback=(
-            "手势匹配成功"
-            if matched
-            else f"请用{_side_name(request.target_hand)}手做出目标手势"
+            "手势匹配成功" if matched else f"请用{_side_name(request.target_hand)}手做出目标手势"
         ),
     )
 
@@ -92,9 +90,7 @@ def _finger_extended(hand: GestureHand, mcp: int, pip: int, tip: int) -> bool:
     second_length = hypot(*second)
     if first_length < 1e-6 or second_length < 1e-6:
         return False
-    cosine = (first[0] * second[0] + first[1] * second[1]) / (
-        first_length * second_length
-    )
+    cosine = (first[0] * second[0] + first[1] * second[1]) / (first_length * second_length)
     tip_distance = hypot(c.x - wrist.x, c.y - wrist.y)
     pip_distance = hypot(b.x - wrist.x, b.y - wrist.y)
     return cosine <= -0.72 and tip_distance >= pip_distance * 1.04

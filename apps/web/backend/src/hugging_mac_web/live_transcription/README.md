@@ -1,62 +1,75 @@
-# Live Transcription 技术设计
+# Live Transcription Technical Design
 
-## 摘要
+## Summary
 
-`live_transcription` 提供可复用的本地实时语音流水线，同时服务 Live Transcription 和 Chat。页面在录音前通过 HTTP 查询、加载模型；录音开始后只使用一条 WebSocket，前端持续发送 PCM16 音频，后端统一负责重采样、VAD、切句、可选降噪和 ASR。Live Transcription 还会回传实际模型输入音频，Chat 只消费文本事件。
+`live_transcription` implements one reusable local realtime speech pipeline for
+the Live Transcription App and Chat voice input. Before recording, HTTP endpoints
+inspect resources and load explicit model instances. During recording, one
+WebSocket carries PCM16 chunks and ordered results. The backend owns resampling,
+endpoint detection, utterance segmentation, optional enhancement, and ASR.
 
-核心设计模式：
+Core patterns:
 
-- **Producer–Consumer**：有界 `asyncio.Queue` 连接音频接收、降噪、ASR 和结果发送阶段。
-- **Pipeline**：音频按固定顺序经过重采样、切句、降噪和识别。
-- **State Machine**：VAD 驱动 `IDLE → SPEAKING → IDLE` 的 utterance 生命周期。
-- **Strategy**：Silero VAD 与后端 Energy Detector 实现相同的检测接口。
-- **Immutable Work Item**：切句后使用不可变 `AudioFrame`、`UtteranceWorkItem` 和 `AsrWorkItem` 在 worker 间传递。
-- **Service/Façade**：`LiveTranscriptionService` 统一封装模型发现、加载和能力调用。
+- **Producer–Consumer**: bounded `asyncio.Queue` instances connect audio,
+  enhancement, ASR, streaming, and result workers.
+- **Pipeline**: audio is resampled and segmented before optional enhancement and
+  transcription.
+- **State Machine**: VAD drives the `IDLE → SPEAKING → IDLE` utterance lifecycle.
+- **Strategy**: Silero VAD and the local energy detector implement one detector
+  protocol.
+- **Immutable Work Items**: `AudioFrame`, `UtteranceWorkItem`, and `AsrWorkItem`
+  move between workers without mutable shared audio buffers.
+- **Service/Façade**: `LiveTranscriptionService` owns model discovery, loading,
+  capability validation, and result mapping.
 
 ```mermaid
 flowchart LR
     LT[Live Transcription] -->|WebSocket PCM16| RQ[raw queue]
-    CH[Chat Voice Input] -->|WebSocket PCM16| RQ
-    RQ --> RS[流式重采样<br/>16 kHz mono]
+    CH[Chat voice input] -->|WebSocket PCM16| RQ
+    RQ --> RS[streaming resampler<br/>16 kHz mono]
     RS --> AF[512-sample AudioFrame]
-    AF --> VD[VAD / Energy Detector]
-    VD --> SG[Utterance Segmenter]
-    SG -->|普通 ASR| EQ[Enhancement Queue]
-    EQ --> DF[DeepFilterNet3 可选]
-    DF --> AQ[ASR Queue]
-    AQ --> ASR[Batch ASR]
-    SG -->|Nemotron| NS[Streaming ASR Worker]
-    ASR --> OQ[Result Queue]
+    AF --> VD[VAD or EnergyDetector]
+    VD --> SG[utterance segmenter]
+    SG -->|regular ASR| EQ[enhancement queue]
+    EQ --> DF[optional DeepFilterNet3]
+    DF --> AQ[ASR queue]
+    AQ --> ASR[utterance ASR]
+    SG -->|streaming profile| NS[streaming ASR worker]
+    ASR --> OQ[result queue]
     NS --> OQ
-    OQ -->|JSON + Binary WAV| LT
-    OQ -->|JSON| CH
+    OQ -->|JSON and binary WAV| LT
+    OQ -->|JSON only| CH
 ```
 
-## 功能与模型
+## Models and capabilities
 
-| 模型 | 用途 | 当前实时路径 |
+The App manifest declares the model dependencies; `config.py` supplies App-level
+profiles for the supported inference paths.
+
+| Model ID | Manifest capabilities | Session path |
 |---|---|---|
-| Audio8-ASR 0.1B | 中英双语转写 | 完整 utterance 推理 |
-| SenseVoiceSmall | 多语言、情绪和声音事件理解 | 完整 utterance 推理 |
-| Qwen3-ASR 0.6B | 多语言转写 | 完整 utterance 推理 |
-| Nemotron 3.5 ASR 0.6B | 有状态 RNN-T 流式转写 | VAD 切句内分块推理 |
-| Silero VAD | 神经语音活动检测 | 可选；启用时负责开始和结束判定 |
-| DeepFilterNet3 | 语音降噪 | 可选；仅用于非流式 ASR |
+| `audio8/audio8-asr` | `speech-transcription` | Completed utterance |
+| `funaudiollm/sensevoice` | `speech-transcription`, `speech-understanding` | Completed utterance with understanding fields |
+| `qwen/qwen3-asr` | `speech-transcription` | Completed utterance |
+| `nvidia/nemotron-3.5-asr-streaming-0.6b` | `speech-transcription`, `streaming-speech-transcription` | Stateful chunks inside one VAD utterance |
+| `snakers4/silero-vad` | `voice-activity-detection` | Optional speech start/end detector |
+| `deepfilternet/deepfilternet3` | `speech-enhancement` | Optional, regular ASR only |
 
-Silero 未启用时仍需要切句，后端会改用 RMS Energy Detector。也就是说，神经 VAD 可选，但实时流水线始终存在一种 endpoint detector。
+When Silero is disabled, `EnergyDetector` still segments speech. Neural VAD is
+optional; endpoint detection is not.
 
-## 模块结构
+## Module structure
 
 ```mermaid
 flowchart TB
-    ROUTES[routes.py<br/>HTTP 管理接口与 /live/ws]
+    ROUTES[routes.py<br/>management HTTP and /live/ws]
     CHAT[chat/routes.py<br/>/chat/asr/ws consumer]
-    SESSION[session.py<br/>连接级队列、状态机与 workers]
-    SERVICE[service.py<br/>模型发现、加载与推理 façade]
-    CONFIG[config.py<br/>ASR profiles 与运行配置]
-    SCHEMAS[schemas.py<br/>HTTP/API views]
-    MANIFEST[manifest.py<br/>App 与模型依赖声明]
-    SDK[Hugging Mac SDK<br/>模型实例与 capabilities]
+    SESSION[session.py<br/>connection queues, state, workers]
+    SERVICE[service.py<br/>model/capability façade]
+    CONFIG[config.py<br/>ASR profiles and App settings]
+    SCHEMAS[schemas.py<br/>App API views]
+    MANIFEST[manifest.py<br/>App dependency declaration]
+    SDK[Hugging Mac SDK]
 
     ROUTES --> SESSION
     CHAT --> SESSION
@@ -69,49 +82,55 @@ flowchart TB
     MANIFEST --> SDK
 ```
 
-主要职责：
+| File | Responsibility |
+|---|---|
+| `routes.py` | HTTP management, WebSocket framing, connection lifetime, ordered sends |
+| `session.py` | Resampling, VAD state, queues, worker orchestration, binary audio framing |
+| `service.py` | Resource/runtime selection, shared model loads, ASR capability calls |
+| `config.py` | Supported App profiles and inference settings |
+| `schemas.py` | Stable HTTP and result views, separate from SDK schemas |
+| `manifest.py` | Required and optional model capabilities |
+| `blueprint.py` | Side-effect-free App registration |
 
-- `routes.py`：提供录音前的模型管理 HTTP 接口，并管理 `/api/v1/apps/live-transcription/live/ws` 生命周期。
-- `session.py`：实时链路的核心实现，每条 WebSocket 创建一个独立 `LiveTranscriptionSession`。
-- `service.py`：查询 variant/runtime、加载模型、校验实例并调用 ASR capability。
-- `config.py`：声明受支持的 ASR 模型及默认 runtime、variant、chunk 时长。
-- `manifest.py`：声明 App 依赖的必选 ASR 和可选 VAD/降噪模型。
+Chat does not maintain a second segmentation implementation. It creates the same
+`LiveTranscriptionSession`, disables returned model-input audio and enhancement,
+and uses the energy detector with a streaming ASR profile.
 
-Chat 不再维护独立的逐句流式 ASR 实现。它使用同一个 `LiveTranscriptionSession`，关闭模型输入音频回传，并采用后端 Energy Detector 切句。
+## Interface boundary
 
-## 接口边界
+### Management HTTP
 
-### 录音前 HTTP
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/apps/live-transcription/models` | Supported profiles, resources, and ready instances |
+| GET | `/api/v1/apps/live-transcription/resources` | Resource view for one model/variant |
+| GET | `/api/v1/apps/live-transcription/pipeline/components` | Optional VAD/enhancement readiness |
+| POST | `/api/v1/apps/live-transcription/models/load` | Load one selected ASR profile |
+| POST | `/api/v1/apps/live-transcription/vad/model/load` | Load the configured Silero instance |
+| POST | `/api/v1/apps/live-transcription/enhancement/model/load` | Load DeepFilterNet3 |
+| WS | `/api/v1/apps/live-transcription/live/ws` | Realtime recording protocol |
 
-HTTP 只负责模型管理：
+HTTP manages models only. Recording-time VAD, enhancement, and transcription are
+scheduled exclusively by the WebSocket session pipeline.
 
-- `GET /models`
-- `GET /resources`
-- `GET /pipeline/components`
-- `POST /models/load`
-- `POST /vad/model/load`
-- `POST /enhancement/model/load`
-
-录音期不提供 HTTP 音频处理接口；VAD、降噪和转写只由 WebSocket session pipeline 调度。
-
-### 录音期 WebSocket
+### Recording WebSocket
 
 ```mermaid
 sequenceDiagram
     participant F as Frontend
     participant W as /live/ws
     participant S as LiveTranscriptionSession
-    participant M as Model Workers
+    participant M as Model workers
 
     F->>W: start JSON
-    W->>S: create(start config)
+    W->>S: create(validated start config)
     W-->>F: ready JSON
     loop recording
-        F->>W: binary PCM16 chunk
+        F->>W: binary little-endian PCM16
         W->>S: enqueue(bytes reference)
         S-->>F: speech_start / partial / speech_end
     end
-    S->>M: enhancement / ASR work items
+    S->>M: enhancement / ASR work
     M-->>F: transcript JSON
     M-->>F: binary utterance_id + WAV
     F->>W: stop JSON
@@ -119,82 +138,90 @@ sequenceDiagram
     W-->>F: stopped JSON
 ```
 
-`start` 包含模型实例、输入采样率、VAD/降噪开关、阈值和 Nemotron chunk 时长。之后前端只发送小端单声道 PCM16；不发送逐块 ACK，也不在前端维护 utterance buffer。
+The `start` message includes the selected model/instance, microphone sample rate,
+VAD and enhancement instance choices, thresholds, and streaming chunk duration.
+The accepted input range is 8–192 kHz. After `ready`, the client sends non-empty
+little-endian mono PCM16 messages of at most 64 KiB. There is no per-chunk ACK and
+the client does not own the utterance buffer.
 
-Chat 的 `/api/v1/apps/chat/asr/ws` 使用同一协议边界，但模型固定为 Nemotron，后端固定关闭 DeepFilterNet3，并使用 Energy Detector。Chat 前端同样只持续发送 PCM16，单句生命周期完全由后端管理。
+## Audio data structures and memory
 
-## 音频数据结构与内存
+### Bounded queues
 
-### 队列
-
-| 队列 | 容量 | 内容 | 作用 |
+| Queue | Capacity | Item | Purpose |
 |---|---:|---|---|
-| `raw` | 32 | `bytes` PCM chunk | WebSocket 接收与音频 worker 之间的背压 |
-| `utterances` | 8 | `UtteranceWorkItem` | 已封口语句进入可选降噪 |
-| `asr` | 8 | `AsrWorkItem` | 实际模型输入进入普通 ASR |
-| `results` | 64 | JSON 或 binary | 所有 worker 统一向 WebSocket sender 输出 |
-| `stream_queue` | 128 | `AudioFrame` / `StreamEnd` | 单个 Nemotron utterance 的实时输入 |
+| `raw` | 32 | PCM `bytes` or sentinel | WebSocket receiver to audio worker |
+| `utterances` | 8 | `UtteranceWorkItem` or sentinel | Sealed speech to enhancement |
+| `asr` | 8 | `AsrWorkItem` or sentinel | Actual model input to regular ASR |
+| `results` | 64 | JSON/binary result or sentinel | Workers to ordered sender |
+| `stream_queue` | 128 | `AudioFrame` or `StreamEnd` | One streaming utterance |
 
-流式模型不会创建空闲的 enhancement/普通 ASR worker；只有非流式模型创建这两级队列和 worker。
+Streaming profiles do not allocate idle enhancement and regular-ASR workers.
+Queue insertion stores object references rather than copying payload bodies.
+When downstream work is slower, `put()` propagates backpressure to the WebSocket
+instead of silently dropping frames or growing memory without limit.
 
-`asyncio.Queue` 以 FIFO 方式消费，入队只保存 Python 对象引用，不复制音频正文。队列有界；下游变慢时 `put()` 等待，背压逐级传回 WebSocket，而不是静默丢帧。
-
-### 固定音频帧
+### Fixed frames
 
 ```python
 AudioFrame(
     start_sample: int,
-    pcm16: bytes,       # 512 samples / 1024 bytes
+    pcm16: bytes,  # 512 samples / 1024 bytes
 )
 ```
 
-`FrameResampler` 将任意 8–192 kHz 输入线性重采样为 16 kHz，并直接生成 512 samples（32 ms）的不可变 frame。Pre-roll、holdback、utterance 和 streaming worker 都共享 frame 引用。
+`FrameResampler` linearly converts the connection sample rate directly into
+16 kHz, 512-sample immutable frames. `start_sample` is a monotonic output sample
+offset. Pre-roll, confirmed speech, holdback, work items, and the streaming worker
+share frame references.
 
-完整 utterance 只有在进入降噪/ASR或生成回放音频时才顺序写成 WAV。普通 ASR 的 `model_input_audio` 同一份 `bytes` 同时用于模型输入和 WebSocket 回放，避免再次编码或 Base64 拷贝。
+A complete WAV is encoded only when a sealed utterance enters enhancement/ASR or
+when the streaming path returns replay audio. For regular ASR, the same encoded
+`bytes` object is used as model input and WebSocket replay payload.
 
-## VAD 与切句算法
+## VAD and segmentation state machine
 
-当前固定参数：
-
-| 参数 | 数值 |
+| Parameter | Current value |
 |---|---:|
-| 标准采样率 | 16 kHz |
-| VAD frame | 512 samples / 32 ms |
-| Speech start | 1,536 samples / 96 ms |
-| Speech end | 10,240 samples / 640 ms |
+| Pipeline sample rate | 16 kHz |
+| Frame | 512 samples / 32 ms |
+| Speech start hysteresis | 1,536 samples / 96 ms |
+| Speech end hysteresis | 10,240 samples / 640 ms |
 | Pre-roll | 8 frames / 256 ms |
-| 保留尾部 | 6 frames / 192 ms |
-| 最大 utterance | 约 25 秒 |
+| Retained endpoint tail | 6 frames / 192 ms |
+| Maximum utterance | 782 frames / about 25 seconds |
 
 ```mermaid
 stateDiagram-v2
     [*] --> IDLE
-    IDLE: frame 写入 256ms pre-roll
-    IDLE --> SPEAKING: 连续语音达到 96ms
-    SPEAKING: 明确语音写入 confirmed
-    SPEAKING: 疑似静音写入 holdback
-    SPEAKING --> SPEAKING: 静音后恢复语音，holdback 并入 confirmed
-    SPEAKING --> FINALIZE: 连续静音达到 640ms
-    SPEAKING --> FINALIZE: 达到约 25s 或用户停止
-    FINALIZE: 普通结束只保留 192ms 尾部
-    FINALIZE --> IDLE: 封装 UtteranceWorkItem
+    IDLE: keep 256 ms pre-roll
+    IDLE --> SPEAKING: 96 ms confirmed speech
+    SPEAKING: voiced frames enter confirmed
+    SPEAKING: uncertain silence enters holdback
+    SPEAKING --> SPEAKING: speech resumes; commit holdback
+    SPEAKING --> FINALIZE: 640 ms endpoint silence
+    SPEAKING --> FINALIZE: maximum duration or client stop
+    FINALIZE: keep 192 ms endpoint tail
+    FINALIZE --> IDLE: emit UtteranceWorkItem
 ```
 
-Silero 路径使用连接级 recurrent state；Energy Detector 使用灵敏度映射出的 RMS 阈值：
+Silero owns connection-level recurrent state. The fallback detector uses RMS:
 
 ```text
 energy_threshold = 0.035 - sensitivity × 0.029
 ```
 
-两种 detector 都采用 96 ms speech-start 和 640 ms speech-end hysteresis。达到最大语句长度时强制封口并重置边界状态。
+Both detectors use the same 96 ms start and 640 ms end hysteresis. Maximum
+duration forces a seal and resets the detector boundary. On a VAD endpoint,
+silence after the retained tail is reused as the next utterance's pre-roll.
 
-## 普通 ASR 流水线
+## Regular ASR pipeline
 
 ```mermaid
 flowchart LR
-    U[UtteranceWorkItem<br/>frame references] --> W[编码 source WAV]
-    W --> C{use_enhancement?}
-    C -->|yes| D[DeepFilterNet3 Worker]
+    U[UtteranceWorkItem<br/>frame references] --> W[encode source WAV]
+    W --> C{enhancement enabled?}
+    C -->|yes| D[DeepFilterNet3 worker]
     C -->|no| I[AsrWorkItem]
     D --> I
     I --> A[Audio8 / SenseVoice / Qwen3]
@@ -202,37 +229,49 @@ flowchart LR
     I --> B[binary model-input WAV]
 ```
 
-降噪 worker 与 ASR worker 独立运行，因此录音/VAD 可以继续处理下一句话。`LiveTranscriptionService.transcribe()` 只接收已经完成 VAD 切句和可选降噪的模型输入，不再暴露预处理开关。这样可以从接口层阻止二次 VAD、二次降噪和 Base64 编码。worker 异常会产生 `error` 事件并关闭当前 session，不会静默回退到不同的模型输入。
+The enhancement and ASR workers are independent, allowing the audio/VAD worker
+to continue processing the next utterance. `LiveTranscriptionService.transcribe()`
+accepts audio that is already segmented and optionally enhanced; it does not
+expose a second preprocessing toggle. Worker failures publish an error and stop
+the session instead of silently changing the model input.
 
-## Nemotron 流式路径
+SenseVoice results map language, emotion, and audio-event metadata into the App
+view. Other profiles return the common transcription fields.
 
-Nemotron 不经过 DeepFilterNet3。检测到 `speech_start` 后立即创建独立 streaming session，并提交 Pre-roll 与后续确认帧。
+## Streaming ASR pipeline
+
+Nemotron does not pass through DeepFilterNet3. At `speech_start`, the session
+creates an SDK streaming session and submits pre-roll plus subsequent committed
+frames.
 
 ```mermaid
 flowchart LR
-    ST[speech_start] --> SS[start Nemotron stream]
+    ST[speech_start] --> SS[start SDK stream]
     SS --> Q[stream_queue]
-    Q --> P[按 variant chunk 时长聚合]
-    P --> N[infer_stream]
+    Q --> P[aggregate profile-sized chunks]
+    P --> N[transcribe_stream]
     N --> PT[partial JSON]
     SE[speech_end / StreamEnd] --> Q
-    Q --> F[flush remaining + finish_stream]
+    Q --> F[flush pending + finish_stream]
     F --> T[transcript JSON + input WAV]
 ```
 
-疑似静音先保存在 `holdback`：
+Potential silence remains in `holdback`. If speech resumes within the endpoint
+window, every held frame is committed to the stream. At a confirmed endpoint,
+only the configured 192 ms tail is committed. The worker preserves every frame
+actually sent to the model and uses that exact sequence for replay WAV output.
 
-- 640 ms 内重新出现语音：holdback 全部补交给 Nemotron，仍属于同一句。
-- 确认结束：只提交最前面的 192 ms，剩余确认静音不进入模型。
+Cancellation calls `cancel_stream()`; normal completion flushes pending frames
+and calls `finish_stream()` exactly once.
 
-Nemotron 的实际输入 frame 同时保存在 streaming worker 中，结束后编码为回放 WAV，因此页面播放的内容与流式模型收到的内容一致。
+## Result protocol
 
-## 返回协议
+JSON events include `ready`, `speech_start`, `partial`, `speech_end`, `transcript`,
+`error`, and `stopped`. Transcript and model-input audio are two ordered messages:
 
-文本和音频使用两条有序 WebSocket 消息：
-
-1. `transcript` JSON：包含 `utterance_id`、文本、模型信息和各阶段耗时。
-2. Binary：前 8 字节为 big-endian `utterance_id`，后续为 WAV 正文。
+1. A `transcript` JSON object with `utterance_id`, text, model metadata, and stage
+   timings.
+2. A binary message with an 8-byte big-endian unsigned utterance ID followed by WAV.
 
 ```text
 ┌──────────────────────┬──────────────────────────┐
@@ -241,40 +280,53 @@ Nemotron 的实际输入 frame 同时保存在 streaming worker 中，结束后�
 └──────────────────────┴──────────────────────────┘
 ```
 
-二进制返回避免 Base64 的额外复制和约 33% 体积膨胀。前端以 `utterance_id` 将 transcript item 与播放音频配对。
+Binary transport avoids Base64 expansion and an additional encoded-text copy.
+Chat's emitter intentionally drops binary events because Chat consumes text only.
 
-## 生命周期与异常
+## Lifecycle and failures
 
-- `stop`：停止接收新音频，封口当前语句，依次 drain audio、enhancement、ASR、streaming 和 result workers，最后返回 `stopped`。
-- WebSocket 断开：取消所有 session workers 和 Nemotron stream tasks。
-- worker 失败：guard worker 写入 `error`，后续 `enqueue()` 拒绝继续处理。
-- 单个输入消息必须非空且不超过 64 KiB；队列容量防止无限内存增长。
+- `stop` rejects new input, seals active speech, drains audio, enhancement, ASR,
+  streaming, and result workers in dependency order, then emits `stopped`.
+- Disconnect and cancellation cancel all connection and streaming tasks.
+- A guarded worker publishes one error and marks the session closed.
+- `enqueue()` refuses closed sessions, empty messages, oversized chunks, and a
+  pipeline whose worker has already terminated.
+- One send lock preserves ordering between concurrent worker results.
 
-## 可观测性
+## Observability
 
-应用与 SDK 日志使用 `时间 LEVEL logger [filename:line function] event fields` 紧凑格式，并保留异步 task；HTTP 请求还会自动带 `trace_id`。异常日志保留完整 traceback，WebSocket 会话通过 `connection_id` 和 `session_id` 串起整个生命周期。Uvicorn lifecycle/access 日志进一步省略框架内部调用位置。
-
-Live Transcription 的主要 INFO 节点为：
+The connection binds `connection_id`; the session adds `session_id`, model ID,
+and instance ID. Logs record counts, sizes, queue waits, timings, runtime, and
+text length, never raw audio or transcript text.
 
 ```text
 live_websocket_connected
   → live_session_started
   → speech_started
   → speech_ended(reason=vad_endpoint|max_duration|client_stop)
-  → speech_enhancement_started/completed（可选）
-  → utterance_asr_started/completed 或 streaming_asr_started/completed
+  → speech_enhancement_started/completed (optional)
+  → utterance_asr_started/completed or streaming_asr_started/completed
   → live_session_stopped
   → live_websocket_closed
 ```
 
-音频 chunk 只累计数量和字节，不逐块打印 INFO；只有 `raw_audio_queue_backpressure` 会在入队等待超过 5 ms 时以最多每秒一次的频率告警。日志只记录转写文本长度，不记录正文或音频内容。
+Audio chunks do not produce per-chunk INFO logs. If raw queue insertion waits at
+least 5 ms, `raw_audio_queue_backpressure` is rate-limited to once per second.
 
-## Review 关注点
+## Tests and review points
 
-当前实现已经保证后端拥有唯一的 16 kHz sample timeline、切句权和模型输入音频。后续优化时应重点检查：
+Session tests cover monotonic resampling frames, detector hysteresis, and reuse of
+the same WAV bytes for model input and binary output. Platform tests cover model
+loading, optional component views, WebSocket validation, and Chat reuse.
 
-1. `FrameResampler` 当前为线性插值；若音质要求提高，可替换为流式带限重采样器，但不能破坏累计 sample offset。
-2. VAD 输入目前将每帧 PCM16 转为 Python float tuple；可进一步改为预分配的 float32/NumPy buffer。
-3. 每类普通 worker 当前各一个，符合模型实例通常串行推理的约束；提高并发前必须确认底层模型线程安全。
-4. 参数调整需要同时验证短词起始、句中停顿、噪声灰区、连续多句和 WebSocket 拥塞场景。
-5. 任何回退策略都必须保证返回的 WAV 仍然是实际 ASR 输入，不能静默改变处理链。
+Review changes against these constraints:
+
+1. Preserve one backend-owned 16 kHz sample timeline and utterance boundary.
+2. A higher-quality resampler must retain monotonic sample offsets and streaming
+   behavior.
+3. Parallelizing model workers requires proof that the underlying instance is
+   concurrency-safe.
+4. Threshold changes need short-word, in-sentence pause, noise, multi-utterance,
+   maximum-duration, and congested-WebSocket tests.
+5. Replay WAV must remain the exact audio sent to ASR; fallback must never change
+   that input silently.

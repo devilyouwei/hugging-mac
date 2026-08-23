@@ -8,7 +8,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, Query, status
 from hugging_mac_sdk import (
-    ArtifactFormat,
     InstanceSnapshot,
     ModelArtifact,
     ModelDefinition,
@@ -41,43 +40,30 @@ class LoadModelCommand(BaseModel):
     shared: bool = False
 
 
-class ConvertModelCommand(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    target_format: ArtifactFormat
-    variant: str | None = None
-
-
 class ArtifactCommand(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    variant: str
-    runtime: str
+    variant: str | None = None
+    runtime: str | None = None
     artifact_id: str
 
 
-class ResourceOption(BaseModel):
+class ConvertArtifactCommand(ArtifactCommand):
     model_config = ConfigDict(frozen=True)
 
-    resource_id: str
-    variant: str
-    runtime: str
-    artifact_id: str
-    format: str
-    source: ResourceSource
-    shared: bool = False
-    available: bool
-    size_bytes: int | None = None
+    overwrite: bool = False
 
 
 class ArtifactInventoryItem(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    variant: str
-    runtime: str
+    variant: str | None
+    runtime: str | None
     artifact_id: str
     format: str
+    required_shares: tuple[str, ...] = ()
     convertible: bool
+    source: ResourceSource | None = None
     shared: bool = False
     available: bool
     size_bytes: int | None = None
@@ -88,7 +74,6 @@ class ModelInventory(BaseModel):
 
     model_id: str
     revision: str
-    resources: tuple[ResourceOption, ...]
     artifacts: tuple[ArtifactInventoryItem, ...]
 
 
@@ -171,15 +156,27 @@ def create_models_router() -> APIRouter:
         overwrite: bool = Query(default=False),
     ) -> ApiResponse[ModelInventory]:
         definition = context.models.registry.get(model_id)
-        artifact = _find_artifact(definition.artifacts, command)
-        source = _artifact_source(definition, artifact)
+        artifact = _find_artifact(definition, command)
+        source = _artifact_source(artifact)
         if source is None:
             raise UnsupportedCapabilityError(
                 "Artifact is not downloadable; it must be converted",
                 details=command.model_dump(),
             )
+        destination = artifact.resolve(context.settings.model_home)
+        available = artifact_available(artifact, destination)
+        if available and not overwrite:
+            return ApiResponse(
+                data=_inventory(context, model_id),
+                meta=ResponseMeta(generated_at=utc_now()),
+            )
         if artifact.shared:
-            await _ensure_shared_resources_mutable(context, definition, overwrite=overwrite)
+            await _ensure_shared_resources_mutable(
+                context,
+                definition,
+                variant=command.variant,
+                overwrite=overwrite,
+            )
             await context.models.resources.download_shared_artifact(
                 model_id,
                 artifact.artifact_id,
@@ -190,22 +187,28 @@ def create_models_router() -> APIRouter:
                 data=_inventory(context, model_id),
                 meta=ResponseMeta(generated_at=utc_now()),
             )
+        await _ensure_resources_mutable(
+            context,
+            model_id,
+            runtime=artifact.runtime,
+            variant=artifact.variant,
+        )
+        await _ensure_shared_resources_mutable(
+            context,
+            definition,
+            variant=artifact.variant,
+            runtime=artifact.runtime,
+            artifact_id=artifact.artifact_id,
+            overwrite=False,
+        )
         await context.models.resources.ensure_shared_artifacts(
             model_id,
+            variant=artifact.variant,
+            runtime=artifact.runtime,
+            artifact_id=artifact.artifact_id,
             options={"model_home": context.settings.model_home},
             overwrite=False,
         )
-        destination = artifact.resolve(context.settings.model_home)
-        available = (
-            destination.is_dir()
-            if artifact.kind.value == "directory"
-            else destination.is_file()
-        )
-        if available and not overwrite:
-            return ApiResponse(
-                data=_inventory(context, model_id),
-                meta=ResponseMeta(generated_at=utc_now()),
-            )
         await ResourceDownloader().download(source, destination, overwrite=overwrite)
         return ApiResponse(
             data=_inventory(context, model_id), meta=ResponseMeta(generated_at=utc_now())
@@ -224,7 +227,7 @@ def create_models_router() -> APIRouter:
             context, model_id, runtime=command.runtime, variant=command.variant
         )
         definition = context.models.registry.get(model_id)
-        artifact = _find_artifact(definition.artifacts, command)
+        artifact = _find_artifact(definition, command)
         if artifact.shared:
             await _ensure_resources_mutable(context, model_id)
         path = artifact.resolve(context.settings.model_home)
@@ -289,37 +292,38 @@ def create_models_router() -> APIRouter:
     )
     async def convert_model_resources(
         model_id: str,
-        command: ConvertModelCommand,
+        command: ConvertArtifactCommand,
         context: ContextDependency,
     ) -> ApiResponse[ModelResourceStatus]:
-        selected_variant = _resolve_variant(context, model_id, command.variant)
         definition = context.models.registry.get(model_id)
-        await _ensure_shared_resources_mutable(context, definition, overwrite=False)
-        if not any(
-            artifact.variant == selected_variant
-            and artifact.format == command.target_format
-            and artifact.convert
-            for artifact in definition.artifacts
-        ):
+        artifact = _find_artifact(definition, command)
+        if artifact.shared or not artifact.convert:
             raise UnsupportedCapabilityError(
-                "Conversion is not enabled by this model's YAML configuration",
-                details={
-                    "model_id": model_id,
-                    "variant": selected_variant,
-                    "target_format": command.target_format,
-                },
+                "Conversion is not enabled for this artifact",
+                details={"model_id": model_id, **command.model_dump()},
             )
+        assert artifact.variant is not None
+        assert artifact.runtime is not None
+        await _ensure_shared_resources_mutable(
+            context,
+            definition,
+            variant=artifact.variant,
+            runtime=artifact.runtime,
+            artifact_id=artifact.artifact_id,
+            overwrite=False,
+        )
         await _ensure_resources_mutable(
             context,
             model_id,
-            variant=selected_variant,
+            runtime=artifact.runtime,
+            variant=artifact.variant,
         )
         resources = await context.models.resources.convert(
             model_id,
-            command.target_format,
-            variant=selected_variant,
+            artifact.format,
+            variant=artifact.variant,
             options={"model_home": context.settings.model_home},
-            overwrite=True,
+            overwrite=command.overwrite,
         )
         return ApiResponse(
             data=resources,
@@ -374,7 +378,6 @@ def create_models_router() -> APIRouter:
 def _inventory(context: ContextDependency, model_id: str) -> ModelInventory:
     definition = context.models.registry.get(model_id)
     artifacts: list[ArtifactInventoryItem] = []
-    resources: list[ResourceOption] = []
     for artifact in definition.artifacts:
         path = artifact.resolve(context.settings.model_home)
         available = artifact_available(artifact, path)
@@ -387,56 +390,40 @@ def _inventory(context: ContextDependency, model_id: str) -> ModelInventory:
                 runtime=artifact.runtime,
                 artifact_id=artifact.artifact_id,
                 format=artifact.format.value,
+                required_shares=artifact.required_shares,
                 convertible=artifact.convert,
+                source=_artifact_source(artifact),
                 shared=artifact.shared,
                 available=available,
                 size_bytes=size,
             )
         )
-        source = _artifact_source(definition, artifact)
-        if source is not None:
-            resources.append(
-                ResourceOption(
-                    resource_id=f"{artifact.variant}:{artifact.runtime}:{artifact.artifact_id}",
-                    variant=artifact.variant,
-                    runtime=artifact.runtime,
-                    artifact_id=artifact.artifact_id,
-                    format=artifact.format.value,
-                    source=source,
-                    shared=artifact.shared,
-                    available=available,
-                    size_bytes=size,
-                )
-            )
     return ModelInventory(
         model_id=model_id,
         revision=definition.manifest.revision,
-        resources=tuple(resources),
         artifacts=tuple(artifacts),
     )
 
 
-def _artifact_source(
-    definition: ModelDefinition, artifact: ModelArtifact
-) -> ResourceSource | None:
-    if artifact.source is not None:
-        return artifact.source
-    if artifact.artifact_id == "source":
-        declared = definition.manifest.get_variant(artifact.variant).resources
-        if len(declared) == 1:
-            return declared[0]
-    return None
+def _artifact_source(artifact: ModelArtifact) -> ResourceSource | None:
+    return artifact.source
 
 
-def _find_artifact(
-    artifacts: tuple[ModelArtifact, ...], command: ArtifactCommand
-) -> ModelArtifact:
-    for artifact in artifacts:
-        if (artifact.variant, artifact.runtime, artifact.artifact_id) == (
-            command.variant,
-            command.runtime,
-            command.artifact_id,
-        ):
+def _find_artifact(definition: ModelDefinition, command: ArtifactCommand) -> ModelArtifact:
+    for artifact in definition.artifacts:
+        if artifact.artifact_id != command.artifact_id:
+            continue
+        if artifact.shared:
+            if command.variant is None:
+                return artifact
+            required_ids = {
+                item.artifact_id
+                for item in definition.required_shared_artifacts(variant=command.variant)
+            }
+            if artifact.artifact_id in required_ids:
+                return artifact
+            continue
+        if (artifact.variant, artifact.runtime) == (command.variant, command.runtime):
             return artifact
     raise ResourceNotFoundError("Artifact is not declared", details=command.model_dump())
 
@@ -490,13 +477,27 @@ async def _ensure_shared_resources_mutable(
     context: ContextDependency,
     definition: ModelDefinition,
     *,
+    variant: str | None = None,
+    runtime: str | None = None,
+    artifact_id: str | None = None,
+    target_format: str | None = None,
     overwrite: bool,
 ) -> None:
-    if not definition.shared_artifacts:
+    shared_artifacts = (
+        definition.required_shared_artifacts(
+            variant=variant,
+            runtime=runtime,
+            artifact_id=artifact_id,
+            target_format=target_format,
+        )
+        if variant is not None
+        else definition.shared_artifacts
+    )
+    if not shared_artifacts:
         return
     needs_mutation = overwrite or any(
         not _declared_artifact_available(artifact, context.settings.model_home)
-        for artifact in definition.shared_artifacts
+        for artifact in shared_artifacts
     )
     if needs_mutation:
         await _ensure_resources_mutable(context, definition.manifest.model_id)

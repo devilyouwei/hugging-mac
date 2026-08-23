@@ -10,9 +10,7 @@ PALM_TRACE_MANIFEST = AppManifest(
         "the clock runs out, powered by private on-device hand detection."
     ),
     category=AppCategory.GAME,
-    tags=frozenset(
-        {"game", "testing", "hand", "mediapipe", "camera", "arcade", "coordination"}
-    ),
+    tags=frozenset({"game", "testing", "hand", "mediapipe", "camera", "arcade", "coordination"}),
     frontend_route="/games/palm-trace",
     api_prefix="/api/v1/games/palm-trace",
     required_models=(

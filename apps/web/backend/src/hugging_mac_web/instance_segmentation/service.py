@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from hugging_mac_sdk import ReusePolicy
 from hugging_mac_sdk.capabilities import InstanceSegmentation
-from hugging_mac_sdk.models.yolov8_seg.config import YOLOV8_SEG_MODEL_ID
 from hugging_mac_sdk.schemas.detection import DetectionRequest, ImageInput
 
 from hugging_mac_web.context import PlatformContext
+from hugging_mac_web.instance_segmentation.manifest import INSTANCE_SEGMENTATION_MANIFEST
 from hugging_mac_web.instance_segmentation.schemas import (
     ResourceStatusView,
     RuntimeChoice,
@@ -15,6 +15,8 @@ from hugging_mac_web.instance_segmentation.schemas import (
     SegmentationResult,
     VariantView,
 )
+
+YOLOV8_SEG_MODEL_ID = INSTANCE_SEGMENTATION_MANIFEST.required_models[0].model_id
 
 
 class InstanceSegmentationService:

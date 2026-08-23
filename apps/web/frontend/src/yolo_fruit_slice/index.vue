@@ -10,7 +10,7 @@ import type { ResourceStatus, RuntimeChoice, VisionOptions } from "@/vision/type
 
 import { GameAudio } from "./audio"
 import { FruitSliceEngine } from "./engine"
-import { availableGameRuntimes } from "./modelRuntime"
+import { availableGameRuntimes, firstAvailableModel, type GameRuntime } from "./modelRuntime"
 import { PointerBladeTracker } from "./pointerBlade"
 import { PoseBladeTracker } from "./poseBlade"
 import { GameRenderer } from "./renderer"
@@ -22,10 +22,12 @@ const stage = ref<HTMLElement | null>(null)
 const gameCanvas = ref<HTMLCanvasElement | null>(null)
 const stream = ref<MediaStream | null>(null)
 const resource = ref<ResourceStatus | null>(null)
+const resources = ref<ResourceStatus[]>([])
 const modelInstanceId = ref<string | null>(null)
-const selectedVariant = ref<"n" | "m">("n")
-const loadedVariant = ref<"n" | "m" | null>(null)
-const loadedRuntime = ref<"coreml" | "pytorch-mps" | null>(null)
+const selectedVariant = ref("")
+const selectedRuntime = ref<GameRuntime | "">("")
+const loadedVariant = ref<string | null>(null)
+const loadedRuntime = ref<GameRuntime | null>(null)
 const modelBusy = ref(false)
 const cameraReady = ref(false)
 const phase = ref<GamePhase>("lobby")
@@ -52,44 +54,54 @@ let countdownRunning = false
 let calibrationDeadline = 0
 let finishScheduled = false
 
-const sourceReady = computed(() => resource.value?.artifacts.some((artifact) => artifact.runtime === "pytorch-mps" && artifact.available) ?? false)
-const coremlReady = computed(() => resource.value?.artifacts.some((artifact) => artifact.runtime === "coreml" && artifact.available) ?? false)
-const modelAvailable = computed(() => coremlReady.value || sourceReady.value)
-const runtimeLabel = computed(() => loadedRuntime.value === "coreml" ? "CORE ML" : loadedRuntime.value === "pytorch-mps" ? "PYTORCH MPS" : "CORE ML → PYTORCH MPS")
+const variantOptions = computed(() => resources.value.map((item) => ({
+  ...item.variants.find((variant) => variant.name === item.variant),
+  name: item.variant,
+  available: availableGameRuntimes(item).length > 0,
+})))
+const runtimeOptions = computed(() => availableGameRuntimes(resource.value))
+const modelAvailable = computed(() => firstAvailableModel(resources.value) !== null)
+const selectionAvailable = computed(() => Boolean(selectedRuntime.value && runtimeOptions.value.includes(selectedRuntime.value)))
+const runtimeLabel = computed(() => loadedRuntime.value === "coreml" ? "CORE ML" : loadedRuntime.value === "pytorch-mps" ? "PYTORCH MPS" : loadedRuntime.value === "onnx" ? "ONNX" : "NOT LOADED")
 const modelStatus = computed(() => modelBusy.value ? "LOADING" : modelInstanceId.value ? `${loadedVariant.value?.toUpperCase()} · ${runtimeLabel.value}` : modelAvailable.value ? "AVAILABLE" : "MISSING")
 const poseStatus = computed(() => pointerReady.value ? "MOUSE BLADE" : inferenceState.value === "tracking" ? "BODY LOCKED" : inferenceState.value === "searching" ? "FINDING PLAYER" : inferenceState.value === "error" ? "POSE ERROR" : "STANDBY")
 
 async function loadGame(): Promise<void> {
   try {
-    resource.value = await fetchResourceStatus(selectedVariant.value)
+    const initial = await fetchResourceStatus()
+    const variants = initial.variants.length ? initial.variants : [{ name: initial.variant }]
+    resources.value = await Promise.all(variants.map((variant) =>
+      variant.name === initial.variant ? Promise.resolve(initial) : fetchResourceStatus(variant.name),
+    ))
+    const selection = firstAvailableModel(resources.value)
+    if (selection) {
+      selectedVariant.value = selection.variant
+      selectedRuntime.value = selection.runtime
+      resource.value = resources.value.find((item) => item.variant === selection.variant) ?? null
+    } else {
+      selectedVariant.value = initial.variants[0]?.name ?? initial.variant
+      resource.value = resources.value.find((item) => item.variant === selectedVariant.value) ?? initial
+      selectedRuntime.value = ""
+    }
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "游戏资源加载失败"
   }
 }
 
 async function ensureModelLoaded(): Promise<boolean> {
-  if (modelInstanceId.value && loadedVariant.value === selectedVariant.value) return true
-  if (!resource.value || !modelAvailable.value) {
-    error.value = `YOLOv8 Pose ${selectedVariant.value.toUpperCase()} 模型不可用，请先到 Models 页面准备模型`
+  if (modelInstanceId.value && loadedVariant.value === selectedVariant.value && loadedRuntime.value === selectedRuntime.value) return true
+  if (!resource.value || !selectionAvailable.value) {
+    error.value = "没有可加载的 YOLOv8 Pose 模型，请前往 Models 页面下载任一 variant 和 runtime"
     return false
   }
   modelBusy.value = true
   try {
     if (modelInstanceId.value) await unloadCurrentModel()
-    const candidates = availableGameRuntimes(resource.value)
-    let lastError: unknown
-    for (const runtime of candidates) {
-      try {
-        const loaded = await loadSharedModel(resource.value.model_id, selectedVariant.value, runtime)
-        modelInstanceId.value = loaded.instance_id
-        loadedVariant.value = selectedVariant.value
-        loadedRuntime.value = loaded.runtime === "coreml" ? "coreml" : "pytorch-mps"
-        return true
-      } catch (caught) {
-        lastError = caught
-      }
-    }
-    throw lastError ?? new Error("没有可用的本地推理 runtime")
+    const loaded = await loadSharedModel(resource.value.model_id, selectedVariant.value, selectedRuntime.value)
+    modelInstanceId.value = loaded.instance_id
+    loadedVariant.value = selectedVariant.value
+    loadedRuntime.value = loaded.runtime as GameRuntime
+    return true
   } catch (caught) {
     error.value = errorMessage(caught, "模型加载失败")
     return false
@@ -121,15 +133,27 @@ async function unloadCurrentModel(): Promise<void> {
   loadedRuntime.value = null
 }
 
-async function selectModelVariant(variant: "n" | "m"): Promise<void> {
-  if (variant === selectedVariant.value || modelBusy.value) return
+async function selectModelVariant(): Promise<void> {
+  if (modelBusy.value) return
   modelBusy.value = true
   error.value = ""
   try {
     await unloadCurrentModel()
-    selectedVariant.value = variant
-    resource.value = null
-    resource.value = await fetchResourceStatus(variant)
+    resource.value = resources.value.find((item) => item.variant === selectedVariant.value) ?? null
+    selectedRuntime.value = availableGameRuntimes(resource.value)[0] ?? ""
+  } catch (caught) {
+    error.value = errorMessage(caught, "模型配置切换失败")
+  } finally {
+    modelBusy.value = false
+  }
+}
+
+async function selectModelRuntime(): Promise<void> {
+  if (modelBusy.value || !modelInstanceId.value) return
+  modelBusy.value = true
+  error.value = ""
+  try {
+    await unloadCurrentModel()
   } catch (caught) {
     error.value = errorMessage(caught, "模型配置切换失败")
   } finally {
@@ -417,20 +441,31 @@ onBeforeUnmount(() => {
           <div><b>03</b><span>漏掉三颗即结束<br>绝对不要碰炸弹</span></div>
         </div>
         <div class="fruit-model-picker" aria-label="选择 YOLO Pose 模型">
-          <button type="button" :class="{ active: selectedVariant === 'n' }" :disabled="modelBusy" @click="selectModelVariant('n')">
-            <strong>YOLO POSE N</strong><span>低延迟 · 推荐</span>
-          </button>
-          <button type="button" :class="{ active: selectedVariant === 'm' }" :disabled="modelBusy" @click="selectModelVariant('m')">
-            <strong>YOLO POSE M</strong><span>高精度 · 较慢</span>
-          </button>
+          <label>
+            <span>VARIANT</span>
+            <select v-model="selectedVariant" :disabled="modelBusy || !modelAvailable" @change="selectModelVariant">
+              <option v-for="variant in variantOptions" :key="variant.name" :value="variant.name" :disabled="!variant.available">
+                {{ variant.display_name ?? `YOLOv8 Pose ${variant.name.toUpperCase()}` }}{{ variant.available ? "" : " · 未下载" }}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>RUNTIME</span>
+            <select v-model="selectedRuntime" :disabled="modelBusy || !runtimeOptions.length" @change="selectModelRuntime">
+              <option v-for="runtime in runtimeOptions" :key="runtime" :value="runtime">
+                {{ runtime === "coreml" ? "Core ML" : runtime === "onnx" ? "ONNX" : "PyTorch MPS" }}
+              </option>
+            </select>
+          </label>
         </div>
         <div class="fruit-model-row">
           <div><span :class="{ ready: modelInstanceId }"></span><b>YOLOv8 POSE {{ selectedVariant.toUpperCase() }}</b><small>{{ modelStatus }}</small></div>
-          <button type="button" :disabled="modelBusy || (!modelInstanceId && !modelAvailable)" @click="toggleModel">
+          <button type="button" :disabled="modelBusy || (!modelInstanceId && !selectionAvailable)" @click="toggleModel">
             {{ modelBusy ? "WAIT…" : modelInstanceId ? "UNLOAD" : "LOAD MODEL" }}
           </button>
         </div>
-        <button class="fruit-start" type="button" :disabled="modelBusy || !modelAvailable" @click="startGame">
+        <p v-if="!modelAvailable" class="fruit-error">没有可加载的模型，请前往 Models 页面下载任一 YOLOv8 Pose variant 和 runtime。</p>
+        <button class="fruit-start" type="button" :disabled="modelBusy || !selectionAvailable" @click="startGame">
           <span>START CLASSIC</span><b>挥动双臂 →</b>
         </button>
         <p v-if="error" class="fruit-error" role="alert">{{ error }}</p>
@@ -497,7 +532,7 @@ onBeforeUnmount(() => {
 :global(body.fruit-game-active .site-header),:global(body.fruit-game-active .site-footer){display:none}
 :global(body.fruit-game-active){background:#080a09;overflow:hidden}
 .fruit-game{background:#080a09;color:#fff;min-height:100vh;overflow:hidden}.fruit-topbar{align-items:center;background:#090b0a;border-bottom:1px solid #ffffff1c;display:grid;font-family:var(--font-mono);grid-template-columns:1fr auto 1fr;height:3.4rem;padding:0 2rem;position:relative;z-index:30}.fruit-topbar__back{color:#969b98;font-size:.62rem;letter-spacing:.08em;text-decoration:none}.fruit-topbar__brand{font-size:.7rem;font-weight:800;letter-spacing:.12em}.fruit-topbar__brand i{background:#f34432;border-radius:50%;box-shadow:0 0 16px #f34432;display:inline-block;height:.5rem;margin-right:.55rem;width:.5rem}.fruit-topbar button{background:none;border:0;color:#999;cursor:pointer;font:.62rem var(--font-mono);justify-self:end}.fruit-lobby{display:grid;grid-template-columns:1.05fr .95fr;min-height:calc(100vh - 3.4rem)}.fruit-lobby__copy{align-self:center;max-width:900px;padding:3rem clamp(2rem,6vw,6rem)}.fruit-kicker{color:#ffcf48;font:700 .62rem var(--font-mono);letter-spacing:.14em}.fruit-lobby h1{font-size:clamp(3.2rem,6vw,6.4rem);letter-spacing:-.075em;line-height:.82;margin:1.1rem 0 1.8rem}.fruit-lobby h1 em{color:#ff4b35;font-style:normal}.fruit-lobby__copy>p:not(.fruit-kicker,.fruit-error,.fruit-message){color:#b1b6b2;line-height:1.75;max-width:39rem}.fruit-rules{border-bottom:1px solid #ffffff1a;border-top:1px solid #ffffff1a;display:grid;grid-template-columns:repeat(3,1fr);margin:2rem 0 1.3rem;padding:1rem 0}.fruit-rules div{align-items:flex-start;border-right:1px solid #ffffff18;display:flex;gap:.7rem;padding:.3rem .8rem}.fruit-rules div:first-child{padding-left:0}.fruit-rules div:last-child{border:0}.fruit-rules b{color:#ffcf48;font:.58rem var(--font-mono)}.fruit-rules span{color:#8f9691;font-size:.7rem;line-height:1.5}.fruit-model-row{align-items:center;background:#121513;border:1px solid #ffffff1d;display:flex;justify-content:space-between;padding:.85rem}.fruit-model-row>div{align-items:center;display:flex;gap:.55rem}.fruit-model-row>div>span{background:#c05242;border-radius:50%;height:.5rem;width:.5rem}.fruit-model-row>div>span.ready{background:#7cda43;box-shadow:0 0 10px #7cda43}.fruit-model-row b{font:.62rem var(--font-mono)}.fruit-model-row small{color:#7d837f;font:.52rem var(--font-mono)}.fruit-model-row button{background:#252a27;border:0;color:#fff;cursor:pointer;font:700 .55rem var(--font-mono);padding:.65rem .85rem}.fruit-model-row button:disabled{cursor:not-allowed;opacity:.35}.fruit-start{align-items:center;background:#ffcf48;border:0;color:#15120a;cursor:pointer;display:flex;font:800 .7rem var(--font-mono);justify-content:space-between;margin-top:.7rem;padding:1.1rem 1.2rem;width:100%}.fruit-start:disabled{cursor:not-allowed;filter:grayscale(1);opacity:.35}.fruit-start b{font-size:.58rem}.fruit-message{color:#79d25c;font:.55rem var(--font-mono);margin:.7rem 0}.fruit-error{color:#ff745f;font:.6rem var(--font-mono);margin-top:.8rem}.fruit-lobby__art{background:radial-gradient(circle at 45% 45%,#82382955,transparent 30%),radial-gradient(circle at 70% 30%,#ffcf4815,transparent 24%),#111411;overflow:hidden;position:relative}.preview-fruit{animation:fruit-float 3s ease-in-out infinite;border-radius:50%;box-shadow:inset -18px -22px 32px #0006,0 22px 40px #0008;position:absolute}.preview-fruit::before{background:#4aaa4a;border-radius:100% 0;content:"";height:18%;position:absolute;right:6%;top:-10%;transform:rotate(-25deg);width:38%}.preview-fruit--apple{background:#d9343b;height:16vw;left:18%;max-height:230px;max-width:230px;top:30%;width:16vw}.preview-fruit--orange{animation-delay:-.8s;background:#ff941f;height:10vw;max-height:150px;max-width:150px;right:15%;top:17%;width:10vw}.preview-fruit--melon{animation-delay:-1.5s;background:repeating-linear-gradient(90deg,#188345 0 13%,#3eae5e 13% 25%);bottom:12%;height:13vw;max-height:190px;max-width:190px;right:23%;width:13vw}.preview-slash{background:#fff;border-radius:50%;box-shadow:0 0 18px #fff,0 0 36px #67e8ff;height:3px;position:absolute;transform-origin:left;width:52%}.preview-slash--one{left:11%;top:63%;transform:rotate(-43deg)}.preview-slash--two{left:38%;top:66%;transform:rotate(-71deg)}.fruit-lobby__art strong{color:#ffcf48;font:900 5rem var(--font-mono);position:absolute;right:8%;top:48%;transform:rotate(7deg)}.fruit-lobby__art>span{color:#fff;font:800 .7rem var(--font-mono);position:absolute;right:11%;top:61%}.fruit-stage{background:#080a09;height:calc(100vh - 3.4rem);overflow:hidden;position:relative}.fruit-stage video,.fruit-stage canvas,.fruit-vignette{height:100%;inset:0;position:absolute;width:100%}.fruit-stage video{object-fit:cover;transform:scaleX(-1)}.fruit-stage canvas{z-index:2}.fruit-vignette{background:radial-gradient(circle,transparent 48%,#0008 115%),linear-gradient(180deg,#0007,transparent 20%,transparent 70%,#0008);pointer-events:none;z-index:3}.fruit-hud,.fruit-tracking,.fruit-actions{position:absolute;z-index:5}.fruit-hud--score{left:1.6rem;top:1.35rem}.fruit-hud--score span{color:#ffcf48;font:700 .55rem var(--font-mono);letter-spacing:.15em}.fruit-hud--score strong{display:block;font:900 clamp(2.4rem,5vw,4.6rem)/.9 var(--font-mono);letter-spacing:-.08em;text-shadow:0 4px 12px #000}.fruit-hud--score small{color:#fff;font:700 .65rem var(--font-mono)}.fruit-hud--lives{display:flex;gap:.45rem;right:1.5rem;top:1.35rem}.fruit-hud--lives span{color:#ff4a36;font:900 1.9rem var(--font-mono);text-shadow:0 0 14px #ff3b2e}.fruit-hud--lives span.lost{color:#565a57;text-shadow:none}.fruit-tracking{align-items:center;bottom:1.25rem;display:flex;font:700 .53rem var(--font-mono);gap:.45rem;left:1.5rem;letter-spacing:.08em}.fruit-tracking i{background:#f0a43a;border-radius:50%;height:.45rem;width:.45rem}.fruit-tracking i.ready{background:#7ee757;box-shadow:0 0 12px #7ee757}.fruit-tracking small{color:#8b918d;margin-left:.2rem}.fruit-actions{bottom:1rem;display:flex;gap:.4rem;right:1.25rem}.fruit-actions button{backdrop-filter:blur(8px);background:#080a09aa;border:1px solid #ffffff42;color:#fff;cursor:pointer;font-size:1rem;height:2.2rem;width:2.2rem}.fruit-overlay{align-items:center;background:#060806d8;display:flex;flex-direction:column;inset:0;justify-content:center;position:absolute;text-align:center;z-index:10}.fruit-overlay p{color:#ffcf48;font:700 .65rem var(--font-mono);letter-spacing:.2em}.fruit-overlay>strong{font-size:clamp(2.4rem,6vw,6rem);letter-spacing:-.05em}.fruit-overlay>span{color:#9ba19d;margin-top:.6rem}.scan-figure{animation:scan-pulse 1.5s infinite;border:1px solid #70e8ff55;height:14rem;margin-bottom:2rem;position:relative;width:9rem}.scan-figure::before{animation:scan 1.8s linear infinite;background:#70e8ff;box-shadow:0 0 16px #70e8ff;content:"";height:1px;left:-1rem;position:absolute;right:-1rem;top:0}.scan-figure i{background:#70e8ff;border-radius:50%;height:1.1rem;left:calc(50% - .55rem);position:absolute;top:15%;width:1.1rem}.scan-figure i:nth-child(2){border-radius:3rem;height:5.5rem;left:calc(50% - 1.9rem);top:30%;width:3.8rem}.scan-figure i:nth-child(3){border-radius:0;height:6rem;left:18%;top:41%;transform:rotate(18deg);width:.35rem}.fruit-overlay--countdown{background:#080a0948}.fruit-overlay--countdown strong{animation:count-slam .7s ease-out;color:#fff;font:900 min(32vw,17rem)/1 var(--font-mono);text-shadow:0 0 45px #ffcf48}.fruit-overlay--paused button,.fruit-overlay--finished>button{background:#ffcf48;border:0;color:#15120a;cursor:pointer;font:800 .65rem var(--font-mono);margin-top:1.5rem;min-width:14rem;padding:1rem}.fruit-overlay--finished{background:#070907e8}.fruit-overlay--finished>strong{font:900 clamp(5rem,16vw,14rem)/.85 var(--font-mono)}.result-stats{display:flex;gap:3rem;margin-top:1.5rem}.result-stats span{color:#8e958f;font:.58rem var(--font-mono)}.result-stats b{color:#fff;display:block;font-size:1.4rem;margin-bottom:.3rem}.fruit-overlay--finished>button.quiet{background:transparent;border:1px solid #ffffff35;color:#fff;margin-top:.45rem}@keyframes fruit-float{50%{transform:translateY(-18px) rotate(7deg)}}@keyframes scan{to{top:100%}}@keyframes scan-pulse{50%{box-shadow:0 0 40px #70e8ff22}}@keyframes count-slam{from{opacity:0;transform:scale(1.8) rotate(-5deg)}}@media(max-width:800px){.fruit-topbar{grid-template-columns:1fr auto;padding:0 1rem}.fruit-topbar button{display:none}.fruit-lobby{grid-template-columns:1fr}.fruit-lobby__copy{padding:2.4rem 1.2rem}.fruit-lobby h1{font-size:3.7rem}.fruit-rules{grid-template-columns:1fr}.fruit-rules div{border-bottom:1px solid #ffffff14;border-right:0;padding:.6rem 0}.fruit-lobby__art{display:none}.fruit-hud--score{left:1rem}.fruit-hud--lives{right:1rem}.result-stats{gap:1.3rem}.fruit-stage{height:calc(100svh - 3.4rem)}}
-.fruit-model-picker{display:grid;gap:.45rem;grid-template-columns:1fr 1fr;margin-bottom:.45rem}.fruit-model-picker button{background:#101311;border:1px solid #ffffff1d;color:#858b87;cursor:pointer;display:flex;justify-content:space-between;padding:.7rem .8rem;text-align:left}.fruit-model-picker button.active{background:#ffcf480d;border-color:#ffcf48;color:#fff;box-shadow:inset 0 -2px #ffcf48}.fruit-model-picker button:disabled{cursor:not-allowed;opacity:.55}.fruit-model-picker strong{font:.58rem var(--font-mono)}.fruit-model-picker span{font:.5rem var(--font-mono)}
+.fruit-model-picker{display:grid;gap:.45rem;grid-template-columns:1fr 1fr;margin-bottom:.45rem}.fruit-model-picker label{background:#101311;border:1px solid #ffffff1d;color:#858b87;display:flex;flex-direction:column;gap:.35rem;padding:.55rem .7rem}.fruit-model-picker span{font:.5rem var(--font-mono)}.fruit-model-picker select{background:#191d1a;border:1px solid #ffffff20;color:#fff;font:.58rem var(--font-mono);padding:.45rem}.fruit-model-picker select:disabled{cursor:not-allowed;opacity:.55}
 .fruit-stage{cursor:crosshair}
 .bomb-screen-effect{background:radial-gradient(circle,transparent 42%,rgba(255,190,35,.12) 72%,rgba(255,43,20,.52) 100%);border:10px solid #ffcf38;box-shadow:inset 0 0 34px 9px #ffd338,inset 0 0 105px 30px #ff2d18,0 0 40px #ff4a1f;inset:0;pointer-events:none;position:absolute;z-index:9}
 
@@ -509,8 +544,7 @@ onBeforeUnmount(() => {
 .fruit-lobby h1{background:linear-gradient(145deg,#fff 30%,#ffd569 70%,#ff745e);-webkit-background-clip:text;background-clip:text;color:transparent;}
 .fruit-lobby h1 em{color:inherit;}
 .fruit-rules{background:rgb(255 255 255 / 4%);border:1px solid rgb(255 255 255 / 8%);border-radius:16px;padding:.8rem;}
-.fruit-model-picker button,.fruit-model-row{background:rgb(255 255 255 / 5%);border-color:rgb(255 255 255 / 9%);border-radius:12px;}
-.fruit-model-picker button.active{background:rgb(255 207 72 / 10%);border-color:rgb(255 207 72 / 34%);box-shadow:0 8px 24px rgb(0 0 0 / 16%);}
+.fruit-model-picker label,.fruit-model-row{background:rgb(255 255 255 / 5%);border-color:rgb(255 255 255 / 9%);border-radius:12px;}
 .fruit-model-row button{background:rgb(255 255 255 / 9%);border-radius:9px;}
 .fruit-start{background:linear-gradient(180deg,#ffd85d,#f5b82f);border-radius:14px;box-shadow:0 14px 34px rgb(255 183 34 / 22%);font-family:var(--font-display);transition:transform .18s var(--ease-spring),box-shadow .18s ease;}
 .fruit-start:hover:not(:disabled){box-shadow:0 18px 44px rgb(255 183 34 / 32%);transform:translateY(-2px);}

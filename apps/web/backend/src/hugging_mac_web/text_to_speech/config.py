@@ -24,9 +24,12 @@ class TtsModelProfile:
 
 AUDIO8_TTS_PROFILE = TtsModelProfile(
     model_id="audio8/audio8-tts-preview",
-    display_name="Audio8 TTS Preview 0.6B",
+    display_name="Audio8 TTS Preview",
     short_name="Audio8 TTS",
-    description="多语言生成与声音克隆模型；支持 PyTorch CPU FP32 与 MLX BF16。",
+    description=(
+        "多语言生成与声音克隆模型；PyTorch 默认使用 CPU，也可选择 MPS，"
+        "异常时回退 CPU，0.6B 另支持 MLX。"
+    ),
     variant="0.6b-preview",
     runtime="pytorch",
     required_artifact_id="source",

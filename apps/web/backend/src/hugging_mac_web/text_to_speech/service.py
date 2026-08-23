@@ -26,6 +26,7 @@ from hugging_mac_web.text_to_speech.schemas import (
     SynthesizeSpeechRequest,
     TtsModelView,
     TtsResourceView,
+    TtsVariantView,
 )
 
 
@@ -45,21 +46,59 @@ class TextToSpeechService:
 
     async def model_view(self, model_id: str) -> TtsModelView:
         configured = self._profile(model_id)
-        resource = await self.resource_status(model_id)
+        manifest = self._context.models.registry.get(model_id).manifest
+        resources = await asyncio.gather(
+            *(self.resource_status(model_id, variant=item.name) for item in manifest.variants)
+        )
+        available_variant = next(
+            (
+                item.variant
+                for item in resources
+                if any(runtime.available for runtime in item.runtimes)
+            ),
+            None,
+        )
+        selected_variant = (
+            configured.variant
+            if any(
+                item.variant == configured.variant
+                and any(runtime.available for runtime in item.runtimes)
+                for item in resources
+            )
+            else available_variant or configured.variant
+        )
+        resource = next(item for item in resources if item.variant == selected_variant)
+        configured = replace(configured, variant=selected_variant)
         profile = self._select_runtime(configured, resource)
-        ready_instances = await self._ready_instances(profile)
+        ready_instances = await self._ready_instances(profile.model_id)
         return TtsModelView.from_profile(
             profile,
             resource,
             ready_instance_id=next(
-                (item.instance_id for item in ready_instances if item.runtime == profile.runtime),
+                (
+                    item.instance_id for item in ready_instances
+                    if item.variant == profile.variant and item.runtime == profile.runtime
+                ),
                 None,
             ),
             ready_instances=ready_instances,
+            variants=tuple(
+                TtsVariantView(
+                    name=variant.name,
+                    display_name=variant.display_name,
+                    available=any(runtime.available for runtime in status.runtimes),
+                    available_runtimes=tuple(
+                        runtime.runtime for runtime in status.runtimes if runtime.available
+                    ),
+                )
+                for variant, status in zip(manifest.variants, resources, strict=True)
+            ),
         )
 
-    async def resource_status(self, model_id: str) -> TtsResourceView:
-        profile = self._profile(model_id)
+    async def resource_status(
+        self, model_id: str, *, variant: str | None = None
+    ) -> TtsResourceView:
+        profile = self._profile(model_id, variant=variant)
         status = await self._context.models.resources.status(
             profile.model_id,
             variant=profile.variant,
@@ -67,9 +106,15 @@ class TextToSpeechService:
         )
         return TtsResourceView.from_sdk(status)
 
-    async def load_model(self, model_id: str, *, runtime: str | None = None) -> LoadedTtsModelView:
-        configured = self._profile(model_id)
-        resource = await self.resource_status(model_id)
+    async def load_model(
+        self,
+        model_id: str,
+        *,
+        variant: str | None = None,
+        runtime: str | None = None,
+    ) -> LoadedTtsModelView:
+        configured = self._profile(model_id, variant=variant)
+        resource = await self.resource_status(model_id, variant=configured.variant)
         profile = self._select_runtime(configured, resource)
         if runtime is not None:
             selected = next(
@@ -157,12 +202,15 @@ class TextToSpeechService:
             "x-inference-ms": f"{response.timings.inference_ms or 0:.3f}",
         }
 
-    async def _ready_instances(self, profile: TtsModelProfile) -> tuple[ReadyTtsInstanceView, ...]:
+    async def _ready_instances(self, model_id: str) -> tuple[ReadyTtsInstanceView, ...]:
         return tuple(
-            ReadyTtsInstanceView(instance_id=snapshot.instance_id, runtime=snapshot.runtime)
+            ReadyTtsInstanceView(
+                instance_id=snapshot.instance_id,
+                variant=snapshot.variant,
+                runtime=snapshot.runtime,
+            )
             for snapshot in await self._context.models.instances.snapshots()
-            if snapshot.model_id == profile.model_id
-            and snapshot.variant == profile.variant
+            if snapshot.model_id == model_id
             and snapshot.state is ModelState.READY
         )
 
@@ -199,7 +247,7 @@ class TextToSpeechService:
             )
         return matching[0]
 
-    def _profile(self, model_id: str) -> TtsModelProfile:
+    def _profile(self, model_id: str, *, variant: str | None = None) -> TtsModelProfile:
         profile = TTS_MODEL_PROFILES.get(model_id)
         if profile is None:
             raise ResourceNotFoundError(
@@ -208,6 +256,7 @@ class TextToSpeechService:
             )
         definition = self._context.models.registry.get(profile.model_id)
         manifest = definition.manifest
+        selected_variant = manifest.get_variant(variant or manifest.default_variant).name
         runtime = (
             profile.runtime
             if profile.runtime in {item.name for item in manifest.runtimes}
@@ -220,10 +269,10 @@ class TextToSpeechService:
             )
         return replace(
             profile,
-            variant=manifest.default_variant,
+            variant=selected_variant,
             runtime=runtime,
             required_artifact_id=self._runtime_artifact_id(
-                profile.model_id, manifest.default_variant, runtime
+                profile.model_id, selected_variant, runtime
             ),
         )
 

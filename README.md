@@ -150,9 +150,9 @@ and play one of the three neural games.
 
 ## Documentation
 
-The architecture and design documentation starts at
-[doc/README.md](doc/README.md). The design documents are currently written in
-Chinese.
+User and Python SDK documentation starts at [docs/README.md](docs/README.md).
+It includes the Studio workflow, model management, the SDK lifecycle, and a
+separate usage page for every integrated model.
 
 Serve the documentation locally with Material for MkDocs and Mermaid support:
 
@@ -162,23 +162,8 @@ uv run --group docs mkdocs serve --dev-addr 127.0.0.1:8001
 
 Then open <http://127.0.0.1:8001/>.
 
-Key documents:
-
-- [Architecture](doc/01-architecture.md)
-- [Model SDK](doc/02-model-sdk.md)
-- [Model catalog and capabilities](doc/03-model-catalog.md)
-- [Model resource management](doc/04-resource-management.md)
-- [Demo platform](doc/05-demo-platform.md)
-- [Evaluation](doc/06-evaluation.md)
-- [Training](doc/07-training.md)
-- [Frontend, backend, and API](doc/08-frontend-backend.md)
-- [Platform backend](doc/17-platform-backend.md)
-- [Vue and object detection](doc/18-web-frontend-and-object-detection.md)
-- [Audio8-ASR SDK](doc/20-audio8-asr-sdk.md)
-- [SenseVoiceSmall SDK](doc/21-sensevoice-small-sdk.md)
-- [Text-to-Speech SDK and app](doc/22-text-to-speech-sdk.md)
-- [Engineering conventions](doc/10-engineering.md)
-- [Roadmap](doc/11-roadmap.md)
+For implementation boundaries, see [ARCHITECTURE.md](ARCHITECTURE.md). Technical
+module documentation lives beside the SDK and Web code it describes.
 
 ## Repository layout
 
@@ -195,7 +180,7 @@ hugging-mac/
 ├── artifacts/                    # Generated outputs, ignored by default
 ├── models/                       # Local model cache, ignored by default
 ├── tests/
-├── doc/
+├── docs/                         # User and public SDK documentation
 ├── imgs/                         # README showcase images
 ├── pyproject.toml
 └── uv.lock
@@ -213,7 +198,7 @@ Run the checks:
 
 ```bash
 uv run ruff check .
-uv run mypy packages apps/web/backend
+uv run mypy packages/hugging_mac_sdk/src apps/web/backend/src
 uv run pytest
 uv run --group docs mkdocs build --strict
 cd apps/web/frontend && npm run build

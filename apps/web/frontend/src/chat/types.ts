@@ -11,7 +11,7 @@ export interface ChatResource {
   model_id: string
   revision: string
   variant: string
-  artifacts: Array<{ artifact_id: string; available: boolean; size_bytes: number | null }>
+  artifacts: Array<{ artifact_id: string; format: string; runtime: string | null; available: boolean; size_bytes: number | null }>
   total_size_bytes: number
 }
 

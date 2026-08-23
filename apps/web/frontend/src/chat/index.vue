@@ -16,6 +16,7 @@ import type { ChatModel, ConversationMessage, LoadedChatModel } from "./types"
 const model = ref<LoadedChatModel | null>(null)
 const models = ref<ChatModel[]>([])
 const selectedModelId = ref("")
+const selectedLlmModelId = ref("")
 const messages = ref<ConversationMessage[]>([])
 const prompt = ref("")
 const images = ref<Array<{ file: File; url: string }>>([])
@@ -26,12 +27,15 @@ const lifecycleMessage = ref<{ type: "error"; text: string } | null>(null)
 const maxTokens = ref(512)
 const temperature = ref(0)
 const enableThinking = ref(false)
-const asrEnabled = ref(true)
-const ttsEnabled = ref(true)
+const asrEnabled = ref(false)
+const ttsEnabled = ref(false)
 const cameraEnabled = ref(false)
-const asrModel = ref<AsrModel | null>(null)
+const asrModels = ref<AsrModel[]>([])
+const selectedAsrModelId = ref("")
+const selectedAsrVariant = ref("")
 const loadedAsr = ref<LoadedAsrModel | null>(null)
-const ttsModel = ref<TtsModel | null>(null)
+const ttsModels = ref<TtsModel[]>([])
+const selectedTtsModelId = ref("")
 const loadedTts = ref<LoadedTtsModel | null>(null)
 const voice = ref("af_heart")
 const language = ref("en-us")
@@ -41,7 +45,11 @@ const cameraPosition = reactive({ x: 0, y: 72 })
 const cameraSize = ref(300)
 const conversation = ref<HTMLElement | null>(null)
 const autoFollow = ref(true)
+const isDraggingImages = ref(false)
+const audioLevel = ref(0)
+const wavePhase = ref(0)
 let activeRequest: AbortController | null = null
+let imageDragDepth = 0
 let nextId = 0
 let activeTurn = 0
 let activeAssistant: ConversationMessage | null = null
@@ -77,8 +85,8 @@ interface AsrTiming {
   inferenceMs: number | null
 }
 
-const ASR_MODEL_ID = "nvidia/nemotron-3.5-asr-streaming-0.6b"
-const TTS_MODEL_ID = "hexgrad/kokoro"
+const DEFAULT_ASR_MODEL_ID = "nvidia/nemotron-3.5-asr-streaming-0.6b"
+const DEFAULT_TTS_MODEL_ID = "hexgrad/kokoro"
 const VISION_FRAME_SIZE = 448
 const KOKORO_LANGUAGE_PREFIX: Record<string, string> = {
   "en-us": "a",
@@ -107,6 +115,22 @@ const ready = computed(() => model.value?.state === "ready")
 const selectedProfile = computed(() =>
   models.value.find((item) => item.profile_id === selectedModelId.value),
 )
+const llmModels = computed(() =>
+  Array.from(new Map(models.value.map((item) => [item.model_id, item])).values()),
+)
+const llmVariants = computed(() =>
+  models.value.filter((item) => item.model_id === selectedLlmModelId.value),
+)
+const asrModel = computed(() =>
+  asrModels.value.find((item) => item.model_id === selectedAsrModelId.value) ?? null,
+)
+const asrVariants = computed(() => asrModel.value?.variants ?? [])
+const selectedAsrVariantInfo = computed(() =>
+  asrVariants.value.find((item) => item.name === selectedAsrVariant.value) ?? null,
+)
+const ttsModel = computed(() =>
+  ttsModels.value.find((item) => item.model_id === selectedTtsModelId.value) ?? null,
+)
 const selectedResourceAvailable = computed(() =>
   Boolean(
     selectedProfile.value?.resource.artifacts.find(
@@ -118,12 +142,22 @@ const supportsImages = computed(() => selectedProfile.value?.supports_images ?? 
 const canSend = computed(
   () => Boolean(prompt.value.trim()) && !loadingModel.value && Boolean(selectedResourceAvailable.value),
 )
-const asrAvailable = computed(() => Boolean(asrModel.value?.resource.runtimes.some((item) => item.runtime === "coreml" && item.available)))
-const ttsAvailable = computed(() => Boolean(ttsModel.value?.resource.runtimes?.some((item) => item.runtime === "coreml" && item.available)))
+const voiceWaveBars = computed(() =>
+  Array.from({ length: 68 }, (_, index) => {
+    const center = 1 - Math.abs(index - 33.5) / 34
+    const texture = .38 + Math.abs(Math.sin(index * 1.73 + wavePhase.value)) * .62
+    return Math.max(4, 7 + audioLevel.value * 72 * center * texture)
+  }),
+)
+const asrAvailable = computed(() => Boolean(selectedAsrVariantInfo.value?.available))
+const ttsAvailable = computed(() => Boolean(ttsModel.value?.resource.runtimes?.some((item) => item.available)))
 const ttsLanguages = computed(() =>
-  (ttsModel.value?.languages ?? []).filter((item) => KOKORO_LANGUAGE_PREFIX[item]),
+  selectedTtsModelId.value === DEFAULT_TTS_MODEL_ID
+    ? (ttsModel.value?.languages ?? []).filter((item) => KOKORO_LANGUAGE_PREFIX[item])
+    : (ttsModel.value?.languages ?? []),
 )
 const ttsVoices = computed(() => {
+  if (selectedTtsModelId.value !== DEFAULT_TTS_MODEL_ID) return ttsModel.value?.voices ?? []
   const prefix = KOKORO_LANGUAGE_PREFIX[language.value]
   return (ttsModel.value?.voices ?? []).filter((item) => item.startsWith(prefix ?? ""))
 })
@@ -141,31 +175,62 @@ const loadedRuntime = computed(() =>
 
 async function refreshModel() {
   try {
-    const [chatModels, asrModels, ttsModels] = await Promise.all([
+    const [chatModels, asrCatalog, ttsCatalog] = await Promise.all([
       fetchChatModels(),
       fetchAsrModels(),
       fetchTtsModels(),
     ])
     models.value = chatModels
-    asrModel.value = asrModels.find((item) => item.model_id === ASR_MODEL_ID) ?? null
-    ttsModel.value = ttsModels.find((item) => item.model_id === TTS_MODEL_ID) ?? null
+    asrModels.value = asrCatalog
+    ttsModels.value = ttsCatalog
+    if (!asrCatalog.some((item) => item.model_id === selectedAsrModelId.value)) {
+      selectedAsrModelId.value = asrCatalog.find((item) => item.model_id === DEFAULT_ASR_MODEL_ID)?.model_id
+        ?? asrCatalog.find((item) => item.variants.some((variant) => variant.available))?.model_id
+        ?? asrCatalog[0]?.model_id
+        ?? ""
+    }
+    syncAsrVariant()
+    if (!ttsCatalog.some((item) => item.model_id === selectedTtsModelId.value)) {
+      selectedTtsModelId.value = ttsCatalog.find((item) => item.model_id === DEFAULT_TTS_MODEL_ID)?.model_id
+        ?? ttsCatalog.find((item) => item.resource.runtimes?.some((runtime) => runtime.available))?.model_id
+        ?? ttsCatalog[0]?.model_id
+        ?? ""
+    }
     syncTtsSelection()
-    if (!asrModel.value?.resource.runtimes.some((item) => item.runtime === "coreml" && item.available)) asrEnabled.value = false
-    if (!ttsModel.value?.resource.runtimes?.some((item) => item.runtime === "coreml" && item.available)) ttsEnabled.value = false
-    loadedAsr.value = asrModel.value?.ready_instance_id
-      ? { instance_id: asrModel.value.ready_instance_id, model_id: ASR_MODEL_ID, variant: asrModel.value.variant, runtime: asrModel.value.runtime, device: "", state: "ready" }
+    if (!asrAvailable.value) asrEnabled.value = false
+    if (!ttsAvailable.value) ttsEnabled.value = false
+    const readyAsr = asrModel.value?.ready_instances.find((item) =>
+      item.variant === selectedAsrVariant.value && item.runtime === preferredRuntime(selectedAsrVariantInfo.value?.available_runtimes ?? []),
+    )
+    loadedAsr.value = readyAsr
+      ? { instance_id: readyAsr.instance_id, model_id: selectedAsrModelId.value, variant: readyAsr.variant, runtime: readyAsr.runtime, device: "", state: "ready" }
       : null
-    loadedTts.value = ttsModel.value?.ready_instance_id
-      ? { instance_id: ttsModel.value.ready_instance_id, model_id: TTS_MODEL_ID, variant: ttsModel.value.variant, runtime: ttsModel.value.runtime, device: "", state: "ready" }
+    const preferredTtsRuntime = preferredRuntime(ttsModel.value?.resource.runtimes?.filter((item) => item.available).map((item) => item.runtime) ?? [])
+    const readyTts = ttsModel.value?.ready_instances?.find((item) => item.runtime === preferredTtsRuntime)
+    loadedTts.value = readyTts
+      ? { instance_id: readyTts.instance_id, model_id: selectedTtsModelId.value, variant: ttsModel.value?.variant ?? "", runtime: readyTts.runtime, device: "", state: "ready" }
       : null
     if (!models.value.some((item) => item.profile_id === selectedModelId.value)) {
       selectedModelId.value = models.value.find(modelResourceAvailable)?.profile_id ?? ""
     }
+    selectedLlmModelId.value = selectedProfile.value?.model_id ?? models.value[0]?.model_id ?? ""
     model.value = selectedModelId.value
       ? await fetchLoadedChatModel(selectedModelId.value)
       : null
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "模型状态读取失败"
+  }
+}
+
+function preferredRuntime(runtimes: string[]): string {
+  const priority = ["coreml", "pytorch", "mlx"]
+  return priority.find((runtime) => runtimes.includes(runtime)) ?? runtimes[0] ?? ""
+}
+
+function syncAsrVariant() {
+  const variants = asrModel.value?.variants ?? []
+  if (!variants.some((item) => item.name === selectedAsrVariant.value)) {
+    selectedAsrVariant.value = variants.find((item) => item.available)?.name ?? variants[0]?.name ?? ""
   }
 }
 
@@ -226,6 +291,40 @@ async function selectModel() {
   }
 }
 
+async function changeLlmModel() {
+  selectedModelId.value = llmVariants.value.find(modelResourceAvailable)?.profile_id
+    ?? llmVariants.value[0]?.profile_id
+    ?? ""
+  await selectModel()
+}
+
+async function changeAsrModel() {
+  if (asrEnabled.value) {
+    asrEnabled.value = false
+    await toggleAsr()
+  }
+  loadedAsr.value = null
+  selectedAsrVariant.value = ""
+  syncAsrVariant()
+}
+
+async function changeAsrVariant() {
+  if (asrEnabled.value) {
+    asrEnabled.value = false
+    await toggleAsr()
+  }
+  loadedAsr.value = null
+}
+
+async function changeTtsModel() {
+  if (ttsEnabled.value) {
+    ttsEnabled.value = false
+    await toggleTts()
+  }
+  loadedTts.value = null
+  syncTtsSelection()
+}
+
 async function toggleSelectedModel() {
   if (loadingModel.value) return
   if (!ready.value || !model.value) {
@@ -248,14 +347,51 @@ async function toggleSelectedModel() {
   }
 }
 
-function selectImages(event: Event) {
-  if (!supportsImages.value) return
-  const input = event.target as HTMLInputElement
-  for (const file of Array.from(input.files ?? [])) {
+function addImages(files: Iterable<File>) {
+  if (!supportsImages.value || loadingModel.value) return
+  const acceptedTypes = new Set(["image/png", "image/jpeg", "image/webp"])
+  for (const file of files) {
     if (images.value.length >= 4) break
+    if (!acceptedTypes.has(file.type)) continue
     images.value.push({ file, url: URL.createObjectURL(file) })
   }
+}
+
+function selectImages(event: Event) {
+  const input = event.target as HTMLInputElement
+  addImages(Array.from(input.files ?? []))
   input.value = ""
+}
+
+function containsDraggedFiles(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes("Files")
+}
+
+function handleImageDragEnter(event: DragEvent) {
+  if (!containsDraggedFiles(event) || !supportsImages.value || loadingModel.value) return
+  event.preventDefault()
+  imageDragDepth += 1
+  isDraggingImages.value = true
+}
+
+function handleImageDragOver(event: DragEvent) {
+  if (!containsDraggedFiles(event) || !supportsImages.value || loadingModel.value) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy"
+}
+
+function handleImageDragLeave(event: DragEvent) {
+  if (!containsDraggedFiles(event) || !isDraggingImages.value) return
+  imageDragDepth = Math.max(0, imageDragDepth - 1)
+  if (imageDragDepth === 0) isDraggingImages.value = false
+}
+
+function handleImageDrop(event: DragEvent) {
+  if (!containsDraggedFiles(event)) return
+  event.preventDefault()
+  imageDragDepth = 0
+  isDraggingImages.value = false
+  addImages(Array.from(event.dataTransfer?.files ?? []))
 }
 
 function removeImage(index: number) {
@@ -463,7 +599,7 @@ function createTtsPipeline(
       const startedAt = performance.now()
       try {
         const response = await synthesizeSpeech({
-          model_id: TTS_MODEL_ID,
+          model_id: selectedTtsModelId.value,
           instance_id: instance.instance_id,
           text: segment,
           voice: voice.value,
@@ -574,8 +710,13 @@ async function playAudioBlob(blob: Blob, turnId: number, playbackId: number) {
 
 async function ensureTtsLoaded(): Promise<LoadedTtsModel | null> {
   if (!ttsEnabled.value || !ttsAvailable.value || !ttsModel.value) return null
-  if (loadedTts.value?.state === "ready") return loadedTts.value
-  loadedTts.value = await loadTtsModel(TTS_MODEL_ID, "coreml")
+  if (loadedTts.value?.state === "ready" && loadedTts.value.model_id === selectedTtsModelId.value) return loadedTts.value
+  const runtime = preferredRuntime(ttsModel.value.resource.runtimes?.filter((item) => item.available).map((item) => item.runtime) ?? [])
+  loadedTts.value = await loadTtsModel(
+    selectedTtsModelId.value,
+    ttsModel.value.variant,
+    runtime,
+  )
   return loadedTts.value
 }
 
@@ -603,6 +744,9 @@ async function toggleTts() {
 
 async function toggleAsr() {
   if (!asrEnabled.value) {
+    const socket = asrSocket
+    stopAsrCapture()
+    await socket?.stop()
     stopAsr()
     if (loadedAsr.value) {
       await unloadModel(loadedAsr.value.instance_id).catch(() => undefined)
@@ -616,7 +760,14 @@ async function toggleAsr() {
     return
   }
   try {
-    loadedAsr.value ??= await loadAsrModel(ASR_MODEL_ID, asrModel.value.variant, "coreml")
+    const runtime = preferredRuntime(selectedAsrVariantInfo.value?.available_runtimes ?? [])
+    if (
+      loadedAsr.value?.model_id !== selectedAsrModelId.value
+      || loadedAsr.value.variant !== selectedAsrVariant.value
+      || loadedAsr.value.runtime !== runtime
+    ) {
+      loadedAsr.value = await loadAsrModel(selectedAsrModelId.value, selectedAsrVariant.value, runtime)
+    }
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: false, channelCount: 1 },
       video: false,
@@ -626,8 +777,9 @@ async function toggleAsr() {
     asrSocket = await ChatAsrSocket.connect(
       {
         instanceId: loadedAsr.value.instance_id,
+        modelId: selectedAsrModelId.value,
         sampleRate: audioContext.sampleRate,
-        streamingChunkSeconds: asrModel.value.streaming_chunk_seconds ?? 2.24,
+        streamingChunkSeconds: selectedAsrVariantInfo.value?.streaming_chunk_seconds ?? asrModel.value.streaming_chunk_seconds ?? 2.24,
       },
       handleAsrEvent,
       (caught) => { error.value = caught.message },
@@ -647,9 +799,21 @@ async function toggleAsr() {
   }
 }
 
+async function toggleAsrFromComposer() {
+  asrEnabled.value = !asrEnabled.value
+  await toggleAsr()
+}
+
 function processAsrAudio(event: AudioProcessingEvent) {
   if (!asrEnabled.value || !asrSocket) return
-  asrSocket.send(event.inputBuffer.getChannelData(0))
+  const samples = event.inputBuffer.getChannelData(0)
+  let energy = 0
+  for (let index = 0; index < samples.length; index += 1) energy += samples[index]! * samples[index]!
+  const rms = Math.sqrt(energy / samples.length)
+  const normalized = Math.min(1, Math.max(0, (rms - .008) * 9))
+  audioLevel.value = audioLevel.value * .56 + normalized * .44
+  wavePhase.value += .32 + normalized * .48
+  asrSocket.send(samples)
 }
 
 function handleAsrEvent(event: ChatAsrEvent) {
@@ -681,8 +845,13 @@ function formatTime(value: number | null): string {
 
 function stopAsr() {
   asrDraft.value = ""
+  audioLevel.value = 0
   asrSocket?.close()
   asrSocket = null
+  stopAsrCapture()
+}
+
+function stopAsrCapture() {
   if (audioProcessor) audioProcessor.onaudioprocess = null
   audioProcessor?.disconnect()
   audioSource?.disconnect()
@@ -770,10 +939,9 @@ function handleKeydown(event: KeyboardEvent) {
 
 onMounted(async () => {
   await refreshModel()
-  if (asrEnabled.value && asrAvailable.value) await toggleAsr()
-  if (ttsEnabled.value && ttsAvailable.value) await toggleTts()
 })
 onBeforeUnmount(() => {
+  imageDragDepth = 0
   interruptTurn()
   stopAsr()
   stopCamera()
@@ -792,27 +960,57 @@ onBeforeUnmount(() => {
     <aside class="chat-sidebar">
       <RouterLink class="chat-brand" to="/apps">← Neural Apps</RouterLink>
 
-      <label class="chat-model-select">
-        MODEL
-        <span class="chat-model-control">
-          <select v-model="selectedModelId" :disabled="loadingModel" @change="selectModel">
-            <option v-for="item in models" :key="item.profile_id" :value="item.profile_id" :disabled="!modelResourceAvailable(item)">
-              {{ item.display_name }}
-            </option>
-          </select>
-          <button type="button" :disabled="loadingModel || (!ready && !selectedResourceAvailable)" @click="toggleSelectedModel">
-            {{ loadingModel ? "WAIT…" : ready ? "UNLOAD" : "LOAD" }}
-          </button>
-        </span>
-      </label>
-      <small v-if="lifecycleMessage" :class="`lifecycle-${lifecycleMessage.type}`">{{ lifecycleMessage.text }}</small>
+      <section class="chat-model-stack" aria-label="Conversation models">
+        <article class="chat-model-card llm">
+          <header><span class="model-glyph">✦</span><div><b>Language model</b><small>REASON & RESPOND</small></div><i :class="{ ready }">{{ ready ? "READY" : "OFF" }}</i></header>
+          <label>MODEL
+            <select v-model="selectedLlmModelId" :disabled="loadingModel" @change="changeLlmModel">
+              <option v-for="item in llmModels" :key="item.model_id" :value="item.model_id">{{ item.model_id.split('/').pop() }}</option>
+            </select>
+          </label>
+          <div class="model-variant-row">
+            <label>VARIANT
+              <select v-model="selectedModelId" :disabled="loadingModel" @change="selectModel">
+                <option v-for="item in llmVariants" :key="item.profile_id" :value="item.profile_id" :disabled="!modelResourceAvailable(item)">{{ item.display_name }}</option>
+              </select>
+            </label>
+            <button type="button" :disabled="loadingModel || (!ready && !selectedResourceAvailable)" @click="toggleSelectedModel">{{ loadingModel ? "…" : ready ? "UNLOAD" : "LOAD" }}</button>
+          </div>
+          <p v-if="loadedProfile"><span></span>{{ loadedProfile.display_name }}</p>
+        </article>
 
-      <div class="chat-loaded-model" :class="{ empty: !loadedProfile }">
-        <span>CURRENTLY LOADED</span>
-        <strong>{{ loadedProfile?.display_name ?? "None" }}</strong>
-        <small>{{ loadedRuntime?.toUpperCase() ?? "—" }}</small>
-      </div>
-      <p v-if="!ready && !selectedResourceAvailable" class="chat-error">模型不可用。请前往 Models 页面下载模型后重试。</p>
+        <article class="chat-model-card asr">
+          <header><span class="model-glyph">◉</span><div><b>Speech to text</b><small>VOICE INPUT</small></div><i :class="{ ready: asrAvailable }">{{ asrAvailable ? "AVAILABLE" : "MISSING" }}</i></header>
+          <label>MODEL
+            <select v-model="selectedAsrModelId" @change="changeAsrModel">
+              <option v-for="item in asrModels" :key="item.model_id" :value="item.model_id">{{ item.short_name }}</option>
+            </select>
+          </label>
+          <label>VARIANT
+            <select v-model="selectedAsrVariant" @change="changeAsrVariant">
+              <option v-for="item in asrVariants" :key="item.name" :value="item.name" :disabled="!item.available">{{ item.display_name }}</option>
+            </select>
+          </label>
+        </article>
+
+        <article class="chat-model-card tts">
+          <header><span class="model-glyph">♪</span><div><b>Text to speech</b><small>VOICE OUTPUT</small></div><label class="model-switch"><input v-model="ttsEnabled" type="checkbox" :disabled="!ttsAvailable" @change="toggleTts" /><span></span></label></header>
+          <label>MODEL
+            <select v-model="selectedTtsModelId" @change="changeTtsModel">
+              <option v-for="item in ttsModels" :key="item.model_id" :value="item.model_id" :disabled="!item.resource.runtimes?.some((runtime) => runtime.available)">{{ item.short_name }}</option>
+            </select>
+          </label>
+          <label>VARIANT
+            <select :value="ttsModel?.variant" disabled><option>{{ ttsModel?.variant ?? "—" }}</option></select>
+          </label>
+          <div v-if="ttsEnabled && ttsAvailable" class="chat-tts-options">
+            <label v-if="ttsLanguages.length"><span>LANGUAGE</span><select v-model="language" aria-label="TTS language" @change="changeTtsLanguage"><option v-for="item in ttsLanguages" :key="item" :value="item">{{ LANGUAGE_LABELS[item] ?? item }}</option></select></label>
+            <label v-if="ttsVoices.length"><span>VOICE</span><select v-model="voice" aria-label="TTS voice"><option v-for="item in ttsVoices" :key="item" :value="item">{{ voiceLabel(item) }}</option></select></label>
+          </div>
+        </article>
+      </section>
+      <small v-if="lifecycleMessage" :class="`lifecycle-${lifecycleMessage.type}`">{{ lifecycleMessage.text }}</small>
+      <p v-if="!ready && !selectedResourceAvailable" class="chat-error">模型资源尚未下载，请先前往 Models 页面。</p>
 
       <details class="chat-settings">
         <summary>Generation settings</summary>
@@ -823,34 +1021,6 @@ onBeforeUnmount(() => {
         <label class="chat-toggle"><input v-model="enableThinking" type="checkbox" /> Thinking mode</label>
       </details>
       <section class="chat-capabilities" aria-label="Conversation capabilities">
-        <label class="chat-capability" :class="{ unavailable: !asrAvailable }">
-          <input v-model="asrEnabled" type="checkbox" :disabled="!asrAvailable" @change="toggleAsr" />
-          <span><b>ASR</b><small>{{ loadedAsr ? loadedAsr.runtime.toUpperCase() : "VOICE INPUT" }}</small></span>
-        </label>
-        <div class="chat-tts-capability">
-          <label class="chat-capability" :class="{ unavailable: !ttsAvailable }">
-            <input v-model="ttsEnabled" type="checkbox" :disabled="!ttsAvailable" @change="toggleTts" />
-            <span><b>TTS</b><small>{{ loadedTts ? loadedTts.runtime.toUpperCase() : "VOICE OUTPUT" }}</small></span>
-          </label>
-          <div v-if="ttsEnabled && ttsAvailable" class="chat-tts-options">
-            <label>
-              <span>LANGUAGE</span>
-              <select v-model="language" aria-label="TTS language" @change="changeTtsLanguage">
-                <option v-for="item in ttsLanguages" :key="item" :value="item">
-                  {{ LANGUAGE_LABELS[item] ?? item }}
-                </option>
-              </select>
-            </label>
-            <label>
-              <span>VOICE</span>
-              <select v-model="voice" aria-label="TTS voice">
-                <option v-for="item in ttsVoices" :key="item" :value="item">
-                  {{ voiceLabel(item) }}
-                </option>
-              </select>
-            </label>
-          </div>
-        </div>
         <label class="chat-capability" :class="{ unavailable: !supportsImages }">
           <input v-model="cameraEnabled" type="checkbox" :disabled="!supportsImages" @change="toggleCamera" />
           <span><b>CAMERA</b><small>448 × 448 FRAME</small></span>
@@ -861,11 +1031,24 @@ onBeforeUnmount(() => {
       </button>
     </aside>
 
-    <main class="chat-workspace">
+    <main
+      class="chat-workspace"
+      :class="{ 'is-dragging-images': isDraggingImages }"
+      @dragenter="handleImageDragEnter"
+      @dragover="handleImageDragOver"
+      @dragleave="handleImageDragLeave"
+      @drop="handleImageDrop"
+    >
       <header class="chat-topbar">
         <div><span class="status-dot"></span> ON-DEVICE SESSION</div>
         <span>{{ messages.length }} MESSAGES</span>
       </header>
+
+      <div v-if="isDraggingImages" class="chat-drop-overlay" aria-hidden="true">
+        <span>＋</span>
+        <strong>拖放图片到这里</strong>
+        <small>PNG、JPEG 或 WEBP · 最多 4 张</small>
+      </div>
 
       <aside
         v-if="cameraEnabled"
@@ -938,7 +1121,7 @@ onBeforeUnmount(() => {
 
       <div v-if="error" class="chat-error" role="alert">{{ error }}</div>
       <div v-if="asrDraft" class="chat-asr-draft"><span></span>{{ asrDraft }}</div>
-      <footer class="chat-composer">
+      <footer class="chat-composer" :class="{ 'is-listening': asrEnabled }">
         <div v-if="images.length" class="chat-previews">
           <figure v-for="(image, index) in images" :key="image.url">
             <img :src="image.url" :alt="image.file.name" />
@@ -946,11 +1129,38 @@ onBeforeUnmount(() => {
           </figure>
         </div>
         <div class="chat-input-row">
+          <div
+            v-if="asrEnabled"
+            class="chat-voice-wave"
+            :style="{ '--voice-energy': audioLevel.toFixed(3) }"
+            aria-hidden="true"
+          >
+            <div class="chat-voice-glow"></div>
+            <span
+              v-for="(height, index) in voiceWaveBars"
+              :key="index"
+              :style="{ '--wave-height': `${height}px`, '--wave-delay': `${index * -18}ms` }"
+            ></span>
+          </div>
           <label v-if="supportsImages" class="chat-attach" :class="{ disabled: loadingModel || images.length >= 4 }">
             <input type="file" accept="image/png,image/jpeg,image/webp" multiple :disabled="loadingModel || images.length >= 4" @change="selectImages" />
             <span>＋</span><small>IMAGE</small>
           </label>
           <textarea v-model="prompt" rows="1" maxlength="32000" :disabled="loadingModel" placeholder="输入消息…（新消息会打断当前回复）" @keydown="handleKeydown"></textarea>
+          <button
+            class="chat-mic"
+            :class="{ active: asrEnabled }"
+            type="button"
+            :disabled="!asrAvailable"
+            :aria-label="asrEnabled ? '关闭语音输入' : '开启语音输入'"
+            :aria-pressed="asrEnabled"
+            @click="toggleAsrFromComposer"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15.25a3.75 3.75 0 0 0 3.75-3.75v-5a3.75 3.75 0 0 0-7.5 0v5A3.75 3.75 0 0 0 12 15.25Z" />
+              <path d="M5.75 11.25v.25a6.25 6.25 0 0 0 12.5 0v-.25M12 17.75v3M9.25 20.75h5.5" />
+            </svg>
+          </button>
           <button class="chat-send" :disabled="!canSend" @click="submit">
             <span>↑</span>
           </button>
@@ -1007,10 +1217,14 @@ onBeforeUnmount(() => {
 .chat-asr-draft { align-items:center; color:#c9cbc1; display:flex; font:.62rem var(--font-mono); gap:.55rem; margin:0 max(4vw,2rem) .7rem; }.chat-asr-draft span { animation:pulse 1s infinite alternate; background:var(--signal); border-radius:50%; height:.5rem; width:.5rem; }
 .chat-camera { background:#11130f; border:1px solid #595c52; box-shadow:0 1rem 3rem #000b; min-height:12rem; min-width:13rem; overflow:hidden; position:fixed; resize:both; z-index:20; }.chat-camera header { align-items:center; background:#1c1f19; cursor:move; display:flex; font:600 .55rem var(--font-mono); justify-content:space-between; padding:.55rem .7rem; touch-action:none; user-select:none; }.chat-camera header button { background:none; border:0; color:#ddd; cursor:pointer; font-size:1rem; }.chat-camera video { aspect-ratio:16/9; display:block; height:calc(100% - 3.8rem); min-height:8rem; object-fit:cover; transform:scaleX(-1); width:100%; }.chat-camera>small { color:#77796f; display:block; font:.48rem var(--font-mono); padding:.4rem .7rem; }
 .chat-scroll-latest { background:#262923; border:1px solid #52554c; border-radius:2rem; bottom:7.4rem; color:#f4f2e9; cursor:pointer; font:600 .62rem var(--font-mono); left:50%; padding:.65rem 1rem; position:absolute; transform:translateX(-50%); z-index:3; }
-.chat-composer { background:linear-gradient(180deg,#0d0e0d00,#0d0e0d 25%); border-top:1px solid #292c27; padding:1rem max(4vw,2rem) 1.4rem; }.chat-input-row { align-items:end; background:#191c17; border:1px solid #3b4037; border-radius:1.35rem; box-shadow:0 .7rem 2rem #0003; display:grid; grid-template-columns:auto minmax(0,1fr) auto; padding:.5rem; transition:border-color .2s,box-shadow .2s; }.chat-input-row:focus-within { border-color:#75894e; box-shadow:0 0 0 3px #b8f23c0c,0 .7rem 2rem #0003; }.chat-attach { align-items:center; cursor:pointer; display:flex; gap:.35rem; padding:.6rem; }.chat-attach input { display:none; }.chat-attach span { font-size:1.4rem; }.chat-attach small { color:#8c8d85; font:.52rem var(--font-mono); }.chat-attach.disabled { opacity:.35; }.chat-input-row textarea { background:none; border:0; color:#f4f2e9; font:1rem var(--font-display); max-height:10rem; min-height:2.6rem; outline:0; padding:.7rem; resize:vertical; }.chat-send { align-items:center; background:var(--signal); border:0; border-radius:50%; color:#111; cursor:pointer; display:flex; font-size:1.4rem; height:2.7rem; justify-content:center; transition:transform .18s,box-shadow .18s; width:2.7rem; }.chat-send:not(:disabled):hover { box-shadow:0 0 1rem #b8f23c55; transform:translateY(-2px); }.chat-send:disabled { background:#42443e; color:#85877f; cursor:default; }.chat-hint { color:#62645d; display:block; font-size:.5rem; letter-spacing:.08em; margin-top:.55rem; text-align:center; }
+.chat-composer { background:linear-gradient(180deg,#0d0e0d00,#0d0e0d 25%); border-top:1px solid #292c27; isolation:isolate; padding:1rem max(4vw,2rem) 1.4rem; position:relative; }.chat-input-row { align-items:center; background:#191c17; border:1px solid #3b4037; border-radius:1.35rem; box-shadow:0 .7rem 2rem #0003; display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; padding:.5rem; position:relative; transition:border-color .2s,box-shadow .2s; z-index:2; }.chat-input-row:focus-within { border-color:#75894e; box-shadow:0 0 0 3px #b8f23c0c,0 .7rem 2rem #0003; }.chat-attach { align-items:center; cursor:pointer; display:flex; gap:.35rem; padding:.6rem; }.chat-attach input { display:none; }.chat-attach span { font-size:1.4rem; }.chat-attach small { color:#8c8d85; font:.52rem var(--font-mono); }.chat-attach.disabled { opacity:.35; }.chat-input-row textarea { align-self:center; background:none; border:0; box-sizing:border-box; color:#f4f2e9; field-sizing:content; font:1rem/1.35 var(--font-display); max-height:10rem; min-height:2.7rem; outline:0; overflow-y:auto; padding:.675rem .7rem; resize:none; }.chat-send,.chat-mic { align-items:center; border:0; border-radius:50%; cursor:pointer; display:flex; height:2.7rem; justify-content:center; transition:transform .18s,box-shadow .22s,background .22s,color .22s; width:2.7rem; }.chat-send { background:var(--signal); color:#111; font-size:1.4rem; }.chat-send:not(:disabled):hover { box-shadow:0 0 1rem #b8f23c55; transform:translateY(-2px); }.chat-send:disabled { background:#42443e; color:#85877f; cursor:default; }.chat-mic { background:transparent; color:#8d94a1; margin-right:.28rem; }.chat-mic svg { fill:currentColor; height:1.25rem; overflow:visible; stroke:currentColor; stroke-linecap:round; stroke-linejoin:round; stroke-width:1.55; width:1.25rem; }.chat-mic svg path:first-child { stroke:none; }.chat-mic:hover:not(:disabled) { background:rgb(98 130 255 / 12%); color:#8eb9ff; }.chat-mic.active { animation:mic-breathe 1.8s ease-in-out infinite; background:linear-gradient(145deg,#7b61ff,#0aa8ff); box-shadow:0 0 0 1px rgb(161 206 255 / 32%) inset,0 0 18px rgb(53 133 255 / 62%),0 0 38px rgb(136 72 255 / 30%); color:white; }.chat-mic:disabled { cursor:not-allowed; opacity:.3; }.chat-hint { color:#62645d; display:block; font-size:.5rem; letter-spacing:.08em; margin-top:.55rem; position:relative; text-align:center; z-index:2; }
+.chat-voice-wave { align-items:flex-end; display:flex; gap:clamp(2px,.3vw,6px); height:8.5rem; justify-content:center; left:7%; overflow:visible; padding:0; pointer-events:none; position:absolute; right:7%; top:1px; transform:translateY(-100%); z-index:3; }.chat-voice-wave::after { background:linear-gradient(90deg,transparent,rgb(99 187 255 / 55%),rgb(153 93 255 / 50%),transparent); border-radius:50%; bottom:-.18rem; box-shadow:0 0 12px rgb(86 174 255 / 72%),0 0 28px rgb(131 79 255 / 45%); content:""; height:2px; left:5%; position:absolute; right:5%; }.chat-voice-wave>span { animation:wave-shimmer 1.25s ease-in-out infinite alternate; animation-delay:var(--wave-delay); background:linear-gradient(180deg,#d9f6ff 0%,#69c8ff 30%,#8b6cff 68%,#ff5ec9 100%); border-radius:999px; box-shadow:0 0 8px rgb(105 202 255 / 82%),0 0 18px rgb(126 89 255 / 44%); height:var(--wave-height); max-height:7.5rem; min-height:5px; opacity:.9; position:relative; transform-origin:bottom; transition:height 90ms linear; width:clamp(2px,.22vw,4px); z-index:2; }.chat-voice-glow { background:radial-gradient(ellipse at center,rgb(65 174 255 / 38%),rgb(132 70 255 / 23%) 35%,rgb(255 72 194 / 12%) 55%,transparent 76%); bottom:-2.15rem; filter:blur(16px); height:9.5rem; left:2%; position:absolute; right:2%; transform:scaleY(calc(.72 + var(--voice-energy, .2))); z-index:0; }.chat-composer.is-listening .chat-input-row { border-color:rgb(91 155 255 / 46%); box-shadow:0 1px 0 rgb(255 255 255 / 10%) inset,0 -8px 28px rgb(91 84 255 / 12%),0 0 34px rgb(64 145 255 / 22%),0 18px 48px rgb(0 0 0 / 32%); }
+.chat-drop-overlay { align-items:center; background:rgb(8 14 24 / 78%); border:2px dashed rgb(77 163 255 / 72%); border-radius:20px; display:flex; flex-direction:column; inset:4.2rem 1.25rem 1.25rem; justify-content:center; pointer-events:none; position:absolute; z-index:30; -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); }.chat-drop-overlay span { color:#4da3ff; font-size:3rem; line-height:1; }.chat-drop-overlay strong { font-size:1.05rem; margin-top:.65rem; }.chat-drop-overlay small { color:#aab2c0; font:.58rem var(--font-mono); margin-top:.45rem; }
 .chat-previews { display:flex; gap:.6rem; margin-bottom:.7rem; }.chat-previews figure { height:4.5rem; margin:0; position:relative; width:4.5rem; }.chat-previews img { border-radius:.4rem; height:100%; object-fit:cover; width:100%; }.chat-previews button { background:#111; border:1px solid #555; border-radius:50%; color:white; cursor:pointer; height:1.3rem; position:absolute; right:-.3rem; top:-.3rem; width:1.3rem; }
 @keyframes bubble-in-left { from { opacity:0; transform:translate(-.7rem,.4rem) scale(.98); } to { opacity:1; transform:none; } }
 @keyframes bubble-in-right { from { opacity:0; transform:translate(.7rem,.4rem) scale(.98); } to { opacity:1; transform:none; } }
+@keyframes wave-shimmer { from { filter:saturate(.9) brightness(.88); opacity:.68; } to { filter:saturate(1.18) brightness(1.18); opacity:1; } }
+@keyframes mic-breathe { 50% { box-shadow:0 0 0 1px rgb(200 230 255 / 48%) inset,0 0 25px rgb(53 157 255 / 72%),0 0 48px rgb(151 70 255 / 38%); } }
 @media(max-width:800px){.chat-page{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.chat-sidebar{border-bottom:1px solid #343630;border-right:0;display:grid;grid-template-columns:1fr auto;height:auto;overflow:auto;padding:1rem 1.2rem}.chat-settings,.chat-clear{display:none}.chat-brand{align-self:center}.chat-loaded-model{grid-column:2;grid-row:1}.chat-model-select{grid-column:1/-1}.chat-capabilities{grid-column:1/-1;grid-template-columns:repeat(3,minmax(0,1fr))}.chat-capability>span{align-items:flex-start;flex-direction:column;gap:.2rem}.chat-workspace{height:100%;min-height:0}.chat-suggestions{grid-template-columns:1fr}.chat-conversation{padding:2rem 1rem}.chat-message{gap:.5rem}.chat-bubble{max-width:85%}.chat-composer{padding:1rem}}
 
 /* Aurora Glass chat workspace */
@@ -1203,9 +1417,11 @@ onBeforeUnmount(() => {
   color:var(--ink);
 }
 .chat-topbar {
-  background:color-mix(in srgb,var(--glass-strong) 82%,transparent);
-  border-bottom:1px solid var(--line);
+  background:transparent;
+  border-bottom:0;
   color:var(--muted);
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
 }
 .chat-empty>span { color:var(--accent); }
 .chat-empty h2 {
@@ -1282,4 +1498,46 @@ onBeforeUnmount(() => {
 @media(max-width:800px){
   .chat-sidebar{border-color:var(--glass-border);}
 }
+
+/* Compact model studio sidebar */
+.chat-page { grid-template-columns:23rem minmax(0,1fr); }
+.chat-sidebar { gap:.85rem; padding:1.15rem; scrollbar-width:thin; }
+.chat-model-stack { display:grid; gap:.62rem; }
+.chat-model-card { background:color-mix(in srgb,var(--surface-solid) 64%,transparent); border:1px solid var(--line); border-radius:15px; box-shadow:0 1px 0 rgb(255 255 255 / 44%) inset,0 8px 24px rgb(25 39 67 / 5%); display:grid; gap:.58rem; padding:.72rem; transition:border-color .2s,box-shadow .2s,transform .2s; }
+.chat-model-card:hover { border-color:color-mix(in srgb,var(--accent) 24%,var(--line)); box-shadow:0 1px 0 rgb(255 255 255 / 48%) inset,0 12px 30px rgb(25 39 67 / 8%); transform:translateY(-1px); }
+.chat-model-card>header { align-items:center; display:grid; gap:.55rem; grid-template-columns:auto minmax(0,1fr) auto; }
+.model-glyph { align-items:center; background:color-mix(in srgb,var(--accent) 10%,var(--surface-solid)); border:1px solid color-mix(in srgb,var(--accent) 18%,var(--line)); border-radius:9px; color:var(--accent); display:flex; font-size:.82rem; height:1.85rem; justify-content:center; width:1.85rem; }
+.chat-model-card.asr .model-glyph { background:rgb(94 92 230 / 10%); border-color:rgb(94 92 230 / 20%); color:#7775f5; }
+.chat-model-card.tts .model-glyph { background:rgb(175 82 222 / 10%); border-color:rgb(175 82 222 / 20%); color:#b65ce3; }
+.chat-model-card header div { display:grid; gap:.08rem; min-width:0; }
+.chat-model-card header b { color:var(--ink); font-size:.68rem; font-weight:700; }
+.chat-model-card header small { color:var(--muted); font:.43rem var(--font-mono); letter-spacing:.09em; }
+.chat-model-card header i { background:color-mix(in srgb,var(--muted) 8%,transparent); border-radius:999px; color:var(--muted); font:700 .4rem var(--font-mono); font-style:normal; letter-spacing:.05em; padding:.27rem .4rem; }
+.chat-model-card header i.ready { background:rgb(48 209 88 / 10%); color:#2aa647; }
+.chat-model-card>label,.model-variant-row label { color:var(--muted); display:grid; font:650 .43rem var(--font-mono); gap:.27rem; letter-spacing:.08em; min-width:0; }
+.chat-model-card select { appearance:none; background:color-mix(in srgb,var(--surface-solid) 86%,transparent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='m1 1 4 4 4-4' fill='none' stroke='%238b93a1' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right .55rem center; border:1px solid var(--line); border-radius:9px; color:var(--ink); font:600 .58rem var(--font-display); height:2rem; min-width:0; padding:0 1.55rem 0 .58rem; text-overflow:ellipsis; width:100%; }
+.chat-model-card select:focus { border-color:rgb(10 132 255 / 48%); box-shadow:0 0 0 3px rgb(10 132 255 / 9%); outline:0; }
+.chat-model-card select:disabled { cursor:not-allowed; opacity:.58; }
+.model-variant-row { display:grid; gap:.45rem; grid-template-columns:minmax(0,1fr) auto; }
+.model-variant-row button { align-self:end; background:linear-gradient(180deg,#2997ff,#0878e8); border:0; border-radius:9px; color:white; cursor:pointer; font:700 .46rem var(--font-mono); height:2rem; padding:0 .65rem; }
+.model-variant-row button:disabled { cursor:not-allowed; filter:saturate(.2); opacity:.5; }
+.chat-model-card>p { align-items:center; color:var(--muted); display:flex; font:.48rem var(--font-mono); gap:.35rem; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chat-model-card>p span { background:#30d158; border-radius:50%; box-shadow:0 0 8px rgb(48 209 88 / 55%); flex:0 0 auto; height:.38rem; width:.38rem; }
+.model-switch { cursor:pointer; display:block!important; }
+.model-switch input { clip:rect(0 0 0 0); position:absolute; }
+.model-switch span { background:color-mix(in srgb,var(--muted) 25%,var(--surface-solid)); border-radius:999px; display:block; height:1.15rem; position:relative; transition:background .2s; width:2rem; }
+.model-switch span::after { background:white; border-radius:50%; box-shadow:0 1px 4px rgb(0 0 0 / 22%); content:""; height:.85rem; left:.15rem; position:absolute; top:.15rem; transition:transform .2s var(--ease-spring); width:.85rem; }
+.model-switch input:checked+span { background:linear-gradient(90deg,#5e5ce6,#af52de); }
+.model-switch input:checked+span::after { transform:translateX(.85rem); }
+.chat-model-card .chat-tts-options { border-radius:10px; grid-template-columns:repeat(2,minmax(0,1fr)); padding:.5rem; }
+.chat-model-card .chat-tts-options select { font-size:.52rem; height:1.85rem; }
+.chat-settings { margin-top:.1rem; }
+.chat-capabilities { padding-top:.75rem; }
+
+@media(max-width:800px){
+  .chat-page{grid-template-columns:1fr;}
+  .chat-model-stack{grid-column:1/-1;grid-template-columns:repeat(3,minmax(0,1fr));}
+  .chat-model-card .chat-tts-options{grid-template-columns:1fr;}
+}
+@media(max-width:620px){.chat-model-stack{grid-template-columns:1fr;}}
 </style>

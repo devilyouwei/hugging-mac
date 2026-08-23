@@ -33,9 +33,7 @@ def test_terminal_logs_include_callsite_and_level_colors(capsys: object) -> None
     assert "test_logging.py" in output
     assert "[test_logging.py:" in output
     assert "test_terminal_logs_include_callsite_and_level_colors]" in output
-    assert re.search(
-        r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}", output
-    )
+    assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}", output)
     assert "info event" in output
     assert "source=" not in output
     assert "[info     ]" not in output

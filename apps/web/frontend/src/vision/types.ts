@@ -1,4 +1,4 @@
-export type RuntimeChoice = "auto" | "coreml" | "pytorch-mps"
+export type RuntimeChoice = "auto" | "coreml" | "pytorch-mps" | "onnx"
 
 export interface VisionOptions {
   runtime: RuntimeChoice

@@ -23,6 +23,8 @@ class ChatArtifactView(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     artifact_id: str
+    format: str
+    runtime: str | None
     available: bool
     size_bytes: int | None
 
@@ -45,6 +47,8 @@ class ChatResourceView(BaseModel):
             artifacts=tuple(
                 ChatArtifactView(
                     artifact_id=artifact.artifact_id,
+                    format=artifact.format,
+                    runtime=artifact.runtime,
                     available=artifact.available,
                     size_bytes=artifact.size_bytes,
                 )

@@ -7,7 +7,6 @@ import type {
   ModelInventory,
   ModelStructure,
   ArtifactInventoryItem,
-  ResourceOption,
   SystemInfo,
   UnloadResult,
 } from "./types"
@@ -41,6 +40,9 @@ export async function fetchModelStructure(
   modelId: string,
   artifact: ArtifactInventoryItem,
 ): Promise<ModelStructure> {
+  if (artifact.variant === null || artifact.runtime === null) {
+    throw new Error("Shared artifacts do not have an inspectable runtime structure")
+  }
   const query = new URLSearchParams({
     variant: artifact.variant,
     runtime: artifact.runtime,
@@ -53,11 +55,19 @@ export async function fetchModelStructure(
   ).data
 }
 
-export async function downloadModelResource(modelId: string, resource: ResourceOption, overwrite = false): Promise<ModelInventory> {
+export async function downloadModelArtifact(
+  modelId: string,
+  artifact: ArtifactInventoryItem,
+  overwrite = false,
+): Promise<ModelInventory> {
   const query = overwrite ? "?overwrite=true" : ""
   return (await request<ModelInventory>(`/api/v1/catalog/models/${modelPath(modelId)}/resources/download-one${query}`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(resource),
+    body: JSON.stringify({
+      variant: artifact.variant,
+      runtime: artifact.runtime,
+      artifact_id: artifact.artifact_id,
+    }),
   })).data
 }
 
@@ -143,8 +153,8 @@ export async function downloadModelResources(
 
 export async function convertModelResources(
   modelId: string,
-  targetFormat: string,
-  variant?: string,
+  artifact: ArtifactInventoryItem,
+  overwrite = false,
 ): Promise<ModelResourceStatus> {
   const path = modelId.split("/").map(encodeURIComponent).join("/")
   return (
@@ -153,7 +163,12 @@ export async function convertModelResources(
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target_format: targetFormat, variant: variant ?? null }),
+        body: JSON.stringify({
+          variant: artifact.variant,
+          runtime: artifact.runtime,
+          artifact_id: artifact.artifact_id,
+          overwrite,
+        }),
       },
     )
   ).data

@@ -64,13 +64,9 @@ async def _catalog_event_stream(
         data={
             "models": [model.model_dump(mode="json") for model in snapshot.models],
             "apps": [
-                app.model_dump(mode="json")
-                for app in context.apps.list(AppCategory.APPLICATION)
+                app.model_dump(mode="json") for app in context.apps.list(AppCategory.APPLICATION)
             ],
-            "games": [
-                game.model_dump(mode="json")
-                for game in context.apps.list(AppCategory.GAME)
-            ],
+            "games": [game.model_dump(mode="json") for game in context.apps.list(AppCategory.GAME)],
             "generated_at": snapshot.generated_at.isoformat(),
         },
     ).encode()

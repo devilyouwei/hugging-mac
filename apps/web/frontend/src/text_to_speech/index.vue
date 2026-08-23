@@ -60,6 +60,7 @@ const SAMPLE_TEXTS = [
 
 const models = ref<TtsModel[]>([])
 const selectedModelId = ref("")
+const selectedVariantByModel = ref<Record<string, string>>({})
 const selectedRuntimeByModel = ref<Record<string, string>>({})
 const loadedModels = ref<Record<string, LoadedTtsModel>>({})
 const loadingModel = ref(false)
@@ -88,7 +89,10 @@ let referenceChunks: Float32Array[] = []
 const selectedModel = computed(() =>
   models.value.find((item) => item.model_id === selectedModelId.value) ?? null,
 )
-const runtimeKey = (modelId: string, runtime: string) => `${modelId}::${runtime}`
+const variantForModel = (model: TtsModel) =>
+  selectedVariantByModel.value[model.model_id] ?? model.variant
+const runtimeKey = (modelId: string, variant: string, runtime: string) =>
+  `${modelId}::${variant}::${runtime}`
 const runtimeForModel = (model: TtsModel) =>
   selectedRuntimeByModel.value[model.model_id] ?? model.runtime
 const resourceRuntimes = (model: TtsModel) => model.resource.runtimes?.length
@@ -102,20 +106,23 @@ const resourceRuntimes = (model: TtsModel) => model.resource.runtimes?.length
       artifact_ids: [item.artifact_id],
     }))
 const runtimeAvailable = (model: TtsModel, runtime = runtimeForModel(model)) =>
-  Boolean(resourceRuntimes(model).find((item) => item.runtime === runtime)?.available)
+  Boolean(model.variants.find((item) => item.name === variantForModel(model))
+    ?.available_runtimes.includes(runtime))
 const runtimeOptions = (model: TtsModel) => [...resourceRuntimes(model)].sort((left, right) =>
   left.runtime === "coreml" ? -1 : right.runtime === "coreml" ? 1 : 0,
 )
 const runtimeLabel = (runtime: string) => runtime === "pytorch-mps"
   ? "Torch MPS"
-  : runtime === "pytorch" ? "PyTorch CPU" : runtime === "coreml" ? "Core ML" : runtime
+  : runtime === "pytorch" ? "PyTorch" : runtime === "coreml" ? "Core ML" : runtime
 const loadedInstanceFor = (model: TtsModel) =>
-  loadedModels.value[runtimeKey(model.model_id, runtimeForModel(model))] ?? null
+  loadedModels.value[
+    runtimeKey(model.model_id, variantForModel(model), runtimeForModel(model))
+  ] ?? null
 const modelIsReady = (model: TtsModel) => loadedInstanceFor(model)?.state === "ready"
 const sourceArtifact = computed(() => {
   const model = selectedModel.value
   if (!model) return undefined
-  return model.resource.artifacts.find((item) => item.runtime === runtimeForModel(model))
+  return runtimeAvailable(model) ? { available: true } : undefined
 })
 const loadedModel = computed(() =>
   selectedModel.value ? loadedInstanceFor(selectedModel.value) : null,
@@ -168,12 +175,13 @@ async function loadModels() {
   try {
     models.value = await fetchTtsModels()
     for (const model of models.value) {
+      selectedVariantByModel.value[model.model_id] = model.variant
       selectedRuntimeByModel.value[model.model_id] = runtimeForModel(model)
       for (const ready of model.ready_instances ?? []) {
-        loadedModels.value[runtimeKey(model.model_id, ready.runtime)] = {
+        loadedModels.value[runtimeKey(model.model_id, ready.variant, ready.runtime)] = {
           instance_id: ready.instance_id,
           model_id: model.model_id,
-          variant: model.variant,
+          variant: ready.variant,
           runtime: ready.runtime,
           device: ready.runtime,
           state: "ready",
@@ -198,8 +206,9 @@ async function ensureSelectedModelLoaded(): Promise<LoadedTtsModel> {
   error.value = ""
   try {
     const runtime = runtimeForModel(selectedModel.value)
-    const loaded = await loadTtsModel(selectedModel.value.model_id, runtime)
-    loadedModels.value[runtimeKey(loaded.model_id, loaded.runtime)] = loaded
+    const variant = variantForModel(selectedModel.value)
+    const loaded = await loadTtsModel(selectedModel.value.model_id, variant, runtime)
+    loadedModels.value[runtimeKey(loaded.model_id, loaded.variant, loaded.runtime)] = loaded
     return loaded
   } catch (caught) {
     const message = errorMessage(caught, "TTS 模型加载失败")
@@ -229,6 +238,11 @@ function onRuntimeChange(model: TtsModel, event: Event) {
   selectRuntime(model, (event.target as HTMLSelectElement).value)
 }
 
+function onVariantChange(model: TtsModel, event: Event) {
+  if (synthesisBusy.value || loadingModel.value) return
+  selectedVariantByModel.value[model.model_id] = (event.target as HTMLSelectElement).value
+}
+
 async function toggleSelectedModel() {
   const current = loadedModel.value
   if (loadingModel.value) return
@@ -240,7 +254,7 @@ async function toggleSelectedModel() {
   error.value = ""
   try {
     await unloadModel(current.instance_id)
-    delete loadedModels.value[runtimeKey(current.model_id, current.runtime)]
+    delete loadedModels.value[runtimeKey(current.model_id, current.variant, current.runtime)]
   } catch (caught) {
     error.value = errorMessage(caught, "模型卸载失败")
   } finally {
@@ -411,13 +425,29 @@ onBeforeUnmount(() => {
           >
             <span>♪</span>
             <span>
-              <small>{{ model.variant }} · {{ modelIsReady(model) ? "LOADED" : "TTS MODEL" }}</small>
+              <small>{{ variantForModel(model) }} · {{ modelIsReady(model) ? "LOADED" : "TTS MODEL" }}</small>
               <strong>{{ model.display_name }}</strong>
               <em>{{ model.description }}</em>
             </span>
             <i aria-hidden="true"></i>
           </button>
           <div class="model-controls">
+            <label>
+              <span>VARIANT</span>
+              <select
+                :value="variantForModel(model)"
+                :disabled="synthesisBusy || loadingModel"
+                @change="onVariantChange(model, $event)"
+              >
+                <option
+                  v-for="variant in model.variants"
+                  :key="variant.name"
+                  :value="variant.name"
+                >
+                  {{ variant.display_name }}{{ variant.available ? "" : " · unavailable" }}
+                </option>
+              </select>
+            </label>
             <label>
               <span>RUNTIME</span>
               <select
@@ -659,13 +689,13 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .tts-page { padding-bottom: 6rem; }
-.tts-hero { align-items: stretch; display: grid; gap: clamp(1.5rem, 3vw, 3.5rem); grid-template-columns: minmax(0, 1fr) minmax(25rem, .72fr); min-height: 0; padding: .65rem 0 1.4rem; }
+.tts-hero { align-items: stretch; display: grid; gap: clamp(1.5rem, 3vw, 3.5rem); grid-template-columns: minmax(0, .85fr) minmax(32rem, 1fr); min-height: 0; padding: .65rem 0 1.4rem; }
 .hero-copy { align-self: center; min-width: 0; }
 .tts-hero h1 { font-size: clamp(2.4rem, 5vw, 4.6rem); font-weight: 600; letter-spacing: -.065em; line-height: .95; margin: .55rem 0 .8rem; white-space: nowrap; }
 .tts-hero h1 em { color: transparent; font-style: normal; -webkit-text-stroke: 1.5px var(--ink); }
 .hero-copy > p:last-child { color: var(--muted); font-size: .82rem; line-height: 1.5; max-width: 42rem; }
 .tts-model-picker { align-content: center; display: flex; flex-direction: column; gap: .55rem; }
-.tts-model-picker article { align-items: center; background: #f7f5eb; border: 1px solid var(--line); box-sizing: border-box; display: grid; gap: .8rem; grid-template-columns: minmax(0, 1fr) minmax(10.5rem, .62fr); height: 4.5rem; padding: .62rem .72rem; transition: border-color .2s, background .2s, transform .2s; }
+.tts-model-picker article { align-items: center; background: #f7f5eb; border: 1px solid var(--line); box-sizing: border-box; display: grid; gap: .8rem; grid-template-columns: minmax(0, .9fr) minmax(18rem, 1.1fr); height: 4.5rem; padding: .62rem .72rem; transition: border-color .2s, background .2s, transform .2s; }
 .tts-model-picker article:hover { border-color: var(--ink); transform: translateX(-3px); }
 .tts-model-picker article.selected { background: #c8ff4614; border-color: var(--ink); box-shadow: inset 3px 0 var(--signal); }
 .tts-model-picker article.unavailable { opacity: .62; }
@@ -678,7 +708,7 @@ onBeforeUnmount(() => {
 .model-identity em { color: var(--muted); font-size: .58rem; font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-identity > i { background: #aaa; border-radius: 50%; height: .48rem; width: .48rem; }
 .tts-model-picker article.loaded .model-identity > i { background: var(--signal); box-shadow: 0 0 8px #8ebd22; }
-.model-controls { align-items: end; border-left: 1px solid var(--line); display: grid; gap: .5rem; grid-template-columns: minmax(5.5rem, 1fr) auto; padding-left: .72rem; }
+.model-controls { align-items: end; border-left: 1px solid var(--line); display: grid; gap: .5rem; grid-template-columns: minmax(0, 1.25fr) minmax(0, .85fr) auto; min-width: 0; padding-left: .72rem; }
 .model-controls label { display: flex; flex-direction: column; gap: .2rem; }
 .model-controls select { background: transparent; border: 0; color: var(--ink); font: 600 .55rem var(--font-mono); min-width: 0; outline: none; padding: 0; text-transform: uppercase; width: 100%; }
 .model-controls > button { background: var(--ink); border: 0; color: var(--paper); cursor: pointer; font: 700 .5rem var(--font-mono); min-width: 4.4rem; padding: .58rem .65rem; }

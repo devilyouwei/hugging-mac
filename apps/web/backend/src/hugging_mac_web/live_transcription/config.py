@@ -90,6 +90,4 @@ class LiveTranscriptionSettings(BaseSettings):
     # SenseVoice and Qwen3-ASR use this stability override. Audio8 deliberately
     # retains its own CPU_AND_NE default because its hybrid pipeline depends on
     # that tested compute configuration.
-    coreml_compute_units: Literal["all", "cpu-only", "cpu-and-gpu", "cpu-and-neural-engine"] = (
-        "all"
-    )
+    coreml_compute_units: Literal["all", "cpu-only", "cpu-and-gpu", "cpu-and-neural-engine"] = "all"

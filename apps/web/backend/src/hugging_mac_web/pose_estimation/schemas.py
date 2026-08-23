@@ -20,6 +20,7 @@ class RuntimeChoice(StrEnum):
     AUTO = "auto"
     COREML = "coreml"
     PYTORCH_MPS = "pytorch-mps"
+    ONNX = "onnx"
 
 
 class PoseCommand(BaseModel):

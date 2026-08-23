@@ -39,6 +39,7 @@ from hugging_mac_web.chat.schemas import (
 from hugging_mac_web.chat.service import ChatService
 from hugging_mac_web.dependencies import ContextDependency
 from hugging_mac_web.live_transcription.config import (
+    ASR_MODEL_PROFILES,
     NEMOTRON_3_5_ASR_PROFILE,
     LiveTranscriptionSettings,
 )
@@ -122,9 +123,15 @@ def create_router(settings: ChatSettings) -> APIRouter:
                     if message_type == "start":
                         if session is not None:
                             raise ValueError("A Chat ASR session is already active")
+                        selected_model_id = str(
+                            payload.get("model_id") or NEMOTRON_3_5_ASR_PROFILE.model_id
+                        )
+                        selected_profile = ASR_MODEL_PROFILES.get(selected_model_id)
+                        if selected_profile is None:
+                            raise ValueError("The selected ASR model is not supported")
                         start = LiveSessionStart.from_payload(
                             {
-                                "model_id": NEMOTRON_3_5_ASR_PROFILE.model_id,
+                                "model_id": selected_profile.model_id,
                                 "instance_id": payload.get("instance_id", ""),
                                 "sample_rate": payload.get("sample_rate", 0),
                                 "use_vad": False,
@@ -133,7 +140,7 @@ def create_router(settings: ChatSettings) -> APIRouter:
                                 "sensitivity": settings.asr_sensitivity,
                                 "streaming_chunk_seconds": payload.get(
                                     "streaming_chunk_seconds",
-                                    NEMOTRON_3_5_ASR_PROFILE.streaming_chunk_seconds or 2.24,
+                                    selected_profile.streaming_chunk_seconds or 2.24,
                                 ),
                             }
                         )

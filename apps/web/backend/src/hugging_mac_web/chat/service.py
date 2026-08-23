@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 from time import perf_counter
 
@@ -39,10 +40,12 @@ class ChatService:
         )
 
     async def model_view(self, model_id: str) -> ChatModelView:
-        profile = self._profile(model_id)
+        configured = self._profile(model_id)
+        resource = await self.resource_status(model_id)
+        profile = self._select_runtime(configured, resource)
         return ChatModelView.from_profile(
             profile,
-            await self.resource_status(model_id),
+            resource,
             ready_instance_id=await self._ready_instance_id(profile),
         )
 
@@ -56,7 +59,9 @@ class ChatService:
         return ChatResourceView.from_sdk(status)
 
     async def ready_model(self, model_id: str) -> LoadedChatModelView | None:
-        profile = self._profile(model_id)
+        profile = self._select_runtime(
+            self._profile(model_id), await self.resource_status(model_id)
+        )
         for snapshot in await self._context.models.instances.snapshots():
             if (
                 snapshot.model_id == profile.model_id
@@ -69,7 +74,9 @@ class ChatService:
         return None
 
     async def load_model(self, model_id: str) -> LoadedChatModelView:
-        profile = self._profile(model_id)
+        profile = self._select_runtime(
+            self._profile(model_id), await self.resource_status(model_id)
+        )
         handle = await self._context.models.load(
             profile.model_id,
             variant=profile.variant,
@@ -253,6 +260,21 @@ class ChatService:
                 details={"variant": variant, "runtime": runtime},
             )
         return matching[0]
+
+    @staticmethod
+    def _select_runtime(profile: ChatModelProfile, resource: ChatResourceView) -> ChatModelProfile:
+        available = {
+            item.runtime: item for item in resource.artifacts if item.available and item.runtime
+        }
+        runtime = next((item for item in ("coreml", "pytorch", "mlx") if item in available), None)
+        runtime = runtime or next(iter(available), None)
+        if runtime is None:
+            return profile
+        return replace(
+            profile,
+            runtime=runtime,
+            required_artifact_id=available[runtime].artifact_id,
+        )
 
     def _model_options(self) -> dict[str, object]:
         return {"model_home": self._context.settings.model_home}

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from hugging_mac_sdk import ReusePolicy
 from hugging_mac_sdk.capabilities import ObjectDetection
-from hugging_mac_sdk.models.yolov8.config import YOLOV8_MODEL_ID
 from hugging_mac_sdk.schemas.detection import DetectionRequest, ImageInput
 
 from hugging_mac_web.context import PlatformContext
+from hugging_mac_web.object_detection.manifest import OBJECT_DETECTION_MANIFEST
 from hugging_mac_web.object_detection.schemas import (
     DetectCommand,
     DetectionResult,
@@ -15,6 +15,8 @@ from hugging_mac_web.object_detection.schemas import (
     RuntimeChoice,
     VariantView,
 )
+
+YOLOV8_MODEL_ID = OBJECT_DETECTION_MANIFEST.required_models[0].model_id
 
 
 class ObjectDetectionService:

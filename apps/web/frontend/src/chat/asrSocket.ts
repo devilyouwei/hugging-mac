@@ -13,12 +13,15 @@ export interface ChatAsrEvent {
 
 interface ChatAsrConfig {
   instanceId: string
+  modelId: string
   sampleRate: number
   streamingChunkSeconds: number
 }
 
 export class ChatAsrSocket {
   private closed = false
+  private stopPromise: Promise<void> | null = null
+  private resolveStop: (() => void) | null = null
 
   private constructor(
     private readonly socket: WebSocket,
@@ -27,7 +30,11 @@ export class ChatAsrSocket {
   ) {
     socket.addEventListener("message", (message) => this.handleMessage(message))
     socket.addEventListener("close", () => {
-      if (!this.closed) onError(new Error("Chat ASR WebSocket disconnected"))
+      if (this.stopPromise) {
+        this.closed = true
+        this.resolveStop?.()
+        this.resolveStop = null
+      } else if (!this.closed) onError(new Error("Chat ASR WebSocket disconnected"))
     })
   }
 
@@ -47,6 +54,7 @@ export class ChatAsrSocket {
       const opened = () => socket.send(JSON.stringify({
         type: "start",
         instance_id: config.instanceId,
+        model_id: config.modelId,
         sample_rate: config.sampleRate,
         streaming_chunk_seconds: config.streamingChunkSeconds,
       }))
@@ -91,8 +99,18 @@ export class ChatAsrSocket {
     this.socket.send(pcm)
   }
 
+  stop(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise
+    if (this.closed || this.socket.readyState !== WebSocket.OPEN) return Promise.resolve()
+    this.stopPromise = new Promise<void>((resolve) => { this.resolveStop = resolve })
+    this.socket.send(JSON.stringify({ type: "stop" }))
+    return this.stopPromise
+  }
+
   close() {
     this.closed = true
+    this.resolveStop?.()
+    this.resolveStop = null
     this.socket.close()
   }
 
@@ -102,6 +120,13 @@ export class ChatAsrSocket {
     if (event.type === "error") {
       this.onError(new Error(event.message || "Chat ASR failed"))
       this.close()
-    } else this.onEvent(event)
+    } else {
+      this.onEvent(event)
+      if (event.type === "stopped") {
+        this.closed = true
+        this.resolveStop?.()
+        this.resolveStop = null
+      }
+    }
   }
 }

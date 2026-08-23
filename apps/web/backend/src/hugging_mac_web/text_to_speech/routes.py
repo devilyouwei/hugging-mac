@@ -36,8 +36,11 @@ def create_router(settings: TextToSpeechSettings) -> APIRouter:
     async def resources(
         context: ContextDependency,
         model_id: str = Query(default=DEFAULT_MODEL_ID),
+        variant: str | None = Query(default=None),
     ) -> ApiResponse[TtsResourceView]:
-        data = await TextToSpeechService(context, settings).resource_status(model_id)
+        data = await TextToSpeechService(context, settings).resource_status(
+            model_id, variant=variant
+        )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))
 
     @router.post("/models/load", response_model=ApiResponse[LoadedTtsModelView])
@@ -47,6 +50,7 @@ def create_router(settings: TextToSpeechSettings) -> APIRouter:
     ) -> ApiResponse[LoadedTtsModelView]:
         data = await TextToSpeechService(context, settings).load_model(
             request.model_id,
+            variant=request.variant,
             runtime=request.runtime,
         )
         return ApiResponse(data=data, meta=ResponseMeta(generated_at=utc_now()))

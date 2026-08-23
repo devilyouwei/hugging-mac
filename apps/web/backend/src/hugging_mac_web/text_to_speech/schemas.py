@@ -71,7 +71,17 @@ class ReadyTtsInstanceView(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     instance_id: str
+    variant: str
     runtime: str
+
+
+class TtsVariantView(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    display_name: str
+    available: bool
+    available_runtimes: tuple[str, ...] = ()
 
 
 class TtsModelView(BaseModel):
@@ -89,6 +99,7 @@ class TtsModelView(BaseModel):
     requires_reference_voice: bool
     requires_reference_audio: bool
     max_new_tokens: int
+    variants: tuple[TtsVariantView, ...] = ()
     resource: TtsResourceView
     ready_instance_id: str | None = None
     ready_instances: tuple[ReadyTtsInstanceView, ...] = ()
@@ -101,10 +112,12 @@ class TtsModelView(BaseModel):
         *,
         ready_instance_id: str | None,
         ready_instances: tuple[ReadyTtsInstanceView, ...] = (),
+        variants: tuple[TtsVariantView, ...] = (),
     ) -> TtsModelView:
         return cls(
             **asdict(profile),
             resource=resource,
+            variants=variants,
             ready_instance_id=ready_instance_id,
             ready_instances=ready_instances,
         )
@@ -114,6 +127,7 @@ class LoadTtsModelRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     model_id: str
+    variant: str | None = None
     runtime: str | None = None
 
 

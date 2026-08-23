@@ -4,7 +4,7 @@ import { computed, onMounted, ref } from "vue"
 import {
   convertModelResources,
   deleteModelArtifact,
-  downloadModelResource,
+  downloadModelArtifact,
   fetchModelInventory,
   fetchModelStructure,
   fetchModels,
@@ -17,7 +17,6 @@ import type {
   ModelInventory,
   ModelStructure,
   ModelSummary,
-  ResourceOption,
   RuntimeSummary,
 } from "@/api/types"
 import StatusPill from "@/components/StatusPill.vue"
@@ -105,39 +104,42 @@ function selectVariant(model: ModelSummary, variant: string): void {
   delete notices.value[model.model_id]
 }
 
-function sourceResources(model: ModelSummary): ResourceOption[] {
-  return (inventories.value[model.model_id]?.resources ?? []).filter(
-    (resource) => resource.shared || resource.variant === selectedVariant(model),
-  )
-}
-
-function resourceArtifact(model: ModelSummary, resource: ResourceOption): ArtifactInventoryItem | undefined {
-  return (inventories.value[model.model_id]?.artifacts ?? []).find(
-    (artifact) => artifact.variant === resource.variant
-      && artifact.runtime === resource.runtime
-      && artifact.artifact_id === resource.artifact_id,
-  )
-}
-
 function variantArtifacts(model: ModelSummary): ArtifactInventoryItem[] {
   return (inventories.value[model.model_id]?.artifacts ?? []).filter(
     (artifact) => !artifact.shared && artifact.variant === selectedVariant(model),
   )
 }
 
-function sharedArtifacts(model: ModelSummary): ArtifactInventoryItem[] {
-  return (inventories.value[model.model_id]?.artifacts ?? []).filter(
-    (artifact) => artifact.shared,
+function visibleArtifacts(model: ModelSummary): ArtifactInventoryItem[] {
+  return [...variantArtifacts(model), ...sharedArtifacts(model)]
+}
+
+function sharedArtifacts(
+  model: ModelSummary,
+  variant = selectedVariant(model),
+): ArtifactInventoryItem[] {
+  return sharedArtifactsFor(
+    model,
+    (inventories.value[model.model_id]?.artifacts ?? []).filter(
+      (artifact) => !artifact.shared && artifact.variant === variant,
+    ),
   )
 }
 
-function resourceReady(model: ModelSummary, resource: ResourceOption): boolean {
-  if (resource.shared) return resource.available
-  return resource.available && sharedArtifacts(model).every((artifact) => artifact.available)
+function sharedArtifactsFor(
+  model: ModelSummary,
+  artifacts: ArtifactInventoryItem[],
+): ArtifactInventoryItem[] {
+  const sharedIds = new Set(artifacts.flatMap((artifact) => artifact.required_shares))
+  return (inventories.value[model.model_id]?.artifacts ?? []).filter(
+    (artifact) => artifact.shared && sharedIds.has(artifact.artifact_id),
+  )
 }
 
-function conversionTargets(model: ModelSummary): ArtifactInventoryItem[] {
-  return variantArtifacts(model).filter((artifact) => artifact.convertible)
+function artifactReady(model: ModelSummary, artifact: ArtifactInventoryItem): boolean {
+  return artifact.available && (
+    artifact.shared || sharedArtifactsFor(model, [artifact]).every((shared) => shared.available)
+  )
 }
 
 function artifactInspectable(artifact: ArtifactInventoryItem): boolean {
@@ -165,21 +167,26 @@ function runtimeArtifacts(
 }
 
 function runtimeReady(model: ModelSummary, runtime: string): boolean {
-  const artifacts = [...runtimeArtifacts(model, runtime), ...sharedArtifacts(model)]
+  const scoped = runtimeArtifacts(model, runtime)
+  const artifacts = [...scoped, ...sharedArtifactsFor(model, scoped)]
   return artifacts.length > 0 && artifacts.every((artifact) => artifact.available)
 }
 
 function runtimeRequiredArtifacts(model: ModelSummary, runtime: string): ArtifactInventoryItem[] {
-  return [...runtimeArtifacts(model, runtime), ...sharedArtifacts(model)]
+  const scoped = runtimeArtifacts(model, runtime)
+  return [...scoped, ...sharedArtifactsFor(model, scoped)]
 }
 
 function modelHasReadyRuntime(model: ModelSummary): boolean {
   return model.variants.some((variant) => model.runtimes.some(
-    (runtime) => runtime.available
-      && runtimeArtifacts(model, runtime.name, variant.name).length > 0
-      && [...runtimeArtifacts(model, runtime.name, variant.name), ...sharedArtifacts(model)].every(
-        (artifact) => artifact.available,
-      ),
+    (runtime) => {
+      const scoped = runtimeArtifacts(model, runtime.name, variant.name)
+      return runtime.available
+        && scoped.length > 0
+        && [...scoped, ...sharedArtifactsFor(model, scoped)].every(
+          (artifact) => artifact.available,
+        )
+    },
   ))
 }
 
@@ -195,20 +202,11 @@ function matchingInstances(model: ModelSummary, runtime: string): InstanceSummar
   )
 }
 
-function variantHasInstances(model: ModelSummary): boolean {
-  return model.instances.some((instance) => instance.variant === selectedVariant(model))
-}
-
 function artifactHasInstances(model: ModelSummary, artifact: ArtifactInventoryItem): boolean {
   if (artifact.shared) return model.instances.length > 0
   return model.instances.some(
     (instance) => instance.variant === artifact.variant && instance.runtime === artifact.runtime,
   )
-}
-
-function resourceRemoveDisabled(model: ModelSummary, resource: ResourceOption): boolean {
-  const artifact = resourceArtifact(model, resource)
-  return !artifact?.available || artifactHasInstances(model, artifact)
 }
 
 function sourceReady(model: ModelSummary): boolean {
@@ -217,14 +215,33 @@ function sourceReady(model: ModelSummary): boolean {
   )
 }
 
-function sourceLabel(resource: ResourceOption): string {
-  if (resource.source.kind === "composite") return "Bundled model resources"
-  if (resource.source.repo_id) {
-    return resource.source.filename
-      ? `${resource.source.repo_id} / ${resource.source.filename}`
-      : resource.source.repo_id
+function artifactSourceLabel(artifact: ArtifactInventoryItem): string {
+  if (!artifact.source) {
+    return artifact.convertible
+      ? `Local conversion · ${formatName(artifact.runtime ?? artifact.format)}`
+      : `${formatName(artifact.runtime ?? artifact.format)} artifact`
   }
-  return resource.source.url ?? resource.source.kind
+  if (artifact.source.kind === "composite") return "Bundled model resources"
+  if (artifact.source.repo_id) {
+    return artifact.source.filename
+      ? `${artifact.source.repo_id} / ${artifact.source.filename}`
+      : artifact.source.repo_id
+  }
+  return artifact.source.url ?? artifact.source.kind
+}
+
+function artifactIcon(artifact: ArtifactInventoryItem): string {
+  if (artifact.source && artifact.convertible) return "⇄"
+  if (artifact.source) return "↓"
+  if (artifact.convertible) return "◇"
+  return "·"
+}
+
+function artifactStatus(model: ModelSummary, artifact: ArtifactInventoryItem): string {
+  if (artifactReady(model, artifact)) return "Installed"
+  if (artifact.available) return "Dependencies missing"
+  if (artifact.convertible && !artifact.source && !sourceReady(model)) return "Source required"
+  return "Not installed"
 }
 
 function formatName(value: string): string {
@@ -313,21 +330,25 @@ async function runOperation(
   }
 }
 
-async function handleDownload(model: ModelSummary, resource: ResourceOption): Promise<void> {
-  const key = operationKey("download", model.model_id, resource.resource_id)
-  await runOperation(model, key, "Resource installed.", async () => {
-    inventories.value[model.model_id] = await downloadModelResource(
+async function handleDownload(model: ModelSummary, artifact: ArtifactInventoryItem): Promise<void> {
+  const key = operationKey("download", model.model_id, artifactKey(artifact))
+  await runOperation(model, key, "Artifact downloaded.", async () => {
+    inventories.value[model.model_id] = await downloadModelArtifact(
       model.model_id,
-      resource,
-      resourceReady(model, resource),
+      artifact,
+      true,
     )
   })
 }
 
 async function handleConvert(model: ModelSummary, artifact: ArtifactInventoryItem): Promise<void> {
   const key = operationKey("convert", model.model_id, artifactKey(artifact))
-  await runOperation(model, key, `${formatName(artifact.format)} build completed.`, async () => {
-    await convertModelResources(model.model_id, artifact.format, artifact.variant)
+  await runOperation(model, key, `${formatName(artifact.format)} conversion completed.`, async () => {
+    await convertModelResources(
+      model.model_id,
+      artifact,
+      true,
+    )
   })
 }
 
@@ -340,11 +361,6 @@ async function handleDelete(model: ModelSummary, artifact: ArtifactInventoryItem
   await runOperation(model, key, "Local artifact removed.", async () => {
     inventories.value[model.model_id] = await deleteModelArtifact(model.model_id, artifact)
   })
-}
-
-async function handleDeleteResource(model: ModelSummary, resource: ResourceOption): Promise<void> {
-  const artifact = resourceArtifact(model, resource)
-  if (artifact) await handleDelete(model, artifact)
 }
 
 async function handleLoad(model: ModelSummary, runtime: RuntimeSummary): Promise<void> {
@@ -409,7 +425,7 @@ onMounted(async () => {
         <RouterLink class="back-link" to="/">← Studio</RouterLink>
         <p class="kicker">MODEL LIBRARY</p>
         <h1>Models</h1>
-        <p>Install model files, build optimized artifacts, and manage local runtime instances.</p>
+        <p>Download, convert, and manage model artifacts and local runtime instances.</p>
       </div>
       <div class="models-summary" aria-label="Model library summary">
         <div><strong>{{ readyModelCount }}</strong><span>Models ready</span></div>
@@ -467,6 +483,29 @@ onMounted(async () => {
             </span>
           </div>
         </div>
+        <div class="model-manifest-summary">
+          <p class="model-description">{{ model.description }}</p>
+          <div class="model-manifest-tags" aria-label="Model tags">
+            <span v-for="tag in model.tags" :key="tag">#{{ tag }}</span>
+          </div>
+          <div class="model-manifest-facts">
+            <span>
+              <small>Runtimes</small>
+              <strong>{{ model.runtimes.map((runtime) => formatName(runtime.name)).join(' · ') }}</strong>
+            </span>
+            <span v-if="model.license">
+              <small>License</small>
+              <strong>{{ model.license }}</strong>
+            </span>
+            <a
+              v-if="model.source_url"
+              :href="model.source_url"
+              target="_blank"
+              rel="noreferrer"
+              @click.stop
+            >Source ↗</a>
+          </div>
+        </div>
         <div v-if="isExpanded(model.model_id)" class="variant-control" @click.stop>
           <span class="column-label">VARIANT</span>
           <div class="variant-tabs" role="group" :aria-label="`${model.name} variants`">
@@ -484,8 +523,9 @@ onMounted(async () => {
           <small>{{ formatBytes(localVariantBytes(model)) }} installed for this variant</small>
         </div>
         <div v-else class="model-collapsed-summary">
-          <span>{{ model.variants.length }} {{ model.variants.length === 1 ? 'variant' : 'variants' }}</span>
-          <span>{{ formatBytes(localVariantBytes(model)) }} installed</span>
+          <span><strong>{{ model.variants.length }}</strong><small>{{ model.variants.length === 1 ? 'Variant' : 'Variants' }}</small></span>
+          <span><strong>{{ model.runtimes.length }}</strong><small>{{ model.runtimes.length === 1 ? 'Runtime' : 'Runtimes' }}</small></span>
+          <span><strong>{{ formatBytes(localVariantBytes(model)) }}</strong><small>Installed</small></span>
         </div>
         <button
           class="model-expand-button"
@@ -515,74 +555,47 @@ onMounted(async () => {
         <section class="workflow-panel">
           <div class="workflow-panel__heading">
             <span class="step-number">01</span>
-            <div><h3>Source files</h3><p>Install each ready-to-use artifact and its required files.</p></div>
+            <div><h3>Artifacts</h3><p>Download prebuilt files or convert supported artifacts in place.</p></div>
           </div>
           <div class="workflow-list">
-            <div v-for="resource in sourceResources(model)" :key="resource.resource_id" class="workflow-item">
-              <div class="workflow-item__icon">↓</div>
+            <div v-for="artifact in visibleArtifacts(model)" :key="artifactKey(artifact)" class="workflow-item">
+              <div class="workflow-item__icon">{{ artifactIcon(artifact) }}</div>
               <div class="workflow-item__content">
-                <strong>{{ formatName(resource.artifact_id) }}</strong>
-                <small :title="sourceLabel(resource)">{{ sourceLabel(resource) }}</small>
+                <strong>{{ formatName(artifact.artifact_id) }}</strong>
+                <small :title="artifactSourceLabel(artifact)">{{ artifactSourceLabel(artifact) }}</small>
               </div>
               <div class="workflow-item__meta">
-                <span>{{ formatBytes(resource.size_bytes) }}</span>
+                <span>{{ formatBytes(artifact.size_bytes) }}</span>
                 <StatusPill
-                  :label="resourceReady(model, resource) ? 'Installed' : resource.available ? 'Shared files missing' : 'Required'"
-                  :tone="resourceReady(model, resource) ? 'ready' : 'warning'"
+                  :label="artifactStatus(model, artifact)"
+                  :tone="artifactReady(model, artifact) ? 'ready' : artifact.convertible && sourceReady(model) ? 'idle' : 'warning'"
                 />
               </div>
               <div class="workflow-item__actions">
                 <button
+                  v-if="artifact.source"
                   class="button button--compact"
-                  :disabled="isPending(operationKey('download', model.model_id, resource.resource_id))"
+                  :disabled="artifactHasInstances(model, artifact) || isPending(operationKey('download', model.model_id, artifactKey(artifact)))"
+                  :title="artifactHasInstances(model, artifact) ? 'Unload the matching instance before replacing this artifact' : artifact.available ? 'Download again and overwrite the installed artifact' : 'Download this artifact'"
                   type="button"
-                  @click="handleDownload(model, resource)"
+                  @click="handleDownload(model, artifact)"
                 >
-                  {{ isPending(operationKey('download', model.model_id, resource.resource_id)) ? 'Installing…' : resourceReady(model, resource) ? 'Reinstall' : resource.available ? 'Install shared files' : 'Install' }}
+                  {{ isPending(operationKey('download', model.model_id, artifactKey(artifact))) ? 'Downloading…' : 'Download' }}
                 </button>
                 <button
-                  class="text-action text-action--danger"
-                  :disabled="resourceRemoveDisabled(model, resource) || isPending(operationKey('delete', model.model_id, resource.resource_id))"
-                  :title="resourceRemoveDisabled(model, resource) ? 'Install the artifact and unload matching instances before removing it' : 'Remove from local storage'"
-                  type="button"
-                  @click="handleDeleteResource(model, resource)"
-                >
-                  {{ isPending(operationKey('delete', model.model_id, resource.resource_id)) ? 'Removing…' : 'Remove' }}
-                </button>
-              </div>
-            </div>
-            <p v-if="!sourceResources(model).length" class="workflow-empty">No downloadable resources are declared.</p>
-          </div>
-        </section>
-
-        <section class="workflow-panel">
-          <div class="workflow-panel__heading">
-            <span class="step-number">02</span>
-            <div><h3>Optimized builds</h3><p>Create artifacts declared by the model package.</p></div>
-          </div>
-          <div class="workflow-list">
-            <div v-for="artifact in conversionTargets(model)" :key="artifactKey(artifact)" class="workflow-item">
-              <div class="workflow-item__icon">◇</div>
-              <div class="workflow-item__content">
-                <strong>{{ formatName(artifact.format) }}</strong>
-                <small>{{ formatName(artifact.runtime) }} runtime</small>
-              </div>
-              <div class="workflow-item__meta">
-                <span>{{ formatBytes(artifact.size_bytes) }}</span>
-                <StatusPill :label="artifact.available ? 'Built' : sourceReady(model) ? 'Available' : 'Source required'" :tone="artifact.available ? 'ready' : sourceReady(model) ? 'idle' : 'warning'" />
-              </div>
-              <div class="workflow-item__actions">
-                <button
-                  class="button button--compact"
-                  :disabled="variantHasInstances(model) || !sourceReady(model) || isPending(operationKey('convert', model.model_id, artifactKey(artifact)))"
+                  v-if="artifact.convertible"
+                  class="button button--compact button--ghost"
+                  :disabled="artifactHasInstances(model, artifact) || !sourceReady(model) || isPending(operationKey('convert', model.model_id, artifactKey(artifact)))"
+                  :title="artifactHasInstances(model, artifact) ? 'Unload the matching instance before replacing this artifact' : !sourceReady(model) ? 'Download the conversion source first' : artifact.available ? 'Convert again and overwrite the installed artifact' : 'Convert this artifact'"
                   type="button"
                   @click="handleConvert(model, artifact)"
                 >
-                  {{ isPending(operationKey('convert', model.model_id, artifactKey(artifact))) ? 'Building…' : artifact.available ? 'Rebuild' : 'Build' }}
+                  {{ isPending(operationKey('convert', model.model_id, artifactKey(artifact))) ? 'Converting…' : 'Convert' }}
                 </button>
                 <button
                   class="text-action text-action--danger"
                   :disabled="!artifact.available || artifactHasInstances(model, artifact) || isPending(operationKey('delete', model.model_id, artifactKey(artifact)))"
+                  :title="artifactHasInstances(model, artifact) ? 'Unload the matching instance before removing it' : artifact.available ? 'Remove from local storage' : 'Artifact is not installed'"
                   type="button"
                   @click="handleDelete(model, artifact)"
                 >
@@ -590,13 +603,13 @@ onMounted(async () => {
                 </button>
               </div>
             </div>
-            <p v-if="!conversionTargets(model).length" class="workflow-empty">This model ships ready-to-use artifacts. No build step is required.</p>
+            <p v-if="!visibleArtifacts(model).length" class="workflow-empty">No artifacts are declared for this variant.</p>
           </div>
         </section>
 
         <section class="workflow-panel workflow-panel--runtime">
           <div class="workflow-panel__heading">
-            <span class="step-number">03</span>
+            <span class="step-number">02</span>
             <div><h3>Runtime</h3><p>Load only when every required artifact is installed.</p></div>
           </div>
           <div class="runtime-options">
