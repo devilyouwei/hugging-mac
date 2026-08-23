@@ -5,23 +5,21 @@ from pathlib import Path
 from types import ModuleType
 
 from hugging_mac_sdk.models.qwen3_5 import QWEN3_5_DEFINITION, QWEN3_5_MANIFEST
-from hugging_mac_sdk.models.qwen3_5.config import (
-    QWEN3_5_MLX_REQUIRED_FILES,
-    QWEN3_5_MLX_VARIANTS,
-    Qwen35MlxInstanceConfig,
-)
+from hugging_mac_sdk.models.qwen3_5.config import Qwen35MlxInstanceConfig
 from hugging_mac_sdk.models.qwen3_5.mlx import MlxQwen35Engine
 from hugging_mac_sdk.models.qwen3_5.resources import Qwen35MlxResourceResolver
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource
 
 
-def test_2b_optiq_variant_is_pinned_with_its_mixed_precision_metadata() -> None:
+def test_2b_optiq_artifact_owns_source_and_variant_metadata() -> None:
     variant = QWEN3_5_MANIFEST.get_variant("2b")
 
     assert QWEN3_5_DEFINITION.supported_runtimes == ("mlx",)
-    assert QWEN3_5_MLX_VARIANTS == ("9b", "4b", "2b")
-    assert variant.resources[0].repo_id == "mlx-community/Qwen3.5-2B-OptiQ-4bit"
-    assert variant.resources[0].revision == "adc8669eb431e3168aeb4e320bd7b757914350e2"
+    assert tuple(item.name for item in QWEN3_5_MANIFEST.variants) == ("9b", "4b", "2b")
+    source = QWEN3_5_DEFINITION.get_artifact("mlx", "mlx-optiq-4bit", "2b").source
+    assert isinstance(source, HuggingFaceSource)
+    assert source.repo_id == "mlx-community/Qwen3.5-2B-OptiQ-4bit"
+    assert source.revision == "main"
     assert variant.metadata == {
         "parameter_count_billions": 2,
         "quantization_bits": 4,
@@ -37,7 +35,9 @@ def test_2b_optiq_variant_is_pinned_with_its_mixed_precision_metadata() -> None:
 def test_2b_optiq_snapshot_requires_the_visual_sidecar(tmp_path: Path) -> None:
     model = tmp_path / "model"
     model.mkdir()
-    for filename in QWEN3_5_MLX_REQUIRED_FILES["2b"]:
+    artifact = QWEN3_5_DEFINITION.get_artifact("mlx", "mlx-optiq-4bit", "2b")
+    tokenizer = QWEN3_5_DEFINITION.shared_artifacts[0]
+    for filename in artifact.required_files:
         path = model / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"model-data")
@@ -45,9 +45,12 @@ def test_2b_optiq_snapshot_requires_the_visual_sidecar(tmp_path: Path) -> None:
     resolver = Qwen35MlxResourceResolver(
         HuggingFaceSource(
             repo_id="mlx-community/Qwen3.5-2B-OptiQ-4bit",
-            revision="adc8669eb431e3168aeb4e320bd7b757914350e2",
+            revision="main",
         ),
         Qwen35MlxInstanceConfig(source_path=model, variant="2b"),
+        manifest=QWEN3_5_MANIFEST,
+        artifact=artifact,
+        tokenizer_artifact=tokenizer,
     )
 
     assert resolver.status().artifacts[0].available

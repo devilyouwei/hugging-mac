@@ -70,7 +70,8 @@ def test_audio8_manifest_downloads_only_weights_and_json() -> None:
         "pytorch-mps",
         "coreml",
     }
-    source = AUDIO8_ASR_MANIFEST.get_variant().resources[0]
+    source = AUDIO8_ASR_DEFINITION.get_artifact("pytorch-mps", "source", "0.1b").source
+    assert source is not None
     assert source.allow_patterns == (  # type: ignore[union-attr]
         "model.safetensors",
         "config.json",
@@ -108,9 +109,7 @@ def test_registered_factory_exposes_speech_transcription() -> None:
     assert pytorch.info().runtime == "pytorch-mps"
     assert coreml.info().runtime == "coreml"
     assert coreml.info().device == "cpu-and-neural-engine"
-    assert converters.get("audio8.audio8-asr-0.1b").converter_id == (
-        "audio8.audio8-asr-0.1b"
-    )
+    assert converters.get("audio8.audio8-asr-0.1b").converter_id == ("audio8.audio8-asr-0.1b")
 
 
 async def test_audio8_instance_orchestrates_transcription(
@@ -130,7 +129,7 @@ async def test_audio8_instance_orchestrates_transcription(
         "hugging_mac_sdk.models.audio8_asr.instance.prepare_audio",
         lambda *_args, **_kwargs: prepared,
     )
-    instance = Audio8AsrInstance(config, engine)
+    instance = Audio8AsrInstance(config, engine, AUDIO8_ASR_MANIFEST)
 
     await instance.load()
     transcriber = instance.require(SpeechTranscription)  # type: ignore[type-abstract]
@@ -154,8 +153,8 @@ async def test_audio8_instance_orchestrates_transcription(
 
 
 async def test_audio8_resource_provider_rejects_unsupported_conversion() -> None:
-    source = AUDIO8_ASR_MANIFEST.get_variant().resources[0]
-    provider = Audio8AsrResourceProvider(source)  # type: ignore[arg-type]
+    provider = AUDIO8_ASR_DEFINITION.resource_provider
+    assert isinstance(provider, Audio8AsrResourceProvider)
 
     with pytest.raises(UnsupportedRuntimeError, match="not implemented"):
         await provider.convert("0.1b", ArtifactFormat.ONNX)

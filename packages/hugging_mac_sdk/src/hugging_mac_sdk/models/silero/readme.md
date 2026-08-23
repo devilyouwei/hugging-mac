@@ -1,27 +1,12 @@
-# Silero VAD
+# Silero VAD Technical Notes
 
-## Summary
+The package implements `VoiceActivityDetection` with Core ML and ONNX engines.
+Identity, runtime compatibility, and resource layout come from `model.yaml`.
 
-Canonical SDK package for `snakers4/silero-vad`, providing stateful voice-activity detection for streaming or complete audio input.
+`instance.py` owns audio decoding, request thresholds, state reset, segment
+assembly, lifecycle, and serialization. `coreml.py` and `onnx.py` own backend
+session state and implement the same frame-level private engine contract.
 
-## Runtimes and variants
-
-- Variant: `v6.2.1`
-- Runtimes: `coreml`, `onnx`
-
-## Capability API
-
-- `VoiceActivityDetection.detect_voice_activity(VoiceActivityRequest) -> VoiceActivityResponse`
-
-## Package structure
-
-- `__init__.py`: public definition, manifest, and registration exports.
-- `model.yaml`: canonical metadata and Core ML/ONNX artifacts.
-- `config.py`: typed runtime and state options.
-- `definition.py`: runtime factories and registration.
-- `instance.py`: lifecycle, inference state, and VAD capability.
-- `coreml.py`: Core ML engine.
-- `onnx.py`: ONNX Runtime engine.
-- `resources.py`: artifact validation and lifecycle.
-- `utils/`: private audio, postprocessing, and state types.
-
+Streaming state is scoped to the model instance and reset between unrelated
+inputs. Private recurrent tensors and sample-level probabilities do not cross the
+capability boundary. `resources.py` manages the injected selected artifact.

@@ -139,7 +139,6 @@ def _definition() -> ModelDefinition:
         artifacts=(
             ModelArtifact(
                 artifact_id="tokenizer",
-                runtime="alpha",
                 format=ArtifactFormat.TOKENIZER,
                 path=Path("example/shared/tokenizer"),
                 kind=ArtifactKind.DIRECTORY,
@@ -149,12 +148,15 @@ def _definition() -> ModelDefinition:
             ModelArtifact(
                 artifact_id="alpha-model",
                 runtime="alpha",
+                variant="default",
                 format=ArtifactFormat.ONNX,
                 path=Path("example/alpha/model.onnx"),
+                required_shares=("tokenizer",),
             ),
             ModelArtifact(
                 artifact_id="beta-model",
                 runtime="beta",
+                variant="default",
                 format=ArtifactFormat.COREML,
                 path=Path("example/beta/model.mlpackage"),
                 kind=ArtifactKind.DIRECTORY,
@@ -173,6 +175,12 @@ def test_registry_reports_only_bound_runtimes_and_resolves_artifacts(
     assert registry.supported_runtimes("example/multi-runtime") == ("alpha", "beta")
     shared = registry.get("example/multi-runtime").shared_artifacts
     assert tuple(item.artifact_id for item in shared) == ("tokenizer",)
+    assert shared[0].variant is None
+    assert shared[0].runtime is None
+    assert (
+        registry.get("example/multi-runtime").required_shared_artifacts(runtime="alpha") == shared
+    )
+    assert not registry.get("example/multi-runtime").required_shared_artifacts(runtime="beta")
     assert tuple(
         item.artifact_id for item in registry.get_artifacts("example/multi-runtime", "alpha")
     ) == ("alpha-model",)
@@ -480,8 +488,9 @@ manifest:
 artifacts:
   - artifact_id: model
     runtime: onnx
+    variant: default
     format: onnx
-    path: example/yaml/model.onnx
+    path: example/yaml/default/onnx/model/model.onnx
 """.strip(),
         encoding="utf-8",
     )
@@ -489,7 +498,7 @@ artifacts:
     config = load_model_config(config_path)
 
     assert config.manifest.model_id == "example/yaml"
-    assert config.artifacts[0].path == Path("example/yaml/model.onnx")
+    assert config.artifacts[0].path == Path("example/yaml/default/onnx/model/model.onnx")
 
 
 def test_runtime_backend_registry_is_independent_from_model_registry() -> None:

@@ -1,28 +1,13 @@
-# Qwen3.5
+# Qwen3.5 Technical Notes
 
-## Summary
+The package implements text and vision-language requests through the shared
+`Chat` capability. Declarative model, variant, runtime, tokenizer, and source
+facts live only in `model.yaml`.
 
-Canonical SDK package for the `qwen/qwen3.5` family. Parameter scale and OptiQ quantization are variant/artifact configuration, not package or model-ID suffixes.
+`definition.py` injects the selected MLX weights and reusable tokenizer into one
+factory. `instance.py` owns lifecycle, locking, chat capability registration,
+and stable error translation. `mlx.py` owns text/image processor setup, prompt
+construction, generation, streaming, and vision-side model loading.
 
-## Runtimes and variants
-
-- Variants: `9b`, `4b`, `2b`
-- Runtime: `mlx`
-- Current artifacts: MLX OptiQ 4-bit snapshots following the declared repositories' `main` branches
-
-## Capability APIs
-
-- `Chat.chat(ChatRequest) -> ChatResponse`
-- `Chat.stream_chat(ChatRequest) -> AsyncIterator[ChatStreamEvent]`
-- Vision-language input is accepted through the shared chat request schemas; backend tensors never cross the API boundary. The instance currently registers `Chat`; the separate manifest capability name `vision-language-generation` has no standalone protocol and should not be interpreted as an additional handle capability.
-
-## Package structure
-
-- `__init__.py`: public definition, manifest, and registration exports.
-- `model.yaml`: variants, MLX runtime, trusted sources, download selections, and artifacts.
-- `config.py`: typed variant and MLX options.
-- `definition.py`: variant-aware MLX factory and registration.
-- `instance.py`: lifecycle, chat capabilities, and engine protocol.
-- `mlx.py`: MLX language/vision engine.
-- `resources.py`: per-variant snapshot validation and lifecycle.
-- `utils/`: private generated-output types.
+Public responses contain SDK chat schemas only. Processors, MLX arrays, caches,
+and backend generation objects remain private to the engine and `utils/`.

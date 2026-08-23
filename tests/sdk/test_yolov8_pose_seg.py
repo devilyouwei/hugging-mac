@@ -94,10 +94,12 @@ def test_pose_and_seg_manifests_register_all_supported_variants() -> None:
 
     assert tuple(item.name for item in pose.manifest.variants) == ("n", "s", "m")
     assert tuple(item.name for item in seg.manifest.variants) == ("n", "s", "m")
-    pose_source = YOLOV8_POSE_MANIFEST.get_variant("s").resources[0]
-    seg_source = YOLOV8_SEG_MANIFEST.get_variant("m").resources[0]
-    assert str(pose_source.url).endswith("yolov8s-pose.pt")  # type: ignore[union-attr]
-    assert str(seg_source.url).endswith("yolov8m-seg.pt")  # type: ignore[union-attr]
+    pose_source = pose.get_artifact("pytorch-mps", "source", "s").source
+    seg_source = seg.get_artifact("pytorch-mps", "source", "m").source
+    assert isinstance(pose_source, UrlFileSource)
+    assert isinstance(seg_source, UrlFileSource)
+    assert str(pose_source.url).endswith("yolov8s-pose.pt")
+    assert str(seg_source.url).endswith("yolov8m-seg.pt")
 
     for variant in ("n", "s", "m"):
         pose_instance = sdk.registry.create_instance(
@@ -164,13 +166,13 @@ async def test_pose_and_seg_instances_map_task_specific_results(
         pose_config,
         FakeAssets(pose_weights),  # type: ignore[arg-type]
     )
-    pose = YoloV8PoseInstance(pose_config, pose_engine)
+    pose = YoloV8PoseInstance(pose_config, pose_engine, YOLOV8_POSE_MANIFEST)
     seg_config = YoloV8SegInstanceConfig(runtime="coreml", variant="m")
     seg_engine = CoreMlYoloV8SegEngine(
         seg_config,
         FakeAssets(seg_package),  # type: ignore[arg-type]
     )
-    seg = YoloV8SegInstance(seg_config, seg_engine)
+    seg = YoloV8SegInstance(seg_config, seg_engine, YOLOV8_SEG_MANIFEST)
     request = DetectionRequest(image=ImageInput(path=image))
 
     await pose.load()
@@ -247,8 +249,8 @@ async def test_pose_and_seg_resources_use_independent_variant_directories(
     assert pose.artifacts[0].available
     assert seg.artifacts[0].available
     assert converted.conversion_targets[0].available
-    assert (tmp_path / "ultralytics" / "yolov8-pose" / "v8.2.0" / "s").exists()
-    assert (tmp_path / "ultralytics" / "yolov8-seg" / "v8.2.0" / "m").exists()
+    assert (tmp_path / "ultralytics" / "yolov8-pose" / "s").exists()
+    assert (tmp_path / "ultralytics" / "yolov8-seg" / "m").exists()
 
 
 @pytest.mark.parametrize(
@@ -290,7 +292,7 @@ async def test_pose_and_seg_coreml_conversion_uses_raw_task_outputs(
         digest="1" * 64,
         size_bytes=source_path.stat().st_size,
     )
-    result = await converter_type().convert(
+    result = await converter_type(model_id).convert(
         ConversionRequest(
             model_id=model_id,
             model_revision="v8.2.0",

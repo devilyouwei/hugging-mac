@@ -1,35 +1,18 @@
-# DeepFilterNet3
+# DeepFilterNet3 Technical Notes
 
-## Summary
+The package implements `SpeechEnhancement` with a Core ML inference engine and a
+model-private DSP pipeline. Declarative facts are owned by `model.yaml`.
 
-Canonical package for `deepfilternet/deepfilternet3`, containing the prebuilt Core ML graph, complete libdf-compatible DSP pipeline, and managed-resource lifecycle.
+## Processing pipeline
 
-## Runtimes and variants
+1. `audio.py` decodes, downmixes, and resamples input audio.
+2. `dsp.py` performs STFT and creates normalized ERB/spectral features.
+3. `coreml.py` runs the compiled model through the Core ML provider.
+4. `dsp.py` applies the ERB mask and deep-filter coefficients and reconstructs
+   the waveform.
+5. `audio.py` compensates delay, preserves duration, resamples when requested,
+   and encodes the public WAV response.
 
-- Variant: `default`
-- Runtime: `coreml`
-- Artifact: prebuilt INT8 Core ML model
-
-## Capability API
-
-The instance exposes the public `SpeechEnhancement` capability through `enhance_speech(...)`. It accepts encoded audio at any supported input sample rate, processes mono audio at the model's native 48 kHz, and returns PCM WAV at the requested rate (the source rate by default).
-
-The inference path is:
-
-1. Decode, downmix, and resample to 48 kHz.
-2. Run the 960-point STFT and build normalized ERB/spectral features.
-3. Predict the ERB mask and five-tap deep-filter coefficients with Core ML.
-4. Apply the mask and complex deep filter, then reconstruct with iSTFT.
-5. Compensate algorithmic delay, preserve input duration, and encode PCM WAV.
-
-## Package structure
-
-- `__init__.py`: definition, manifest, and registration exports.
-- `model.yaml`: identity and prebuilt artifact metadata.
-- `config.py`: Core ML instance/resource options.
-- `definition.py`: Core ML factory and registry binding.
-- `instance.py`: lifecycle plus the typed speech-enhancement capability.
-- `coreml.py`: thread-affine compiled graph loading and inference.
-- `dsp.py`: STFT, feature normalization, ERB mask, deep filtering, and iSTFT.
-- `audio.py`: audio decoding, resampling, and WAV encoding.
-- `resources.py`: artifact validation, status, download, and deletion.
+`instance.py` owns lifecycle and serialization. `resources.py` validates and
+manages only the injected prebuilt artifact. Intermediate arrays and DSP state do
+not cross the capability boundary.

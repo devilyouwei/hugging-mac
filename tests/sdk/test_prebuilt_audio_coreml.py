@@ -8,7 +8,7 @@ import pytest
 import soundfile as sf
 from hugging_mac_sdk import ModelSdk
 from hugging_mac_sdk.capabilities import SpeechEnhancement, SpeechTranscription
-from hugging_mac_sdk.models.deepfilternet3 import DEEPFILTERNET3_DEFINITION
+from hugging_mac_sdk.models.deepfilternet3 import DEEPFILTERNET3_DEFINITION, DEEPFILTERNET3_MANIFEST
 from hugging_mac_sdk.models.deepfilternet3.audio import PreparedEnhancementAudio
 from hugging_mac_sdk.models.deepfilternet3.config import DeepFilterNet3InstanceConfig
 from hugging_mac_sdk.models.deepfilternet3.dsp import (
@@ -21,7 +21,11 @@ from hugging_mac_sdk.models.deepfilternet3.dsp import (
     EnhancementOutput,
 )
 from hugging_mac_sdk.models.deepfilternet3.instance import DeepFilterNet3Instance
-from hugging_mac_sdk.models.qwen3_asr import QWEN3_ASR_DEFINITION, register_qwen3_asr
+from hugging_mac_sdk.models.qwen3_asr import (
+    QWEN3_ASR_DEFINITION,
+    QWEN3_ASR_MANIFEST,
+    register_qwen3_asr,
+)
 from hugging_mac_sdk.models.qwen3_asr.config import Qwen3AsrCoreMlInstanceConfig
 from hugging_mac_sdk.models.qwen3_asr.instance import Qwen3AsrCoreMlInstance
 from hugging_mac_sdk.models.qwen3_asr.utils.types import AsrEngineOutput, PreparedAudio
@@ -81,20 +85,20 @@ class FakeDeepFilterNet3Engine:
         return None
 
 
-def test_deepfilternet3_declares_pinned_prebuilt_coreml_artifact() -> None:
+def test_deepfilternet3_declares_prebuilt_coreml_artifact_source() -> None:
     definition = DEEPFILTERNET3_DEFINITION
 
     assert definition.manifest.default_runtime == "coreml"
-    assert definition.manifest.revision == "937bad9811f1ffc1a06ea0d676461b080b2bdc93"
+    assert definition.manifest.revision == "main"
     assert definition.artifacts[0].artifact_id == "coreml-int8"
     assert definition.artifacts[0].source.repo_id == "aufklarer/DeepFilterNet3-CoreML"
 
 
 def test_deepfilternet3_dsp_identity_path_preserves_signal_and_length(tmp_path: Path) -> None:
     indices = np.arange(FFT_SIZE, dtype=np.float32)
-    window = np.sin(
-        np.pi / 2 * np.square(np.sin(np.pi * (indices + 0.5) / FFT_SIZE))
-    ).astype(np.float32)
+    window = np.sin(np.pi / 2 * np.square(np.sin(np.pi * (indices + 0.5) / FFT_SIZE))).astype(
+        np.float32
+    )
     auxiliary = tmp_path / "auxiliary.npz"
     np.savez(
         auxiliary,
@@ -128,6 +132,7 @@ async def test_deepfilternet3_exposes_speech_enhancement(tmp_path: Path) -> None
     instance = DeepFilterNet3Instance(
         DeepFilterNet3InstanceConfig(artifact_path=tmp_path),
         FakeDeepFilterNet3Engine(tmp_path),
+        DEEPFILTERNET3_MANIFEST,
     )
     assert instance.supports(SpeechEnhancement)  # type: ignore[type-abstract]
     await instance.load()
@@ -147,7 +152,7 @@ def test_qwen3_asr_declares_all_prebuilt_coreml_graphs() -> None:
     source = definition.artifacts[0].source
 
     assert definition.manifest.default_runtime == "coreml"
-    assert definition.manifest.revision == "8c6bc87b87856930b435550e94ce47de710ce4ed"
+    assert definition.manifest.revision == "main"
     assert len(definition.artifacts) == 2
     assert isinstance(source, HuggingFaceSource)
     assert source.repo_id == "aufklarer/Qwen3-ASR-CoreML"
@@ -174,10 +179,11 @@ async def test_qwen3_asr_reports_one_bundle_only_when_graphs_and_tokenizer_exist
 ) -> None:
     provider = QWEN3_ASR_DEFINITION.resource_provider
     assert provider is not None
-    model = (
-        tmp_path
-        / "qwen/qwen3-asr/8c6bc87b87856930b435550e94ce47de710ce4ed/0.6b/coreml/model"
-    )
+    model = next(
+        artifact
+        for artifact in QWEN3_ASR_DEFINITION.artifacts
+        if artifact.artifact_id == "coreml-int8"
+    ).resolve(tmp_path)
     for graph in ("encoder", "embedding", "decoder_part1", "decoder_part2"):
         path = model / f"{graph}.mlmodelc/model.mil"
         path.parent.mkdir(parents=True)
@@ -188,10 +194,11 @@ async def test_qwen3_asr_reports_one_bundle_only_when_graphs_and_tokenizer_exist
     assert len(missing_tokenizer.artifacts) == 2
     assert not missing_tokenizer.runtimes[0].available
 
-    tokenizer = (
-        tmp_path
-        / "qwen/qwen3-asr/shared/tokenizer/5eb144179a02acc5e5ba31e748d22b0cf3e303b0"
-    )
+    tokenizer = next(
+        artifact
+        for artifact in QWEN3_ASR_DEFINITION.artifacts
+        if artifact.artifact_id == "tokenizer"
+    ).resolve(tmp_path)
     tokenizer.mkdir(parents=True)
     for name in ("vocab.json", "merges.txt", "tokenizer_config.json"):
         (tokenizer / name).write_text("{}")
@@ -260,7 +267,9 @@ async def test_qwen3_asr_exposes_speech_transcription(
         "hugging_mac_sdk.models.qwen3_asr.instance.prepare_audio",
         lambda *_args, **_kwargs: prepared,
     )
-    instance = Qwen3AsrCoreMlInstance(Qwen3AsrCoreMlInstanceConfig(), FakeQwenAsrEngine(tmp_path))
+    instance = Qwen3AsrCoreMlInstance(
+        Qwen3AsrCoreMlInstanceConfig(), FakeQwenAsrEngine(tmp_path), QWEN3_ASR_MANIFEST
+    )
     assert instance.supports(SpeechTranscription)  # type: ignore[type-abstract]
     await instance.load()
     response = await instance.require(SpeechTranscription).transcribe(  # type: ignore[type-abstract]

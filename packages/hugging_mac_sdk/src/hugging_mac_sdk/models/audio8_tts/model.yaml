@@ -2,7 +2,7 @@ manifest:
   schema_version: '1'
   model_id: audio8/audio8-tts-preview
   display_name: Audio8 TTS Preview
-  description: 支持 11 种推荐语言和零样本声音克隆的 0.6B 多语言语音合成模型；默认使用 CPU FP32 以保证生成稳定性。
+  description: 支持多语言与零样本声音克隆的 Audio8 TTS 模型。
   tags: [audio, tts, voice-cloning, zero-shot, multilingual, arktts]
   family: audio8-tts
   capabilities: [speech-synthesis]
@@ -11,7 +11,7 @@ manifest:
 
   runtimes:
   - name: pytorch
-    devices: [cpu]
+    devices: [cpu, mps]
     dtypes: [float32]
     platforms: [darwin]
     architectures: [arm64]
@@ -57,7 +57,7 @@ artifacts:
   path: audio8/audio8-tts-preview/0.1b-preview/pytorch/source
   required_files: [codec.pth, config.json, configuration_arktts.py, generation_config.json, model.safetensors, modeling_arktts.py,
     modeling_arktts_codec.py, preprocessor_config.json, processing_arktts.py, processor_config.json]
-  required_shares: [tokenizer]
+  required_shares: [tokenizer-0.1b]
   source:
     kind: huggingface
     repo_id: Audio8/Audio8-TTS-Preview-0.1b
@@ -77,7 +77,7 @@ artifacts:
   path: audio8/audio8-tts-preview/0.6b-preview/pytorch/source
   required_files: [codec.pth, config.json, configuration_arktts.py, generation_config.json, model.safetensors, modeling_arktts.py,
     modeling_arktts_codec.py, preprocessor_config.json, processing_arktts.py, processor_config.json]
-  required_shares: [tokenizer]
+  required_shares: [tokenizer-0.6b]
   source:
     kind: huggingface
     repo_id: Audio8/Audio8-TTS-Preview-0.6b
@@ -96,7 +96,7 @@ artifacts:
   kind: directory
   path: audio8/audio8-tts-preview/0.6b-preview/mlx/mlx-bf16
   required_files: [codec.safetensors, config.json, generation_config.json, model.safetensors]
-  required_shares: [tokenizer]
+  required_shares: [tokenizer-0.6b]
   source:
     kind: huggingface
     repo_id: mlx-community/Audio8-TTS-Preview-0.6b-bf16
@@ -105,11 +105,24 @@ artifacts:
     - generation_config.json
     - codec.safetensors
     - model.safetensors
-- artifact_id: tokenizer
+- artifact_id: tokenizer-0.1b
   shared: true
   format: tokenizer
   kind: directory
-  path: audio8/audio8-tts-preview/_shared/tokenizer
+  path: audio8/audio8-tts-preview/_shared/tokenizer-0.1b
+  required_files: [special_tokens_map.json, tokenizer.json, tokenizer_config.json]
+  source:
+    kind: huggingface
+    repo_id: Audio8/Audio8-TTS-Preview-0.1b
+    allow_patterns:
+    - special_tokens_map.json
+    - tokenizer.json
+    - tokenizer_config.json
+- artifact_id: tokenizer-0.6b
+  shared: true
+  format: tokenizer
+  kind: directory
+  path: audio8/audio8-tts-preview/_shared/tokenizer-0.6b
   required_files: [special_tokens_map.json, tokenizer.json, tokenizer_config.json]
   source:
     kind: huggingface

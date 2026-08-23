@@ -1,26 +1,13 @@
-# YOLOv8 Instance Segmentation
+# YOLOv8 Instance Segmentation Technical Notes
 
-## Summary
+This package owns the `InstanceSegmentation` contract and its model-private YOLO
+mask implementation. `model.yaml` owns static configuration.
 
-SDK package for `ultralytics/yolov8-seg`. It remains separate because instance masks and polygons form a different public capability contract from detection and pose.
+The PyTorch, Core ML, and ONNX engines produce a common private raw-output shape.
+`utils/preprocess.py` performs letterboxing. `utils/postprocess.py` decodes boxes,
+applies class-aware NMS, combines mask coefficients with prototypes, crops and
+resizes masks, and extracts immutable source-coordinate polygons.
 
-## Runtimes and variants
-
-- Variants: `n`, `s`, `m`
-- Runtimes: `pytorch-mps`, `coreml`, `onnx`
-
-## Capability API
-
-- `InstanceSegmentation.segment(SegmentationRequest) -> SegmentationResponse`
-
-## Package structure
-
-- `__init__.py`: public definition, manifest, and registration exports.
-- `model.yaml`: variants, runtimes, and artifacts with their owned sources.
-- `config.py`: typed runtime/conversion options.
-- `definition.py`: runtime factories, converter binding, and registration.
-- `instance.py`: lifecycle and segmentation capability.
-- `torch.py`, `coreml.py`, `onnx.py`: backend engines.
-- `resources.py`: source/converted artifact lifecycle.
-- `converter.py`: segmentation export policy.
-- `utils/`: private checkpoint, preprocessing, mask postprocessing, and types.
+`converter.py` exports raw detection and prototype outputs so postprocessing is
+identical across runtimes. Binary masks, NumPy arrays, framework tensors, and
+checkpoint structures never enter the public response.

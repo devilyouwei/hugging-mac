@@ -1,41 +1,15 @@
-# RetinaFace
+# RetinaFace Technical Notes
 
-## Summary
+The package implements `FaceDetection` with PyTorch and Core ML engines composed
+under one instance. Static facts are owned by `model.yaml`.
 
-SDK package for the lightweight `py-feat/retinaface` MobileNet0.25 checkpoint. A single
-forward pass returns face boxes, confidence scores, and five alignment landmarks (eyes,
-nose, and mouth corners); no additional landmark model is required.
+`utils/modeling.py` contains the local MobileNet-based network used for trusted
+checkpoint loading and conversion. `utils/preprocess.py` owns fixed-size
+letterboxing and normalization. `utils/postprocess.py` decodes priors, filters
+scores, applies NMS, and restores boxes and five alignment landmarks to source
+pixels.
 
-## Canonical identity, runtimes, and conversion
-
-- Model ID: `py-feat/retinaface`
-- Revision: `31702389094fccc7060c15299e6ad712ee880de6`
-- Variant: `mobilenet0.25`
-- Source runtime: `pytorch-mps`
-- Converted runtime: `coreml`
-- License: MIT
-
-The downloaded resource contains only `config.json` and
-`mobilenet0.25_Final.pth`. The Models page can run the checkpoint directly with
-PyTorch/MPS or convert it locally to an FP16 Core ML `mlprogram`. Old prebuilt
-RetinaFace Core ML packages are neither discovered nor supported.
-
-## Capability API
-
-- `FaceDetection.detect_faces(DetectionRequest) -> FaceDetectionResponse`
-- Coordinates are restored to pixels in the original image.
-- Confidence threshold and NMS IoU are applied after either runtime's raw outputs.
-
-## Package structure
-
-- `model.yaml`: trusted source, download selections, artifacts, runtimes, capability, and license.
-- `config.py`: frozen instance and resource options.
-- `definition.py`: PyTorch/Core ML factories, converter, and model registration.
-- `instance.py`: lifecycle and runtime-independent face detection.
-- `torch.py`: PyTorch/MPS loading and inference.
-- `converter.py`: local `.pth` to Core ML conversion.
-- `coreml.py`: converted Core ML loading and inference.
-- `resources.py`: source download, integrity checks, conversion, status, and deletion.
-- `utils/modeling.py`: MobileNet0.25 RetinaFace architecture.
-- `utils/preprocess.py`: fixed-size letterbox and mean subtraction.
-- `utils/postprocess.py`: prior decoding, filtering, NMS, and coordinate restoration.
+`converter.py` exports the model-specific raw-output boundary. Both runtime
+engines return equivalent private values to `instance.py`, which constructs the
+public face response. `resources.py` manages injected source/target artifacts and
+never repeats source or file constants.

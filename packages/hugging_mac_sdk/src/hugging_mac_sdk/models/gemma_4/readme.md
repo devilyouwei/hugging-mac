@@ -1,28 +1,15 @@
-# Gemma 4
+# Gemma 4 Technical Notes
 
-## Summary
+The package implements the shared `Chat` protocol for text and image-bearing
+messages. `model.yaml` owns model identity, variant selection, sources, and file
+contracts.
 
-Canonical SDK package for the `google/gemma-4` family. Effective parameter scale and QAT OptiQ quantization are variant/artifact configuration, not package or model-ID suffixes.
+`definition.py` resolves the selected MLX artifact and reusable tokenizer before
+injecting them into the factory. `instance.py` owns lifecycle, request
+serialization, and chat/stream capability registration. `mlx.py` owns processor
+loading, text and vision preparation, generation, cancellation, and conversion
+to private output events.
 
-## Runtimes and variants
-
-- Variants: `e4b` (default), `e2b`
-- Runtime: `mlx`
-- Current artifacts: MLX QAT OptiQ mixed-precision snapshots following `main`
-
-## Capability API
-
-- `Chat.chat(ChatRequest) -> ChatResponse`
-- `Chat.stream_chat(ChatRequest) -> AsyncIterator[ChatStreamEvent]`
-- Both LLM text-only and VLM text-plus-image requests use the shared `Chat` capability. Images are supplied on chat messages; runtime tensors and processors remain private.
-
-## Package structure
-
-- `__init__.py`: public definition, manifest, and registration exports.
-- `model.yaml`: canonical identity, variants, MLX runtime, trusted sources, download selections, and artifacts.
-- `config.py`: typed variant, resource, and runtime options.
-- `definition.py`: variant-aware MLX factory and registration.
-- `instance.py`: lifecycle, shared chat capability, and engine protocol.
-- `mlx.py`: MLX text/vision generation engine and OptiQ vision-sidecar loading.
-- `resources.py`: per-variant snapshot validation and lifecycle.
-- `utils/`: private generation result types.
+The public boundary contains chat messages, image references, responses, and
+stream events only. MLX arrays, processors, prompt templates, and generation
+state stay inside the package.

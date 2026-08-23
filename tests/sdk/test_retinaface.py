@@ -71,7 +71,7 @@ async def test_coreml_retinaface_exposes_five_landmarks(tmp_path: Path, monkeypa
     Image.new("RGB", (320, 240)).save(image)
     config = RetinaFaceInstanceConfig(input_size=640)
     engine = CoreMlRetinaFaceEngine(config, FakeResources(artifact))  # type: ignore[arg-type]
-    instance = RetinaFaceInstance(config, engine)
+    instance = RetinaFaceInstance(config, engine, RETINAFACE_MANIFEST)
 
     await instance.load()
     response = await instance.require(FaceDetection).detect_faces(

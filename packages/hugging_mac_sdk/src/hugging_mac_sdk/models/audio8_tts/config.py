@@ -22,7 +22,9 @@ class Audio8TtsInstanceConfig(BaseModel):
     source_path: Path | None = None
     tokenizer_path: Path | None = None
     hf_token: str | None = Field(default=None, repr=False, exclude=True)
-    device: Literal["cpu"] = "cpu"
+    # CPU is currently faster for both Audio8 variants on macOS; callers may
+    # still explicitly select MPS, whose runtime failures fall back to CPU.
+    device: Literal["cpu", "mps"] = "cpu"
     dtype: Audio8TtsDType = "auto"
 
 

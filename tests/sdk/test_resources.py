@@ -7,11 +7,9 @@ import pytest
 from hugging_mac_sdk import ModelSdk
 from hugging_mac_sdk.errors import ResourceIntegrityError, ResourceNotFoundError
 from hugging_mac_sdk.models.yolov8 import YOLOV8_MANIFEST, register_yolov8
-from hugging_mac_sdk.models.yolov8.config import (
-    YOLOV8_SHA256,
-    YoloV8InstanceConfig,
-)
+from hugging_mac_sdk.models.yolov8.config import YoloV8InstanceConfig
 from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
+from hugging_mac_sdk.models.yolov8.definition import YOLOV8_CONFIG, YOLOV8_CONVERTER
 from hugging_mac_sdk.models.yolov8.resources import YoloV8ResourceResolver
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.schemas.conversion import (
@@ -21,11 +19,9 @@ from hugging_mac_sdk.schemas.conversion import (
 )
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource, ResolvedResource
 
-YOLOV8_N_SHA256 = YOLOV8_SHA256["n"]
-
 
 def _source() -> HuggingFaceSource:
-    source = YOLOV8_MANIFEST.get_variant("n").resources[0]
+    source = YOLOV8_CONFIG.get_artifact("source", variant="n", runtime="pytorch-mps").source
     assert isinstance(source, HuggingFaceSource)
     return source
 
@@ -34,6 +30,9 @@ async def test_resolve_never_downloads_or_converts_missing_assets(tmp_path: Path
     resolver = YoloV8ResourceResolver(
         _source(),
         YoloV8InstanceConfig(model_home=tmp_path),
+        YOLOV8_MANIFEST,
+        {artifact.artifact_id: artifact for artifact in YOLOV8_CONFIG.get_artifacts(variant="n")},
+        converter=YOLOV8_CONVERTER,
     )
 
     with pytest.raises(ResourceNotFoundError, match="not downloaded"):
@@ -71,7 +70,7 @@ async def test_sdk_exposes_explicit_download_and_conversion(
         return ResolvedResource(
             path=destination,
             source=source,
-            digest=YOLOV8_N_SHA256,
+            digest="downloaded",
             size_bytes=destination.stat().st_size,
         )
 
@@ -91,10 +90,6 @@ async def test_sdk_exposes_explicit_download_and_conversion(
 
     monkeypatch.setattr(ResourceDownloader, "download", fake_download)
     monkeypatch.setattr(YoloV8Converter, "convert", fake_convert)
-    monkeypatch.setattr(
-        "hugging_mac_sdk.models.yolov8.resources.file_sha256",
-        lambda _: YOLOV8_N_SHA256,
-    )
 
     sdk = ModelSdk()
     from hugging_mac_sdk.converters import ConverterRegistry
@@ -161,6 +156,9 @@ async def test_delete_refuses_custom_artifact_outside_model_root(tmp_path: Path)
             source_path=outside,
             runtime="pytorch-mps",
         ),
+        YOLOV8_MANIFEST,
+        {artifact.artifact_id: artifact for artifact in YOLOV8_CONFIG.get_artifacts(variant="n")},
+        converter=YOLOV8_CONVERTER,
     )
 
     with pytest.raises(ResourceIntegrityError, match="outside"):
@@ -184,15 +182,11 @@ async def test_yolov8_variant_resources_are_downloaded_and_deleted_independently
         return ResolvedResource(
             path=destination,
             source=source,
-            digest=source.expected_sha256,
+            digest="downloaded",
             size_bytes=destination.stat().st_size,
         )
 
     monkeypatch.setattr(ResourceDownloader, "download", fake_download)
-    monkeypatch.setattr(
-        "hugging_mac_sdk.models.yolov8.resources.file_sha256",
-        lambda path: YOLOV8_SHA256[path.stem[-1]],
-    )
     sdk = ModelSdk()
     from hugging_mac_sdk.converters import ConverterRegistry
 
@@ -211,8 +205,8 @@ async def test_yolov8_variant_resources_are_downloaded_and_deleted_independently
             tmp_path
             / "ultralytics"
             / "yolov8"
-            / "8a9e1a5"
             / variant
+            / "pytorch-mps"
             / "source"
             / f"yolov8{variant}.pt"
         ).is_file()
@@ -222,6 +216,6 @@ async def test_yolov8_variant_resources_are_downloaded_and_deleted_independently
         variant="s",
         options=options,
     )
-    assert not (tmp_path / "ultralytics" / "yolov8" / "8a9e1a5" / "s").exists()
-    assert (tmp_path / "ultralytics" / "yolov8" / "8a9e1a5" / "n").exists()
-    assert (tmp_path / "ultralytics" / "yolov8" / "8a9e1a5" / "m").exists()
+    assert not (tmp_path / "ultralytics" / "yolov8" / "s").exists()
+    assert (tmp_path / "ultralytics" / "yolov8" / "n").exists()
+    assert (tmp_path / "ultralytics" / "yolov8" / "m").exists()

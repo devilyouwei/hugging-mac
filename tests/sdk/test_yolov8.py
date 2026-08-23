@@ -10,7 +10,7 @@ import pytest
 from hugging_mac_sdk.capabilities import ObjectDetection
 from hugging_mac_sdk.core.instance import ModelState
 from hugging_mac_sdk.core.registry import ModelRegistry
-from hugging_mac_sdk.models.yolov8 import register_yolov8
+from hugging_mac_sdk.models.yolov8 import YOLOV8_MANIFEST, register_yolov8
 from hugging_mac_sdk.models.yolov8.config import YoloV8InstanceConfig
 from hugging_mac_sdk.models.yolov8.coreml import CoreMlYoloV8Engine
 from hugging_mac_sdk.models.yolov8.instance import YoloV8Instance
@@ -87,7 +87,7 @@ async def test_pytorch_mps_engine_exposes_detection_capability(
     Image.new("RGB", (640, 480)).save(image)
     config = YoloV8InstanceConfig(runtime="pytorch-mps")
     engine = TorchYoloV8Engine(config, FakeAssets(artifact))  # type: ignore[arg-type]
-    instance = YoloV8Instance(config, engine)
+    instance = YoloV8Instance(config, engine, YOLOV8_MANIFEST)
 
     await instance.load()
     detector = instance.require(ObjectDetection)
@@ -133,7 +133,7 @@ async def test_coreml_engine_does_not_pass_torch_device(
     Image.new("RGB", (640, 480)).save(image)
     config = YoloV8InstanceConfig(runtime="coreml")
     engine = CoreMlYoloV8Engine(config, FakeAssets(artifact))  # type: ignore[arg-type]
-    instance = YoloV8Instance(config, engine)
+    instance = YoloV8Instance(config, engine, YOLOV8_MANIFEST)
 
     await instance.load()
     response = await instance.require(ObjectDetection).detect(

@@ -92,7 +92,7 @@ class FakeCoreMlSession:
         self.closed = True
 
 
-def test_sensevoice_manifest_pins_minimal_snapshot_and_license() -> None:
+def test_sensevoice_artifact_declares_minimal_snapshot_and_license() -> None:
     assert SENSEVOICE_SMALL_MANIFEST.default_variant == "small"
     assert SENSEVOICE_SMALL_MANIFEST.capabilities == {
         "speech-transcription",
@@ -103,7 +103,8 @@ def test_sensevoice_manifest_pins_minimal_snapshot_and_license() -> None:
         "pytorch-mps",
         "coreml",
     }
-    source = SENSEVOICE_SMALL_MANIFEST.get_variant().resources[0]
+    source = SENSEVOICE_SMALL_DEFINITION.get_artifact("pytorch-mps", "source", "small").source
+    assert source is not None
     assert source.allow_patterns == (  # type: ignore[union-attr]
         "model.pt",
         "config.yaml",
@@ -151,7 +152,9 @@ async def test_instance_composes_plain_and_rich_speech_capabilities(
         "hugging_mac_sdk.models.sensevoice.instance.prepare_audio",
         lambda *_args, **_kwargs: prepared,
     )
-    instance = SenseVoiceSmallInstance(SenseVoiceSmallInstanceConfig(), engine)
+    instance = SenseVoiceSmallInstance(
+        SenseVoiceSmallInstanceConfig(), engine, SENSEVOICE_SMALL_MANIFEST
+    )
 
     await instance.load()
     transcriber = instance.require(SpeechTranscription)  # type: ignore[type-abstract]
@@ -206,8 +209,8 @@ def test_rich_postprocess_returns_text_and_structured_annotations() -> None:
 async def test_resource_provider_routes_coreml_conversion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source = SENSEVOICE_SMALL_MANIFEST.get_variant().resources[0]
-    provider = SenseVoiceSmallResourceProvider(source)  # type: ignore[arg-type]
+    provider = SENSEVOICE_SMALL_DEFINITION.resource_provider
+    assert isinstance(provider, SenseVoiceSmallResourceProvider)
     converted: list[bool] = []
 
     async def fake_convert(self: object, *, overwrite: bool = False) -> None:

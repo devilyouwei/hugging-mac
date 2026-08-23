@@ -8,11 +8,12 @@ import pytest
 from hugging_mac_sdk.capabilities import SpeechSynthesis
 from hugging_mac_sdk.core.registry import ModelRegistry
 from hugging_mac_sdk.errors import InferenceError
-from hugging_mac_sdk.models.audio8_tts import AUDIO8_TTS_MANIFEST, register_audio8_tts
-from hugging_mac_sdk.models.audio8_tts.config import (
-    AUDIO8_TTS_MLX_REQUIRED_FILES,
-    Audio8TtsMlxInstanceConfig,
+from hugging_mac_sdk.models.audio8_tts import (
+    AUDIO8_TTS_DEFINITION,
+    AUDIO8_TTS_MANIFEST,
+    register_audio8_tts,
 )
+from hugging_mac_sdk.models.audio8_tts.config import Audio8TtsMlxInstanceConfig
 from hugging_mac_sdk.models.audio8_tts.instance import Audio8TtsInstance
 from hugging_mac_sdk.models.audio8_tts.mlx_resources import Audio8TtsMlxResourceResolver
 from hugging_mac_sdk.models.audio8_tts.utils.types import TtsEngineOutput
@@ -23,24 +24,24 @@ from hugging_mac_sdk.schemas.transcription import AudioInput
 
 
 def _source() -> HuggingFaceSource:
-    source = AUDIO8_TTS_MANIFEST.get_variant().resources[1]
+    source = AUDIO8_TTS_DEFINITION.get_artifact("mlx", "mlx-bf16", "0.6b-preview").source
     assert isinstance(source, HuggingFaceSource)
     return source
 
 
 def _write_snapshot(path: Path) -> None:
-    for name in AUDIO8_TTS_MLX_REQUIRED_FILES:
+    for name in _source().allow_patterns:
         target = path / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.touch()
 
 
-def test_manifest_contains_pinned_mlx_bf16_artifact() -> None:
+def test_manifest_contains_mlx_bf16_artifact_source() -> None:
     assert AUDIO8_TTS_MANIFEST.default_variant == "0.6b-preview"
     assert "mlx" in {runtime.name for runtime in AUDIO8_TTS_MANIFEST.runtimes}
     assert AUDIO8_TTS_MANIFEST.capabilities == {"speech-synthesis"}
     source = _source()
-    assert source.revision == "f7be312aaaed724b6ecb8e916b21c9fd0842db02"
+    assert source.revision == "main"
     assert source.allow_patterns == (
         "config.json",
         "generation_config.json",
@@ -63,7 +64,15 @@ async def test_resource_resolver_accepts_mlx_layout(tmp_path: Path) -> None:
     artifact = tmp_path / "model"
     _write_snapshot(artifact)
     resolver = Audio8TtsMlxResourceResolver(
-        _source(), Audio8TtsMlxInstanceConfig(source_path=artifact)
+        _source(),
+        Audio8TtsMlxInstanceConfig(source_path=artifact),
+        manifest=AUDIO8_TTS_MANIFEST,
+        artifact=next(
+            artifact
+            for artifact in register_audio8_tts(ModelRegistry()).artifacts
+            if artifact.artifact_id == "mlx-bf16"
+        ),
+        tokenizer_artifact=register_audio8_tts(ModelRegistry()).shared_artifacts[0],
     )
 
     resolved = await resolver.resolve_source()
@@ -143,7 +152,9 @@ async def test_instance_preserves_actionable_inference_reason(tmp_path: Path) ->
             return None
 
     instance = Audio8TtsInstance(
-        Audio8TtsMlxInstanceConfig(source_path=tmp_path), FailingEngine()
+        Audio8TtsMlxInstanceConfig(source_path=tmp_path),
+        FailingEngine(),
+        AUDIO8_TTS_MANIFEST,
     )
     await instance.load()
 

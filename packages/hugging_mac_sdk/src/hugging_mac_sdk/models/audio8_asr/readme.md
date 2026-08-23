@@ -1,30 +1,28 @@
-# Audio8-ASR
+# Audio8 ASR Technical Notes
 
-## Summary
+This package implements the `SpeechTranscription` capability with one shared
+instance contract across its PyTorch and Core ML engines. `model.yaml` is the
+only source for identity, variants, runtimes, files, sources, and presentation.
 
-Canonical SDK package for `audio8/audio8-asr`. It provides multilingual short-form speech transcription with the `0.1b` model variant.
+## Engine boundary
 
-## Runtimes and variants
+`instance.py` decodes caller audio, serializes inference, delegates prepared
+audio to the selected engine, and maps the engine result to the public response.
+`torch.py` assembles the local model implementation with the Torch provider.
+`coreml.py` combines the converted audio tower with the cached language-model
+path while preserving the same capability output.
 
-- Variant: `0.1b`
-- Runtimes: `pytorch-mps`, `coreml`
-- Artifacts and quantization details are declared in `model.yaml`; they are not separate model identities.
+The package does not execute model-repository Python. Its local implementation
+constructs the supported architecture from declared configuration and loads only
+the selected data files.
 
-## Capability API
+## Conversion and resources
 
-- `SpeechTranscription.transcribe(TranscriptionRequest) -> TranscriptionResponse`
+`converter.py` owns the model-specific split between the audio tower and language
+components, fixed audio-duration functions, weight export, and atomic publication
+of the target directory. `resources.py` consumes the injected artifacts and
+checks their complete required-file contracts; it does not duplicate source or
+path facts.
 
-Applications must obtain this capability from a loaded model handle and must not import this package's runtime classes.
-
-## Package structure
-
-- `__init__.py`: public definition, manifest, and registration exports.
-- `model.yaml`: canonical metadata, variants, runtimes, and artifacts with their owned sources.
-- `config.py`: typed instance and resource configuration.
-- `definition.py`: runtime factories, converter binding, and registry integration.
-- `instance.py`: lifecycle, capability registration, and runtime-neutral transcription flow.
-- `torch.py`: PyTorch/MPS inference engine.
-- `coreml.py`: Core ML inference engine.
-- `resources.py`: source and converted-artifact lifecycle.
-- `converter.py`: Audio8-ASR to Core ML conversion policy.
-- `utils/`: private audio, model, Core ML, and output helpers.
+Audio decoding, model layers, Core ML helpers, and private engine result types
+remain under `utils/` and never enter public schemas.

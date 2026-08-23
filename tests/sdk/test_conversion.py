@@ -7,8 +7,11 @@ from hugging_mac_sdk.converters.base import ModelConverter
 from hugging_mac_sdk.converters.registry import ConversionService, ConverterRegistry
 from hugging_mac_sdk.converters.yolov8 import YoloV8ExportOptions
 from hugging_mac_sdk.core.registry import ModelRegistry
-from hugging_mac_sdk.models.yolov8 import YOLOV8_MANIFEST, register_yolov8
-from hugging_mac_sdk.models.yolov8.config import YOLOV8_SHA256
+from hugging_mac_sdk.models.yolov8 import (
+    YOLOV8_DEFINITION,
+    YOLOV8_MANIFEST,
+    register_yolov8,
+)
 from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
 from hugging_mac_sdk.schemas.conversion import (
     ArtifactFormat,
@@ -20,8 +23,6 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
     UrlFileSource,
 )
-
-YOLOV8_N_SHA256 = YOLOV8_SHA256["n"]
 
 
 class FakeConverter(ModelConverter):
@@ -104,9 +105,7 @@ async def test_yolov8_registration_and_coreml_conversion(
         path=source_path,
         source=HuggingFaceSource(
             repo_id="Ultralytics/YOLOv8",
-            revision="8a9e1a5",
             filename="yolov8n.pt",
-            expected_sha256=YOLOV8_N_SHA256,
         ),
         digest="2" * 64,
         size_bytes=source_path.stat().st_size,
@@ -140,14 +139,13 @@ async def test_yolov8_registration_and_coreml_conversion(
     assert export_options.dynamic is False
 
 
-def test_yolov8_manifest_pins_source_and_has_runtime_factory() -> None:
-    source = YOLOV8_MANIFEST.get_variant("n").resources[0]
+def test_yolov8_manifest_declares_source_and_has_runtime_factory() -> None:
+    source = YOLOV8_DEFINITION.get_artifact("pytorch-mps", "source", "n").source
 
     assert isinstance(source, HuggingFaceSource)
     assert source.repo_id == "Ultralytics/YOLOv8"
-    assert source.revision == "8a9e1a5"
+    assert source.revision == "main"
     assert source.filename == "yolov8n.pt"
-    assert source.expected_sha256 == YOLOV8_N_SHA256
     assert YOLOV8_MANIFEST.license == "AGPL-3.0"
     assert tuple(item.name for item in YOLOV8_MANIFEST.variants) == ("n", "s", "m")
     assert YOLOV8_MANIFEST.default_variant == "n"

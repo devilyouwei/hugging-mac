@@ -20,6 +20,41 @@ from .resources import Audio8TtsResourceResolver
 from .utils.types import TtsEngineOutput
 
 
+def _install_falcon_h1_cache_compatibility(transformers: Any) -> None:
+    """Expose the Transformers 4 Falcon-H1 cache API to Audio8 on v5."""
+
+    version = getattr(transformers, "__version__", "")
+    try:
+        major_version = int(version.split(".", 1)[0])
+    except (TypeError, ValueError):
+        return
+    if major_version < 5:
+        return
+
+    falcon_h1 = importlib.import_module("transformers.models.falcon_h1.modeling_falcon_h1")
+    legacy_name = "FalconHybridMambaAttentionDynamicCache"
+    if hasattr(falcon_h1, legacy_name):
+        return
+
+    dynamic_cache = transformers.DynamicCache
+
+    class FalconHybridMambaAttentionDynamicCache(dynamic_cache):  # type: ignore[misc, valid-type]
+        """Accept the removed v4 constructor and use the v5 lazy cache."""
+
+        def __init__(
+            self,
+            config: Any,
+            batch_size: int,
+            dtype: Any,
+            devices: list[Any] | None = None,
+        ) -> None:
+            del batch_size, dtype, devices
+            super().__init__(config=config)
+
+    FalconHybridMambaAttentionDynamicCache.__module__ = falcon_h1.__name__
+    setattr(falcon_h1, legacy_name, FalconHybridMambaAttentionDynamicCache)
+
+
 def _precompute_rope(torch: Any, length: int, head_dim: int, base: float) -> Any:
     """Build the pinned ArkTTS rotary buffer outside Transformers' init guard."""
 
@@ -52,9 +87,26 @@ def _restore_rope_buffers(torch: Any, model: Any) -> None:
         raise RuntimeError("Audio8-TTS rotary buffers contain non-finite values")
 
 
-class TorchAudio8TtsEngine:
-    runtime_name = "pytorch"
+def _restore_falcon_h1_buffers(transformers: Any, model: Any) -> None:
+    """Restore Falcon-H1 MuP buffers skipped by Transformers 5 fast init."""
 
+    if not str(getattr(transformers, "__version__", "")).startswith("5."):
+        return
+    slow = getattr(model, "slow", None)
+    layers = getattr(slow, "layers", None)
+    if layers is None:
+        return
+    falcon_h1 = importlib.import_module("transformers.models.falcon_h1.modeling_falcon_h1")
+    compute_mup_vector = getattr(falcon_h1, "compute_mup_vector", None)
+    if compute_mup_vector is None:
+        return
+    vector = compute_mup_vector(slow.config)
+    for layer in layers:
+        target = layer.mamba.mup_vector
+        layer.mamba.mup_vector = vector.clone().to(device=target.device, dtype=target.dtype)
+
+
+class TorchAudio8TtsEngine:
     def __init__(
         self,
         config: Audio8TtsInstanceConfig,
@@ -62,15 +114,14 @@ class TorchAudio8TtsEngine:
     ) -> None:
         self._config = config
         self._resources = resources
-        # Audio8's DualAR sampler is numerically unstable on MPS: it can fail
-        # to emit EOS and generate invalid codec frames. CPU FP32 is the only
-        # supported path for this model pack.
+        self.runtime_name = config.runtime
         self._device: str = config.device
         self._torch: Any | None = None
         self._model: Any | None = None
         self._processor: Any | None = None
         self._dtype: Any | None = None
         self._model_view: AbstractContextManager[Path] | None = None
+        self._artifact: Path | None = None
 
     @property
     def device(self) -> str:
@@ -87,31 +138,59 @@ class TorchAudio8TtsEngine:
             raise UnsupportedRuntimeError("PyTorch is not installed; install hugging-mac-sdk[tts]")
         self._device = provider.resolve_device(
             self._config.device,
-            allow_cpu_fallback=False,
+            allow_cpu_fallback=True,
         )
-        await asyncio.to_thread(self._load_sync, artifact)
+        self._artifact = artifact
+        try:
+            await asyncio.to_thread(self._load_sync, artifact)
+        except (RuntimeError, NotImplementedError):
+            if self._device != "mps":
+                raise
+            self._device = "cpu"
+            await asyncio.to_thread(self._load_sync, artifact)
 
     async def infer(self, request: SpeechSynthesisRequest) -> TtsEngineOutput:
         if self._model is None:
             raise RuntimeError("Audio8-TTS PyTorch engine is not loaded")
-        return await asyncio.to_thread(self._infer_sync, request)
+        try:
+            return await asyncio.to_thread(self._infer_sync, request)
+        except (RuntimeError, NotImplementedError):
+            if self._device != "mps" or self._artifact is None:
+                raise
+            await asyncio.to_thread(self._reload_on_cpu_sync)
+            return await asyncio.to_thread(self._infer_sync, request)
 
     async def close(self) -> None:
+        await asyncio.to_thread(self._close_sync)
+
+    def _close_sync(self) -> None:
         had_model = self._model is not None
         self._model = None
         self._processor = None
         model_view, self._model_view = self._model_view, None
         if model_view is not None:
-            await asyncio.to_thread(model_view.__exit__, None, None, None)
+            model_view.__exit__(None, None, None)
         if not had_model:
             return
-        await asyncio.to_thread(gc.collect)
+        gc.collect()
+        if self._device == "mps" and self._torch is not None:
+            self._torch.mps.empty_cache()
         self._torch = None
         self._dtype = None
+        self._artifact = None
+
+    def _reload_on_cpu_sync(self) -> None:
+        assert self._artifact is not None
+        artifact = self._artifact
+        self._close_sync()
+        self._device = "cpu"
+        self._artifact = artifact
+        self._load_sync(artifact)
 
     def _load_sync(self, artifact: Path) -> None:
         torch = importlib.import_module("torch")
         transformers = importlib.import_module("transformers")
+        _install_falcon_h1_cache_compatibility(transformers)
         dtype = self._resolve_dtype(torch)
         model_view = merged_directory_view(artifact, (self._resources.tokenizer_path,))
         path = model_view.__enter__()
@@ -137,6 +216,7 @@ class TorchAudio8TtsEngine:
             # them after loading; otherwise generation never emits EOS and the codec
             # receives invalid frames, producing a fixed-length noise waveform.
             _restore_rope_buffers(torch, model)
+            _restore_falcon_h1_buffers(transformers, model)
         except BaseException:
             model_view.__exit__(None, None, None)
             raise

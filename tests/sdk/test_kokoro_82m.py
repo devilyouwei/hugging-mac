@@ -9,17 +9,16 @@ from hugging_mac_sdk.core.registry import ModelRegistry
 from hugging_mac_sdk.models.kokoro import KOKORO_82M_MANIFEST, register_kokoro
 from hugging_mac_sdk.models.kokoro.config import Kokoro82mInstanceConfig
 from hugging_mac_sdk.models.kokoro.coreml import CoreMlKokoro82mEngine
+from hugging_mac_sdk.models.kokoro.definition import KOKORO_82M_CONFIG
 from hugging_mac_sdk.models.kokoro.instance import Kokoro82mInstance
 from hugging_mac_sdk.models.kokoro.resources import Kokoro82mResourceResolver
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource
 
 PYTORCH_SOURCE = HuggingFaceSource(
     repo_id="hexgrad/Kokoro-82M",
-    revision="f3ff3571791e39611d31c381e3a41a3af07b4987",
 )
 COREML_SOURCE = HuggingFaceSource(
     repo_id="FluidInference/kokoro-82m-coreml",
-    revision="c94edcb4b671856795458645cd389c0a9184e8bb",
 )
 
 
@@ -52,7 +51,14 @@ async def test_kokoro_resolves_downloaded_coreml_artifact(tmp_path: Path) -> Non
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"test")
     config = Kokoro82mInstanceConfig(artifact_path=artifact)
-    resolver = Kokoro82mResourceResolver(PYTORCH_SOURCE, COREML_SOURCE, config)
+    resolver = Kokoro82mResourceResolver(
+        PYTORCH_SOURCE,
+        COREML_SOURCE,
+        config,
+        manifest=KOKORO_82M_MANIFEST,
+        source_artifact=KOKORO_82M_CONFIG.get_artifact("source"),
+        coreml_artifact=KOKORO_82M_CONFIG.get_artifact("coreml"),
+    )
     resolved = await resolver.resolve_coreml()
     assert resolved.path == artifact
     assert resolved.source == COREML_SOURCE
@@ -112,7 +118,14 @@ def test_kokoro_coreml_retries_overflowing_audio_as_smaller_chunks() -> None:
             }
 
     config = Kokoro82mInstanceConfig(runtime="coreml")
-    resolver = Kokoro82mResourceResolver(PYTORCH_SOURCE, COREML_SOURCE, config)
+    resolver = Kokoro82mResourceResolver(
+        PYTORCH_SOURCE,
+        COREML_SOURCE,
+        config,
+        manifest=KOKORO_82M_MANIFEST,
+        source_artifact=KOKORO_82M_CONFIG.get_artifact("source"),
+        coreml_artifact=KOKORO_82M_CONFIG.get_artifact("coreml"),
+    )
     engine = CoreMlKokoro82mEngine(config, resolver)
     session = FakeSession()
     engine._session = session  # type: ignore[assignment]

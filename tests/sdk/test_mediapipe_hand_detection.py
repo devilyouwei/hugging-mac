@@ -14,11 +14,13 @@ from hugging_mac_sdk.models.mediapipe_hand_detection import (
     register_mediapipe_hand_detection,
 )
 from hugging_mac_sdk.models.mediapipe_hand_detection.config import (
-    MEDIAPIPE_HAND_DETECTION_MODEL_ID,
     MediaPipeHandDetectionInstanceConfig,
 )
 from hugging_mac_sdk.models.mediapipe_hand_detection.converter import (
     MediaPipeHandDetectionConverter,
+)
+from hugging_mac_sdk.models.mediapipe_hand_detection.definition import (
+    MEDIAPIPE_HAND_DETECTION_CONFIG,
 )
 from hugging_mac_sdk.models.mediapipe_hand_detection.instance import MediaPipeHandDetectionInstance
 from hugging_mac_sdk.models.mediapipe_hand_detection.resources import (
@@ -34,6 +36,8 @@ from hugging_mac_sdk.schemas.detection import ImageInput
 from hugging_mac_sdk.schemas.hand import HandDetectionRequest
 from hugging_mac_sdk.schemas.resources import ResolvedResource, UrlArchiveSource
 from PIL import Image
+
+MEDIAPIPE_HAND_DETECTION_MODEL_ID = MEDIAPIPE_HAND_DETECTION_MANIFEST.model_id
 
 
 class FakeEngine:
@@ -82,7 +86,9 @@ async def test_hand_detector_contract_and_letterbox(tmp_path: Path) -> None:
     artifact.touch()
     engine = FakeEngine(artifact)
     instance = MediaPipeHandDetectionInstance(
-        MediaPipeHandDetectionInstanceConfig(runtime="onnx"), engine
+        MediaPipeHandDetectionInstanceConfig(runtime="onnx"),
+        engine,
+        MEDIAPIPE_HAND_DETECTION_MANIFEST,
     )
 
     await instance.load()
@@ -126,7 +132,7 @@ async def test_hand_detector_contract_and_letterbox(tmp_path: Path) -> None:
 
 def test_manifest_factory_and_anchor_contract() -> None:
     assert MEDIAPIPE_HAND_DETECTION_MANIFEST.capabilities == frozenset({"hand-detection"})
-    assert MEDIAPIPE_HAND_DETECTION_MANIFEST.revision == "013e27b599e37c3b4c69439de15de53cc5b5708e"
+    assert MEDIAPIPE_HAND_DETECTION_MANIFEST.revision == "main"
     assert MEDIAPIPE_HAND_DETECTION_MANIFEST.default_runtime == "coreml"
     assert MediaPipeHandDetectionInstanceConfig().runtime == "coreml"
     assert _anchors().shape == (2944, 2)
@@ -141,6 +147,17 @@ def test_coreml_status_requires_both_internal_models(tmp_path: Path) -> None:
     resolver = MediaPipeHandDetectionResourceResolver(
         UrlArchiveSource(url="https://models.example/mediapipe.zip"),
         MediaPipeHandDetectionInstanceConfig(runtime="coreml", model_home=tmp_path),
+        MEDIAPIPE_HAND_DETECTION_MANIFEST,
+        next(
+            artifact
+            for artifact in MEDIAPIPE_HAND_DETECTION_CONFIG.artifacts
+            if artifact.artifact_id == "onnx-float"
+        ),
+        next(
+            artifact
+            for artifact in MEDIAPIPE_HAND_DETECTION_CONFIG.artifacts
+            if artifact.artifact_id == "coreml-fp32"
+        ),
     )
     detector = resolver.coreml_path / "hand_detector.mlpackage" / "Manifest.json"
     landmarker = resolver.coreml_path / "hand_landmark_detector.mlpackage" / "Manifest.json"

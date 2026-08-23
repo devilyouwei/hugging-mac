@@ -102,7 +102,7 @@ class Audio8TtsResourceResolver:
         return await self.resolve_source()
 
     async def delete(self, *, runtime: str | None = None) -> None:
-        if runtime not in {None, "pytorch"}:
+        if runtime not in {None, self._config.runtime}:
             raise UnsupportedRuntimeError(
                 f"Audio8-TTS does not support runtime {runtime}",
                 details={"model_id": self._manifest.model_id, "runtime": runtime},
@@ -134,13 +134,13 @@ class Audio8TtsResourceResolver:
                 ModelArtifactStatus(
                     artifact_id="source",
                     format=ArtifactFormat.SAFETENSORS.value,
-                    runtime="pytorch",
+                    runtime=self._artifact.runtime,
                     required_shares=self._artifact.required_shares,
                     available=available,
                     size_bytes=directory_size(path) if available else None,
                 ),
                 ModelArtifactStatus(
-                    artifact_id="tokenizer",
+                    artifact_id=self._tokenizer_artifact.artifact_id,
                     format=ArtifactFormat.TOKENIZER.value,
                     runtime=None,
                     shared=True,
@@ -196,8 +196,7 @@ class Audio8TtsResourceProvider:
         self,
         manifest: ModelManifest,
         artifacts: Mapping[str, ModelArtifact],
-        tokenizer_source: HuggingFaceSource,
-        tokenizer_artifact: ModelArtifact,
+        tokenizer_artifacts: Mapping[str, ModelArtifact],
     ) -> None:
         self._manifest = manifest
         self._artifacts = dict(artifacts)
@@ -206,8 +205,7 @@ class Audio8TtsResourceProvider:
             for variant, artifact in self._artifacts.items()
             if isinstance(artifact.source, HuggingFaceSource)
         }
-        self._tokenizer_source = tokenizer_source
-        self._tokenizer_artifact = tokenizer_artifact
+        self._tokenizer_artifacts = dict(tokenizer_artifacts)
 
     async def status(
         self, variant: str, options: Mapping[str, object] | None = None
@@ -266,13 +264,17 @@ class Audio8TtsResourceProvider:
                 details={"variant": variant, "options_variant": option_variant},
             )
         config = Audio8TtsInstanceConfig.model_validate(normalized | {"variant": variant})
+        tokenizer_artifact = self._tokenizer_artifacts[variant]
+        tokenizer_source = tokenizer_artifact.source
+        if not isinstance(tokenizer_source, HuggingFaceSource):
+            raise TypeError(f"Audio8-TTS variant {variant} needs a tokenizer source")
         return Audio8TtsResourceResolver(
             self._sources[variant],
             config,
             manifest=self._manifest,
             artifact=self._artifacts[variant],
-            tokenizer_artifact=self._tokenizer_artifact,
-            tokenizer_source=self._tokenizer_source,
+            tokenizer_artifact=tokenizer_artifact,
+            tokenizer_source=tokenizer_source,
         )
 
 
@@ -283,29 +285,33 @@ class Audio8TtsCombinedResourceProvider:
         self,
         manifest: ModelManifest,
         pytorch_artifacts: Mapping[str, ModelArtifact],
-        tokenizer_source: HuggingFaceSource,
-        tokenizer_artifact: ModelArtifact,
+        tokenizer_artifacts: Mapping[str, ModelArtifact],
         mlx_source: HuggingFaceSource,
         mlx_artifact: ModelArtifact,
     ) -> None:
-        self._pytorch = Audio8TtsResourceProvider(
-            manifest, pytorch_artifacts, tokenizer_source, tokenizer_artifact
-        )
+        self._pytorch = Audio8TtsResourceProvider(manifest, pytorch_artifacts, tokenizer_artifacts)
+        assert mlx_artifact.variant is not None
+        self._mlx_variant = mlx_artifact.variant
+        mlx_tokenizer_artifact = tokenizer_artifacts[self._mlx_variant]
+        mlx_tokenizer_source = mlx_tokenizer_artifact.source
+        if not isinstance(mlx_tokenizer_source, HuggingFaceSource):
+            raise TypeError("Audio8-TTS MLX needs a tokenizer source")
         self._mlx = Audio8TtsMlxResourceProvider(
             mlx_source,
-            tokenizer_source,
+            mlx_tokenizer_source,
             manifest=manifest,
             artifact=mlx_artifact,
-            tokenizer_artifact=tokenizer_artifact,
+            tokenizer_artifact=mlx_tokenizer_artifact,
         )
 
     async def status(
         self, variant: str, options: Mapping[str, object] | None = None
     ) -> ModelResourceStatus:
         pytorch = await self._pytorch.status(variant, options)
-        if variant != "0.6b-preview":
-            return pytorch
-        mlx = await self._mlx.status(variant, options)
+        artifacts = pytorch.artifacts
+        if variant == self._mlx_variant:
+            mlx = await self._mlx.status(variant, options)
+            artifacts += mlx.artifacts
         # Reconstruct the status so ModelResourceStatus recomputes its derived
         # runtime aggregates for both backends. model_copy(update=...) skips
         # validation and would leave only the PyTorch runtime visible.
@@ -313,7 +319,7 @@ class Audio8TtsCombinedResourceProvider:
             model_id=pytorch.model_id,
             revision=pytorch.revision,
             variant=pytorch.variant,
-            artifacts=pytorch.artifacts + mlx.artifacts,
+            artifacts=artifacts,
         )
 
     async def download_source(
@@ -324,7 +330,7 @@ class Audio8TtsCombinedResourceProvider:
         overwrite: bool = False,
     ) -> ModelResourceStatus:
         await self._pytorch.download_source(variant, options, overwrite=overwrite)
-        if variant == "0.6b-preview":
+        if variant == self._mlx_variant:
             await self._mlx.download_source(variant, options, overwrite=overwrite)
         return await self.status(variant, options)
 
@@ -350,10 +356,12 @@ class Audio8TtsCombinedResourceProvider:
     ) -> ModelResourceStatus:
         if runtime in {None, "pytorch"}:
             await self._pytorch.delete(variant, options, runtime=runtime)
-        if variant == "0.6b-preview" and runtime in {None, "mlx"}:
+        if variant == self._mlx_variant and runtime in {None, "mlx"}:
             await self._mlx.delete(variant, options, runtime=runtime)
-        if variant != "0.6b-preview" and runtime == "mlx":
-            raise UnsupportedRuntimeError("Audio8-TTS 0.1B does not provide an MLX artifact")
+        if variant != self._mlx_variant and runtime == "mlx":
+            raise UnsupportedRuntimeError(
+                f"Audio8-TTS variant {variant} does not provide an MLX artifact"
+            )
         if runtime not in {None, "pytorch", "mlx"}:
             raise UnsupportedRuntimeError(f"Audio8-TTS does not support runtime {runtime}")
         return await self.status(variant, options)

@@ -7,13 +7,16 @@ from unittest.mock import AsyncMock
 import numpy as np
 import pytest
 from hugging_mac_sdk.capabilities import SpeechTranscription, StreamingSpeechTranscription
-from hugging_mac_sdk.models.nemotron_3_5_asr import NEMOTRON_3_5_ASR_DEFINITION
+from hugging_mac_sdk.models.nemotron_3_5_asr import (
+    NEMOTRON_3_5_ASR_DEFINITION,
+    NEMOTRON_3_5_ASR_MANIFEST,
+)
 from hugging_mac_sdk.models.nemotron_3_5_asr.config import (
     NemotronCoreMlInstanceConfig,
-    variant_source_path,
 )
 from hugging_mac_sdk.models.nemotron_3_5_asr.coreml import CoreMlNemotronEngine
 from hugging_mac_sdk.models.nemotron_3_5_asr.instance import NemotronCoreMlInstance
+from hugging_mac_sdk.models.nemotron_3_5_asr.resources import _variant_source_path
 from hugging_mac_sdk.models.nemotron_3_5_asr.utils.types import (
     AsrEngineOutput,
     PreparedAudio,
@@ -38,7 +41,7 @@ def test_manifest_declares_all_upstream_bundles() -> None:
 
 
 def test_variant_source_path() -> None:
-    assert variant_source_path("latin-2240ms") == "latin/2240ms"
+    assert _variant_source_path("latin-2240ms") == "latin/2240ms"
 
 
 @pytest.mark.asyncio
@@ -50,7 +53,7 @@ async def test_instance_exposes_transcription(
     engine.device = "cpu-and-neural-engine"
     engine.infer.return_value = AsrEngineOutput(" hello ", 3, "en-US")
     config = NemotronCoreMlInstanceConfig(artifact_path=tmp_path)
-    instance = NemotronCoreMlInstance(config, engine)
+    instance = NemotronCoreMlInstance(config, engine, NEMOTRON_3_5_ASR_MANIFEST)
     assert instance.supports(SpeechTranscription)
     engine.resolve.return_value = tmp_path
     monkeypatch.setattr(
@@ -79,17 +82,15 @@ async def test_instance_preserves_a_streaming_session_across_audio_chunks(
         StreamingAsrEngineOutput("hello", "hello", 1, "en-US"),
         StreamingAsrEngineOutput("hello world", " world", 2, "en-US"),
     )
-    engine.finish_stream.return_value = StreamingAsrEngineOutput(
-        "hello world", "", 2, "en-US"
-    )
+    engine.finish_stream.return_value = StreamingAsrEngineOutput("hello world", "", 2, "en-US")
     instance = NemotronCoreMlInstance(
-        NemotronCoreMlInstanceConfig(artifact_path=tmp_path), engine
+        NemotronCoreMlInstanceConfig(artifact_path=tmp_path),
+        engine,
+        NEMOTRON_3_5_ASR_MANIFEST,
     )
     monkeypatch.setattr(
         "hugging_mac_sdk.models.nemotron_3_5_asr.instance.prepare_audio",
-        lambda *_args, **_kwargs: PreparedAudio(
-            np.zeros(1600, dtype=np.float32), 16000, 0.1
-        ),
+        lambda *_args, **_kwargs: PreparedAudio(np.zeros(1600, dtype=np.float32), 16000, 0.1),
     )
     await instance.load()
 

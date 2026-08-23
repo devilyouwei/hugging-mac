@@ -2,21 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hugging_mac_sdk.models.qwen3_5 import QWEN3_5_MANIFEST
-from hugging_mac_sdk.models.qwen3_5.config import (
-    QWEN3_5_MLX_REQUIRED_FILES,
-    Qwen35MlxInstanceConfig,
-)
+from hugging_mac_sdk.models.qwen3_5 import QWEN3_5_DEFINITION, QWEN3_5_MANIFEST
+from hugging_mac_sdk.models.qwen3_5.config import Qwen35MlxInstanceConfig
 from hugging_mac_sdk.models.qwen3_5.mlx import _sanitize_vision_weights
 from hugging_mac_sdk.models.qwen3_5.resources import Qwen35MlxResourceResolver
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource
 
 
-def test_4b_optiq_variant_remains_pinned_with_mixed_precision_metadata() -> None:
+def test_4b_optiq_artifact_owns_source_and_variant_metadata() -> None:
     variant = QWEN3_5_MANIFEST.get_variant("4b")
 
-    assert variant.resources[0].repo_id == "mlx-community/Qwen3.5-4B-OptiQ-4bit"
-    assert variant.resources[0].revision == "6cb5bdfd0bf15f484881fb9f1ab6d7c840fddde9"
+    source = QWEN3_5_DEFINITION.get_artifact("mlx", "mlx-optiq-4bit", "4b").source
+    assert isinstance(source, HuggingFaceSource)
+    assert source.repo_id == "mlx-community/Qwen3.5-4B-OptiQ-4bit"
+    assert source.revision == "main"
     assert variant.metadata["quantization_method"] == "optiq"
     assert variant.metadata["mixed_precision_8bit_layers"] == 75
     assert variant.metadata["mixed_precision_4bit_layers"] == 173
@@ -41,16 +40,21 @@ def test_optiq_vision_sidecar_is_sanitized_and_required(tmp_path: Path) -> None:
 
     model = tmp_path / "model"
     model.mkdir()
-    for filename in QWEN3_5_MLX_REQUIRED_FILES["4b"]:
+    artifact = QWEN3_5_DEFINITION.get_artifact("mlx", "mlx-optiq-4bit", "4b")
+    tokenizer = QWEN3_5_DEFINITION.shared_artifacts[0]
+    for filename in artifact.required_files:
         path = model / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"model-data")
     resolver = Qwen35MlxResourceResolver(
         HuggingFaceSource(
             repo_id="mlx-community/Qwen3.5-4B-OptiQ-4bit",
-            revision="6cb5bdfd0bf15f484881fb9f1ab6d7c840fddde9",
+            revision="main",
         ),
         Qwen35MlxInstanceConfig(source_path=model, variant="4b"),
+        manifest=QWEN3_5_MANIFEST,
+        artifact=artifact,
+        tokenizer_artifact=tokenizer,
     )
 
     assert resolver.status().artifacts[0].available

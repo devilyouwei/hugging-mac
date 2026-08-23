@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from hugging_mac_sdk.capabilities import VoiceActivityDetection
 from hugging_mac_sdk.core.registry import ModelRegistry
-from hugging_mac_sdk.models.silero import SILERO_MANIFEST, register_silero
-from hugging_mac_sdk.models.silero.config import SILERO_SHA256, SileroInstanceConfig
+from hugging_mac_sdk.models.silero import SILERO_DEFINITION, SILERO_MANIFEST, register_silero
+from hugging_mac_sdk.models.silero.config import SileroInstanceConfig
 from hugging_mac_sdk.models.silero.coreml import CoreMlSileroEngine
 from hugging_mac_sdk.models.silero.instance import SileroInstance
 from hugging_mac_sdk.models.silero.resources import SileroResourceResolver
@@ -56,8 +56,8 @@ def test_manifest_and_registration() -> None:
     assert SILERO_MANIFEST.capabilities == {"voice-activity-detection"}
     assert SILERO_MANIFEST.default_runtime == "coreml"
     assert {runtime.name for runtime in SILERO_MANIFEST.runtimes} == {"coreml", "onnx"}
-    source = SILERO_MANIFEST.get_variant().resources[0]
-    assert source.expected_sha256 == SILERO_SHA256  # type: ignore[union-attr]
+    source = SILERO_DEFINITION.get_artifact("onnx", "onnx", "v6.2.1").source
+    assert isinstance(source, UrlFileSource)
 
     definition = register_silero(ModelRegistry())
     instance = definition.create(runtime="onnx", options={"device": "cpu"})
@@ -75,7 +75,9 @@ async def test_instance_detects_voice_activity(
         lambda *_args, **_kwargs: prepared,
     )
     engine = FakeSileroEngine(tmp_path / "silero.onnx")
-    instance = SileroInstance(SileroInstanceConfig(runtime="onnx", device="cpu"), engine)
+    instance = SileroInstance(
+        SileroInstanceConfig(runtime="onnx", device="cpu"), engine, SILERO_MANIFEST
+    )
     await instance.load()
 
     detector = instance.require(VoiceActivityDetection)  # type: ignore[type-abstract]
@@ -88,9 +90,7 @@ async def test_instance_detects_voice_activity(
         )
     )
 
-    assert [(item.start_sample, item.end_sample) for item in response.segments] == [
-        (512, 2048)
-    ]
+    assert [(item.start_sample, item.end_sample) for item in response.segments] == [(512, 2048)]
     assert response.sample_rate == 16000
     assert response.speech_seconds == pytest.approx(0.096)
     await instance.unload()
@@ -99,7 +99,9 @@ async def test_instance_detects_voice_activity(
 
 async def test_streaming_detector_preserves_state_and_emits_boundaries(tmp_path: Path) -> None:
     engine = FakeSileroEngine(tmp_path / "silero.onnx")
-    instance = SileroInstance(SileroInstanceConfig(runtime="onnx", device="cpu"), engine)
+    instance = SileroInstance(
+        SileroInstanceConfig(runtime="onnx", device="cpu"), engine, SILERO_MANIFEST
+    )
     await instance.load()
     detector = instance.create_streaming_detector(
         threshold=0.5,
@@ -136,11 +138,17 @@ async def test_coreml_resolver_accepts_models_page_snapshot_layout(tmp_path: Pat
         target = nested / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"model")
-    sources = SILERO_MANIFEST.get_variant().resources
+    onnx_source = SILERO_DEFINITION.get_artifact("onnx", "onnx", "v6.2.1").source
+    coreml_source = SILERO_DEFINITION.get_artifact("coreml", "coreml", "v6.2.1").source
+    assert isinstance(onnx_source, UrlFileSource)
+    assert isinstance(coreml_source, HuggingFaceSource)
     resolver = SileroResourceResolver(
-        UrlFileSource.model_validate(sources[0]),
-        HuggingFaceSource.model_validate(sources[1]),
+        onnx_source,
+        coreml_source,
         SileroInstanceConfig(runtime="coreml", artifact_path=artifact),
+        manifest=SILERO_MANIFEST,
+        onnx_artifact=SILERO_DEFINITION.artifacts[0],
+        coreml_artifact=SILERO_DEFINITION.artifacts[1],
     )
 
     resolved = await resolver.resolve_coreml()

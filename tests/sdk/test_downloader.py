@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from hugging_mac_sdk.errors import DownloadError, ResourceIntegrityError
+from hugging_mac_sdk.errors import DownloadError
 from hugging_mac_sdk.resources import downloader as downloader_module
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.schemas.resources import (
@@ -38,11 +38,7 @@ async def test_downloads_url_file_atomically(tmp_path: Path) -> None:
         downloader = ResourceDownloader(client=client)
         destination = tmp_path / "model.safetensors"
         result = await downloader.download(
-            UrlFileSource(
-                url="https://models.example/model.safetensors",
-                expected_sha256=digest,
-            ),
-            destination,
+            UrlFileSource(url="https://models.example/model.safetensors"), destination
         )
 
     assert destination.read_bytes() == content
@@ -110,23 +106,19 @@ async def test_composite_download_failure_does_not_commit_partial_bundle(tmp_pat
     assert not tuple(tmp_path.glob("*.partial-*"))
 
 
-async def test_hash_mismatch_never_commits_destination(tmp_path: Path) -> None:
+async def test_download_trusts_declared_source_content(tmp_path: Path) -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=b"corrupt", request=request)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         downloader = ResourceDownloader(client=client)
         destination = tmp_path / "model.bin"
-        with pytest.raises(ResourceIntegrityError):
-            await downloader.download(
-                UrlFileSource(
-                    url="https://models.example/model.bin",
-                    expected_sha256="0" * 64,
-                ),
-                destination,
-            )
+        result = await downloader.download(
+            UrlFileSource(url="https://models.example/model.bin"), destination
+        )
 
-    assert not destination.exists()
+    assert destination.read_bytes() == b"corrupt"
+    assert result.digest == hashlib.sha256(b"corrupt").hexdigest()
 
 
 async def test_downloads_and_extracts_model_directory(tmp_path: Path) -> None:
@@ -245,9 +237,7 @@ async def test_downloads_selected_huggingface_directory_without_repo_prefix(
         package = local_dir / "yolov8n.mlpackage"
         (package / "Data" / "com.apple.CoreML").mkdir(parents=True)
         (package / "Manifest.json").write_text("{}")
-        (package / "Data" / "com.apple.CoreML" / "model.mlmodel").write_bytes(
-            b"coreml"
-        )
+        (package / "Data" / "com.apple.CoreML" / "model.mlmodel").write_bytes(b"coreml")
         (local_dir / "README.md").write_text("repository card")
         return str(local_dir)
 
@@ -267,9 +257,7 @@ async def test_downloads_selected_huggingface_directory_without_repo_prefix(
     )
 
     assert (destination / "Manifest.json").read_text() == "{}"
-    assert (
-        destination / "Data" / "com.apple.CoreML" / "model.mlmodel"
-    ).read_bytes() == b"coreml"
+    assert (destination / "Data" / "com.apple.CoreML" / "model.mlmodel").read_bytes() == b"coreml"
     assert not (destination / "yolov8n.mlpackage").exists()
     assert not (destination / "README.md").exists()
     assert result.digest is not None

@@ -1,426 +1,657 @@
-# hugging-mac-sdk
+# Hugging Mac SDK Technical Architecture
 
-`hugging-mac` 的独立模型 SDK。它提供运行时无关的模型生命周期、可组合 capability、
-模型注册、实例管理与显式模型资源操作。`load` 和推理永远不会自动下载或转换模型。
+## Summary
 
-当前是首个内部版本，公共 API 仍可能随架构验证调整。
+`hugging_mac_sdk` is the model integration, resource, lifecycle, and inference
+layer of Hugging Mac. It provides one runtime-neutral contract over heterogeneous
+Core ML, MLX, PyTorch, and ONNX model implementations.
 
-## 当前模块
+The SDK is deliberately independent from the Web business layer. It knows model
+identity, artifacts, runtime compatibility, instance state, and inference
+capabilities. It does not know FastAPI routes, Vue components, App manifests,
+browser sessions, application databases, or product workflows.
+
+Public installation and calling examples belong in
+[`docs/sdk`](../../docs/sdk/README.md). This document explains implementation
+architecture, dependency direction, lifecycle, extension points, and review
+invariants.
+
+```mermaid
+flowchart LR
+    Caller[Application or service] --> Facade[ModelSdk]
+
+    subgraph SDK[hugging_mac_sdk]
+        Facade --> Registry[ModelRegistry]
+        Facade --> Catalog[Catalog and inspection]
+        Facade --> Resources[Resource service]
+        Facade --> Manager[InstanceManager]
+        Registry --> Definition[ModelDefinition]
+        Resources --> Provider[Model resource provider]
+        Manager --> Instance[BaseModelInstance]
+        Instance --> Capability[Capability protocols]
+        Definition --> Factory[Runtime-specific factory]
+        Factory --> Instance
+        Provider --> Downloader[Download infrastructure]
+        Provider --> Conversion[Conversion infrastructure]
+        Instance --> Engine[Model-private engine]
+        Engine --> Runtime[Runtime provider/session]
+    end
+
+    Definition --> Manifest[model.yaml]
+    Capability --> Schemas[Public SDK schemas]
+    Runtime --> Framework[Core ML / MLX / PyTorch / ONNX]
+```
+
+## Architectural goals and boundaries
+
+The SDK exists to make model integration predictable without erasing meaningful
+differences between models.
+
+| Goal | Architectural consequence |
+| --- | --- |
+| Stable caller contract | Applications use typed capabilities and schemas rather than framework APIs. |
+| Multiple runtime backends | Runtime selection and availability are separate from task semantics. |
+| Explicit resource mutation | Catalog and load operations never silently download or convert artifacts. |
+| Safe model reuse | Managed handles and reference counts separate ownership from instance identity. |
+| Declarative model facts | Each package's `model.yaml` is the single source for model identity, variants, runtimes, and artifacts. |
+| Optional heavy dependencies | Base imports and catalog discovery do not import or initialize every framework. |
+| Inspectable state | Catalog, resource, structure, lifecycle, and health views are immutable snapshots. |
+| Model-local specialization | Architecture-specific loading and inference stay inside the owning model package. |
+
+The SDK does not provide a generic `predict(**kwargs)` abstraction. A task enters
+the public surface only through a semantically named capability with typed input
+and output. Framework tensors, processors, graph sessions, decoder caches, and
+model-private paths remain below that boundary.
+
+Dependency direction is one way:
 
 ```text
-src/hugging_mac_sdk/
-├── capabilities/       # detect、chat、transcribe、embedding 等任务协议
-├── core/               # 生命周期、模型注册和实例复用
-├── resources/          # 下载、hash、原子提交与安全解压
-├── runtime/            # PyTorch、Core ML、ONNX 等通用 provider/session
-├── schemas/            # manifest、资源和健康状态 schema
-└── errors.py           # 稳定错误层级
+caller
+  -> ModelSdk facade
+    -> core registries/services/managers
+      -> capability and schema contracts
+      -> model definition
+        -> model instance
+          -> model-private engine
+            -> shared runtime provider/session
 ```
 
-## 注册与创建实例
+Core modules never import application code. Runtime providers never import model
+packages. A model package may use core, schema, capability, resource, converter,
+and runtime infrastructure, but must not import another model package.
 
-具体模型实现继承薄生命周期基类，通过组合注册 capability：
+## Package architecture
 
-```python
-class YoloInstance(BaseModelInstance):
-    def __init__(self) -> None:
-        super().__init__()
-        self.register_capability(ObjectDetection, YoloDetection(self))
-
-    async def _load(self) -> None:
-        ...
-
-    async def _unload(self) -> None:
-        ...
+```text
+packages/hugging_mac_sdk/
+├── README.md                         # This SDK-wide technical architecture
+└── src/hugging_mac_sdk/
+    ├── __init__.py                   # Curated public Python API
+    ├── errors.py                     # Stable SDK error hierarchy
+    ├── capabilities/                 # Task Protocol contracts
+    ├── schemas/                      # Immutable public/infrastructure data
+    ├── core/                         # Facade, definitions, lifecycle, catalog
+    ├── resources/                    # Download, archive, hashing, safe staging
+    ├── converters/                   # Converter contracts and selection
+    ├── runtime/                      # Framework provider/session adapters
+    └── models/                       # Canonical model integration packages
 ```
 
-静态 manifest、artifact 与独立的 runtime factory 组成 definition：
+| Module | Owns | Does not own |
+| --- | --- | --- |
+| `core` | Registry, model definitions, runtime policy, resource dispatch, instances, handles, catalog, inspection | Model algorithms or HTTP behavior |
+| `capabilities` | Stable task operations such as Chat, ASR, TTS, detection, pose, and segmentation | Lifecycle, resource preparation, transport |
+| `schemas` | Frozen task, manifest, artifact, resource, catalog, and conversion contracts | Framework objects or application view models |
+| `resources` | Source download, bounded streaming, safe extraction, staging, calculated metadata | Model-specific artifact selection or deletion policy |
+| `converters` | Converter protocol, registration, selection, generic mechanics | Application conversion buttons or undeclared targets |
+| `runtime` | Framework availability, device mapping, low-level session creation and inspection | Tokenization, task preprocessing, model IDs |
+| `models` | Model composition, artifacts, engines, capabilities, model-specific conversion and inference | App routes, business profiles, frontend behavior |
 
-```python
-registry.register(
-    ModelDefinition(
-        manifest=yolo_manifest,
-        runtime_factories={
-            "pytorch-mps": create_yolo_mps,
-            "coreml": create_yolo_coreml,
-            "onnx": create_yolo_onnx,
-        },
-        artifacts=yolo_artifacts,
-    )
-)
-instance = registry.create_instance("ultralytics/yolov8", runtime="pytorch-mps")
-await instance.load()
-detector = instance.require(ObjectDetection)
+Detailed module contracts are maintained beside their implementations:
+
+| Area | Technical document |
+| --- | --- |
+| Core composition and lifecycle | [`core/readme.md`](src/hugging_mac_sdk/core/readme.md) |
+| Capability contracts | [`capabilities/readme.md`](src/hugging_mac_sdk/capabilities/readme.md) |
+| Public and infrastructure schemas | [`schemas/readme.md`](src/hugging_mac_sdk/schemas/readme.md) |
+| Downloads and filesystem safety | [`resources/readme.md`](src/hugging_mac_sdk/resources/readme.md) |
+| Conversion selection and publication | [`converters/readme.md`](src/hugging_mac_sdk/converters/readme.md) |
+| Runtime providers and sessions | [`runtime/readme.md`](src/hugging_mac_sdk/runtime/readme.md) |
+| Model package and `model.yaml` standard | [`models/readme.md`](src/hugging_mac_sdk/models/readme.md) |
+
+## Central objects and ownership
+
+| Object | Lifetime | Responsibility |
+| --- | --- | --- |
+| `ModelSdk` | Application/process scoped | Small facade composing registry, instance, resource, catalog, and inspection services |
+| `ModelRegistry` | SDK scoped | Thread-safe store of immutable `ModelDefinition` objects keyed by model ID and revision |
+| `ModelDefinition` | Registration scoped, immutable | Binds manifest/artifacts to runtime factories, resource provider, converter preferences, and inspectors |
+| `RuntimePolicy` | SDK scoped | Ranks declared runtimes using caller preference and local machine availability |
+| `ModelResourceService` | SDK scoped | Dispatches explicit resource operations and resolves required shared artifacts |
+| `InstanceManager` | SDK scoped | Creates, reuses, loads, switches, retains, snapshots, and unloads instances |
+| `BaseModelInstance` | Managed runtime lifetime | Guards lifecycle state and exposes registered capabilities |
+| `ModelHandle` | Caller/request scoped | Retains a managed instance and releases ownership through an async context manager |
+| Capability object | Instance scoped | Executes one typed task using that instance's engine and state |
+| Runtime session | Engine/instance scoped | Wraps framework execution without task semantics |
+
+`ModelSdk` intentionally exposes its composed services as explicit attributes:
+`registry`, `runtime_policy`, `instances`, `resources`, `inspection`, and
+`catalog`. The facade does not hide resource preparation behind `load()` or
+combine unrelated control operations into a single magic workflow.
+
+## Model declaration and registration
+
+### Declarative and executable halves
+
+A complete model integration has two halves:
+
+```mermaid
+flowchart LR
+    YAML[model.yaml] --> Config[ModelPackageConfig]
+    Config --> Manifest[ModelManifest]
+    Config --> Artifacts[ModelArtifact set]
+
+    Python[definition.py] --> Factories[Runtime factories]
+    Python --> Provider[Resource provider]
+    Python --> Inspectors[Artifact inspectors]
+    Python --> ConverterIDs[Converter preferences]
+
+    Manifest --> Definition[ModelDefinition]
+    Artifacts --> Definition
+    Factories --> Definition
+    Provider --> Definition
+    Inspectors --> Definition
+    ConverterIDs --> Definition
+    Definition --> Registry[ModelRegistry]
 ```
 
-没有实际 factory 的 runtime 不允许出现在 definition 中。模型 metadata 也可以放在 package 内的
-`model.yaml`，通过 `load_model_config()` 安全读取；YAML 不负责导入或执行 runtime 代码。
+`model.yaml` owns static model facts. `definition.py` is the package composition
+root that binds those facts to executable code. `config.py` contains only
+instance-variable options; it is not a second model manifest.
 
-## Registry、runtime 与实例管理
+`load_model_config()` parses YAML into frozen Pydantic schemas without importing
+heavy runtimes. It validates canonical artifact paths, uniqueness, declared
+shared dependencies, and schema shape. `ModelDefinition` then validates the
+executable binding:
 
-Registry 只查询，不下载或加载模型：
+- implemented runtimes must be declared, and declared runtimes need factories;
+- artifacts may reference only declared variants and runtimes;
+- scoped artifact keys are unique;
+- shared artifact IDs do not overlap scoped IDs;
+- shared artifacts are directly downloadable, variant-independent, and owned by
+  at least one scoped artifact through `required_shares`;
+- artifact inspectors refer only to declared runtimes.
 
-```python
-runtimes = registry.supported_runtimes("ultralytics/yolov8")
-artifact = registry.get_artifact("ultralytics/yolov8", "coreml", variant="s")
-path = registry.resolve_artifact_path(
-    "ultralytics/yolov8",
-    "coreml",
-    variant="s",
-)
+Registration stores the resulting immutable definition. It does not read model
+weights, contact a remote source, create a framework session, or start background
+work. Duplicate registration raises a stable conflict error unless replacement
+is explicitly authorized.
+
+### Identity and semantic selection
+
+Callers select a model by stable model ID, optional variant, and optional runtime.
+Artifact lookup uses semantic keys rather than YAML list order. When no variant
+is supplied, the manifest default is resolved and validated. When more than one
+artifact matches a runtime, callers must identify the artifact instead of
+depending on declaration order.
+
+The model integration standard defines canonical paths and the full YAML review
+contract. This package-level README intentionally does not reproduce that field
+ordering; [`models/readme.md`](src/hugging_mac_sdk/models/readme.md) is its sole
+technical owner.
+
+## Resource and artifact architecture
+
+An artifact is a physical input to one runtime/variant combination, or a
+variant-independent shared dependency. The SDK treats downloaded and converted
+builds as alternative provisioning methods for a declared artifact, not as
+different undeclared paths.
+
+```mermaid
+flowchart TD
+    Declaration[Declared artifact] --> Status[Read-only status]
+    Declaration --> Source{Provisioning support}
+    Source -->|source| Download[Explicit download]
+    Source -->|convert: true| Convert[Explicit conversion]
+    Download --> Stage[Sibling staging path]
+    Convert --> Stage
+    Stage --> Validate[Validate declared output shape]
+    Validate --> Commit[Publish canonical artifact path]
+    Commit --> Ready[Artifact available]
+    Ready --> Load[Instance load may consume it]
 ```
 
-`InstanceManager` 把 runtime policy 纳入创建链路，支持 `auto`、显式 device、多实例和安全 runtime 切换：
+### Resource service versus model provider
 
-```python
-manager = InstanceManager(registry)
-model = await manager.load(
-    "ultralytics/yolov8",
-    variant="s",
-    runtime="auto",
-)
-print(model.info())
+`ModelResourceService` provides the model-neutral entry point. It resolves the
+definition and variant, dispatches to the model's `ModelResourceProvider`, and
+merges shared-artifact status into the result.
 
-replacement = await manager.switch_runtime(
-    str(model.instance_id),
-    "pytorch-mps",
-    device="mps",
-)
-await manager.unload_all()
+The model provider owns which scoped artifacts constitute source preparation,
+conversion, deletion, and runtime readiness for that model. Generic download
+infrastructure owns only moving bytes from a declared source to an exact target.
+
+For an operation on a scoped artifact, the core service resolves only the
+`required_shares` attached to the matching variant/runtime/artifact. This is a
+many-to-many dependency relation: a runtime artifact can require several shares,
+and a tokenizer or processor share can serve several artifacts.
+
+### Download and publication rules
+
+`ResourceDownloader` supports declared Hugging Face files/snapshots, HTTP files,
+HTTP archives, and composite sources. It materializes content in a unique sibling
+staging location and starts destination replacement only after the operation
+succeeds. Archive extraction rejects unsafe members and traversal.
+
+Overwrite is explicit. A failed operation removes its staging data and leaves no
+partially published target. Calculated digest and size may be returned as
+operation metadata, but the current model contract trusts the declared upstream
+and uses complete required-file inventories rather than configured expected
+hashes.
+
+### Resource invariants
+
+- Status and catalog inspection are read-only.
+- `load()` never downloads or converts.
+- A source exists only on its owning artifact declaration.
+- Resource paths resolve below the configured model storage root.
+- Shared artifacts have no variant or runtime ownership.
+- Conversion output, download output, readiness checks, and runtime loading use
+  the same canonical artifact path.
+- Deletion belongs to the resource provider and must remain idempotent and
+  confined to managed storage.
+- Resource status exposes availability and size, not mutable provider objects.
+
+## Runtime selection and execution boundary
+
+The SDK separates three concepts often collapsed into one class:
+
+| Concept | Responsibility |
+| --- | --- |
+| Runtime declaration | Static platform, architecture, module, device, dtype, and quantization support in the model manifest |
+| Runtime policy | Machine-aware ordering and selection of declared runtimes |
+| Runtime provider/session | Low-level framework import, device mapping, session creation, execution, close, and generic inspection |
+| Model engine | Model-specific loading, input preparation, framework calls, decoding, and state management |
+
+```mermaid
+flowchart LR
+    Request[requested runtime or auto] --> Policy[RuntimePolicy]
+    Manifest[Declared runtimes] --> Policy
+    Machine[platform / architecture / modules] --> Policy
+    Policy --> Selected[Selected runtime]
+    Selected --> Factory[Definition runtime factory]
+    Factory --> Instance[Model instance + engine]
+    Engine[Model engine] --> Provider[Shared runtime provider]
+    Provider --> Session[Private runtime session]
 ```
 
-`variant` 是模型实例 identity 的一部分。`switch_variant()` 会先加载替代权重，成功后才卸载旧实例。
+For `runtime=None` or `runtime="auto"`, policy candidates are deterministic:
+caller-configured preferences, then the manifest default, then declaration order,
+with duplicates removed and incompatible candidates skipped. Compatibility checks
+platform, architecture, and required Python modules without loading weights.
 
-加载指标可从实例 snapshot 获取，卸载指标由 `unload_with_metrics()` 返回：
+During automatic loading, `InstanceManager` tries compatible candidates in that
+order. A missing local artifact advances to the next runtime. Other failures are
+not silently treated as fallback. If no candidate has local resources, the SDK
+raises one `ResourceNotFoundError` describing attempted runtimes.
 
-```python
-snapshot = await manager.snapshot(str(model.instance_id))
-print(snapshot.load_metrics.duration_ms)
-print(snapshot.load_metrics.memory_allocated_bytes)
+An explicitly requested runtime must be declared. Its model factory and engine
+remain responsible for the eventual load result. Device selection is validated
+against the chosen runtime's declared device names; backend-specific device
+strings are preserved rather than normalized into a misleading universal enum.
 
-result = await manager.unload_with_metrics(str(model.instance_id))
-print(result.metrics.duration_ms)
-print(result.metrics.memory_released_bytes)
+Heavy frameworks are imported lazily inside selected providers or model engines.
+Base SDK import, model registration, YAML parsing, and catalog discovery must
+continue to work when unrelated optional runtimes are not installed.
+
+## Instance lifecycle
+
+### State machine
+
+Every concrete instance derives from `BaseModelInstance` and follows one guarded
+state machine:
+
+```mermaid
+stateDiagram-v2
+    [*] --> CREATED
+    CREATED --> RESOLVING: load
+    FAILED --> RESOLVING: retry load
+    RESOLVING --> LOADING: resources resolved
+    LOADING --> READY: runtime loaded
+    RESOLVING --> FAILED: cancel or error
+    LOADING --> FAILED: cancel or error
+    FAILED --> UNLOADING: unload
+    CREATED --> UNLOADING: unload
+    READY --> UNLOADING: unload
+    UNLOADING --> UNLOADED: cleanup completes
+    UNLOADED --> [*]
 ```
 
-内存值是操作前后 Python 进程 RSS 的观测差值，并非模型独占内存；allocator cache、并发任务和
-GPU/ANE 分配可能影响结果。
+Lifecycle methods are serialized by an instance-local `asyncio.Lock`.
 
-模型能力仍通过组合接口获取，例如 `instance.require(ObjectDetection)`；不会为所有模型添加含义模糊的
-通用 `predict(**kwargs)`。
+- `load()` is idempotent in `READY`.
+- Runtime resolution completes before the instance is published as ready.
+- Cancellation is preserved as `CancelledError`; cleanup still runs and state
+  becomes `FAILED`.
+- Stable SDK failures retain their type; unexpected failures become
+  `ModelLoadError` with the original cause.
+- Failed-load cleanup suppresses cleanup errors so the primary load failure is
+  preserved.
+- `warmup()` requires `READY` and runs under the lifecycle lock.
+- `unload()` is idempotent and always ends in `UNLOADED`, even if the private
+  unload hook raises.
 
-## 下载模型资源
+Capabilities are registered only in `CREATED`, so a serving instance cannot
+change its public operation set while requests are active. Instance information
+exposes stable identity and state; framework models and sessions remain private.
 
-目标路径始终由调用方明确提供。下载先写入同目录 staging，校验成功后再原子提交。
+### Instance manager and reuse
 
-已注册模型优先通过统一 facade 操作：
+`InstanceManager` owns process-local instance records. It resolves the canonical
+variant/runtime/device, creates instances through the definition, records load
+metrics, and serializes changes to manager metadata with an `asyncio.Lock`.
 
-```python
-status = await sdk.resources.status("ultralytics/yolov8", variant="s")
-status = await sdk.resources.download_source(
-    "ultralytics/yolov8",
-    variant="s",
-)
-status = await sdk.resources.convert(
-    "ultralytics/yolov8",
-    ArtifactFormat.COREML,
-    variant="s",
-)
+Equivalent shared instances are keyed by:
+
+```text
+model ID + revision + variant + runtime + recursively frozen options
 ```
 
-这些调用必须由业务层或用户动作主动触发。
+Options are part of identity because device, storage root, compute policy, or
+another model-specific input can change loaded state.
 
-资源状态的 `conversion_targets` 描述可转换的目标格式、对应 runtime、artifact 和本地可用状态，
-供 API 或 UI 动态生成 `Convert/Re-convert` 操作。新增 ONNX 等转换时，只需由模型 resource provider
-声明目标并实现转换，无需修改平台层路由。
+| `ReusePolicy` | Creation behavior | Handle close behavior |
+| --- | --- | --- |
+| `DEDICATED` | Always create a new instance | Release the reference and unload when it reaches zero |
+| `SHARED` | Reuse an equivalent managed instance, regardless of whether loading is already in progress | Release the reference; the shared instance remains managed |
+| `REUSE_IF_READY` | Reuse only an equivalent `READY` instance, otherwise create another managed instance | Release the reference; no automatic unload |
 
-资源状态也会聚合每个 runtime 的本地文件/目录大小以及模型总大小。删除同样是显式操作：
+`ModelHandle` increments the manager reference count and is an async context
+manager. `close()` is idempotent. Normal unload and runtime/variant switching are
+rejected while references remain; forced unload is reserved for explicit process
+or platform shutdown behavior.
 
-```python
-status = await sdk.resources.delete(
-    "ultralytics/yolov8",
-    variant="s",
-    runtime="coreml",  # 省略 runtime 时删除整个模型 revision 目录
-)
+```mermaid
+sequenceDiagram
+    participant C as Caller
+    participant SDK as ModelSdk
+    participant M as InstanceManager
+    participant I as ModelInstance
+
+    C->>SDK: acquire(model, runtime, variant, reuse)
+    SDK->>M: create/load selected identity
+    M->>I: load if needed
+    M-->>SDK: managed instance
+    SDK->>M: retain(instance_id)
+    SDK-->>C: ModelHandle
+    C->>C: handle.require(Capability)
+    C->>I: typed inference call
+    C->>SDK: close handle / exit context
+    SDK->>M: release(instance_id)
+    opt dedicated and reference count is zero
+        SDK->>M: unload(instance_id)
+    end
 ```
 
-删除不会移除模型 definition。模型实现必须把删除范围限制在自身受管 storage root 内，外部自定义路径和
-路径逃逸会被拒绝。
+The manager lock protects registries, records, reuse maps, and reference counts;
+it does not serialize model inference. Each model instance or engine must add its
+own inference lock when its runtime session, decoder cache, or mutable state is
+not safe for concurrent use.
 
-Hugging Face 完整模型目录：
+## Capability and schema boundary
 
-```python
-source = HuggingFaceSource(
-    repo_id="org/model",
-    revision="main",
-    allow_patterns=("*.json", "*.safetensors"),
-)
-resource = await ResourceDownloader().download(source, Path("models/org/model"))
+Capabilities are structural `Protocol` contracts. They describe task meaning,
+not framework implementation. Current concrete task boundaries include chat,
+object/face/hand detection, pose estimation, instance segmentation, speech
+transcription, streaming transcription, speech understanding, voice activity
+detection, speech enhancement, and speech synthesis.
+
+```mermaid
+flowchart LR
+    AppRequest[Application request] --> Mapping[Application mapping]
+    Mapping --> SDKRequest[Frozen SDK request schema]
+    SDKRequest --> Protocol[Capability protocol]
+    Protocol --> Implementation[Instance implementation]
+    Implementation --> Engine[Private engine values]
+    Engine --> Implementation
+    Implementation --> SDKResponse[Frozen SDK response schema]
+    SDKResponse --> Mapping
 ```
 
-Hugging Face 单文件，例如某个 YOLO 变体：
+Capability rules:
 
-```python
-source = HuggingFaceSource(
-    repo_id="org/yolo",
-    filename="yolo-small.safetensors",
-    expected_sha256="...",
-)
-resource = await ResourceDownloader().download(source, Path("models/yolo-small.safetensors"))
+- a protocol represents one stable operation and uses dedicated request/response
+  schemas;
+- streaming behavior is expressed as typed async events or an explicit session
+  contract;
+- models register the actual implementation before loading;
+- `supports()` is discovery and `require()` either returns the typed capability
+  or raises `UnsupportedCapabilityError`;
+- task schemas contain serializable values or controlled media references, never
+  runtime tensors or sessions;
+- manifest capability declarations, instance registrations, and contract tests
+  must agree.
+
+Generic embedding protocols remain typed over request/response parameters until
+a stable shared schema exists. This is preferable to prematurely standardizing
+an underspecified tensor contract.
+
+## Catalog, status, health, and inspection
+
+Read-only services expose different observations and must not be conflated:
+
+| View | Source | Meaning |
+| --- | --- | --- |
+| Model catalog | Registry + runtime policy + instance snapshots | Declared models, machine-compatible runtimes, variants, capabilities, and live instance counts |
+| Resource status | Model resource provider + declared artifacts | Whether files required by a selected variant/runtime are locally available |
+| Instance snapshot | Instance manager record | Identity, state, references, creation time, and process-level lifecycle metrics |
+| Instance health | Base instance state | Healthy when ready, unhealthy after failure, degraded during other lifecycle states |
+| Model structure | Installed artifact + runtime/model inspector | Read-only component/layer/tensor metadata when inspection is supported |
+
+Catalog discovery remains available even when no declared runtime can execute on
+the current machine; the model summary then has no selected default runtime and
+reports runtime availability reasons. Catalog snapshots do not prove artifacts
+are installed.
+
+Structure inspection resolves a declared installed artifact without creating an
+inference instance. Model definitions may supply architecture-aware inspectors;
+otherwise the service dispatches to generic Core ML, ONNX, MLX/safetensors, or
+PyTorch inspectors. Unsupported formats raise a capability error instead of
+loading the model as a fallback.
+
+Lifecycle memory metrics use process RSS before and after load/unload. They are
+useful operational observations, not exclusive model memory or exact GPU/ANE
+allocation measurements.
+
+## Conversion architecture
+
+Conversion is an explicit resource operation. It does not mutate model
+definitions or create a ready instance.
+
+`ConverterRegistry` stores trusted converter objects by stable ID. Selection
+first checks converter IDs preferred by the model definition, then compatible
+generic candidates ordered by priority and ID. Every converter must confirm
+`supports(request)` before execution.
+
+```mermaid
+sequenceDiagram
+    participant C as Caller
+    participant R as Model resource provider
+    participant S as ConversionService
+    participant G as ConverterRegistry
+    participant V as ModelConverter
+
+    C->>R: convert declared target, overwrite?
+    R->>R: resolve source, shares, and canonical target
+    R->>S: ConversionRequest
+    S->>G: resolve preferred or compatible converter
+    G-->>S: converter
+    S->>V: convert(request)
+    V-->>S: ConversionResult
+    S-->>R: calculated result metadata
+    R-->>C: refreshed resource status
 ```
 
-指定 URL 单文件：
+Model-specific converters own graph semantics, input/output naming, stateful
+export policy, and model-specific validation. Generic converter infrastructure
+owns selection and reusable framework mechanics. The target must match the same
+declared artifact path and file contract used by downloads, status, inspection,
+and runtime loading.
 
-```python
-source = UrlFileSource(url="https://example.com/model.safetensors")
-resource = await ResourceDownloader().download(source, Path("models/model.safetensors"))
-```
+## Errors, cancellation, and trust boundaries
 
-指定 URL 模型目录使用 ZIP/TAR 归档：
+All caller-facing SDK failures derive from `HuggingMacSdkError` and expose a
+stable `code`, `message`, retryability flag, structured details, and optional
+cause. The hierarchy distinguishes manifest/registration errors, missing
+resources, unsupported runtime/capability, download/integrity failures,
+insufficient resources, model load failures, and inference failures.
 
-```python
-source = UrlArchiveSource(
-    url="https://example.com/llm.tar.gz",
-    strip_components=1,
-)
-resource = await ResourceDownloader().download(source, Path("models/example-llm"))
-```
+Boundary rules:
 
-URL 不存在通用的“列出远端目录”协议，因此目录下载明确要求 ZIP/TAR；Hugging Face 多文件模型使用
-snapshot。归档解压默认拒绝路径穿越、链接和特殊文件。
+- preserve `asyncio.CancelledError` rather than converting it into a normal SDK
+  error;
+- wrap unexpected framework load failures in `ModelLoadError` and unexpected
+  inference failures in `InferenceError` at the model boundary;
+- keep secrets, framework objects, raw media, prompts, and unsafe local paths out
+  of public error details;
+- delay executable or remote-code trust decisions to the owning model package;
+- treat pickle-like weights and custom remote code as executable inputs even
+  when the source is trusted;
+- validate relative artifact/archive paths before filesystem publication or
+  deletion;
+- never use catalog inspection as authorization to mutate local storage.
 
-## 转换模型
+The SDK calculates file metadata where useful but does not claim cryptographic
+authenticity for trusted upstream model repositories. Source trust and loader
+trust are separate concerns documented by each model integration.
 
-转换器分为两层：
+## Concurrency model
 
-- 通用转换器按 source/target format 自动匹配；
-- 模型 definition 可以通过 `converter_ids` 绑定优先的模型专用转换器。
+| Scope | Synchronization | Protected state |
+| --- | --- | --- |
+| Model and converter registries | `threading.RLock` | Registration, lookup, replacement, sorted snapshots |
+| Instance manager | `asyncio.Lock` | Instance maps, reuse identities, records, reference counts |
+| Model instance lifecycle | Instance-local `asyncio.Lock` | Resolve/load/warmup/unload transitions |
+| Model inference | Model-specific async/thread lock when required | Runtime session, mutable caches, decoder state |
+| Downloader | Unique sibling staging paths | Partial file publication and concurrent destinations |
 
-没有绑定专用转换器，或专用转换器不支持目标格式时，registry 回退到通用转换器。调用方也可以显式指定
-converter ID。
+Manager locks are not held across expensive model loading or unloading. Metadata
+is captured or updated inside the lock, while runtime work executes outside it.
+Runtime/variant switching uses an ownership recheck before replacing the old
+instance, preventing a concurrent retain from being ignored.
 
-安装 YOLO 转换依赖：
+Stateful capabilities must isolate state per request, session, or instance as
+their contract requires. The SDK does not impose a global inference lock because
+that would serialize independent models and runtime sessions.
+
+## Key design patterns
+
+| Pattern | Location | Purpose |
+| --- | --- | --- |
+| Facade | `ModelSdk` | Gives applications one composition entry while keeping control services explicit |
+| Registry | Models, runtimes, converters | Provides deterministic discovery and conflict handling without directory/plugin scanning |
+| Declarative Configuration | `model.yaml` and frozen schemas | Makes static model/artifact facts reviewable and machine-validated |
+| Composition Root | Each model's `definition.py` | Injects manifest/artifacts into factories, providers, engines, converters, and inspectors |
+| Abstract Factory | Runtime factory map in `ModelDefinition` | Creates the correct instance implementation for a selected runtime |
+| Strategy | `RuntimePolicy`, providers, converters | Selects machine/runtime/conversion behavior behind stable contracts |
+| Ports and Adapters | Capability protocols, engines, runtime sessions | Separates task semantics from framework execution |
+| State Machine | `BaseModelInstance` | Makes lifecycle validity, cleanup, and health observable |
+| Unit of Ownership / RAII | `ModelHandle` async context manager | Couples retain/release to caller scope and protects active instances |
+| Flyweight-like shared reuse | `InstanceManager` shared identity key | Reuses expensive equivalent loaded state without hiding ownership |
+| Service Layer | Resource, catalog, inspection, conversion services | Centralizes cross-model operations without moving model-specific rules into core |
+| Immutable Snapshot | Catalog/resource/instance schemas | Prevents callers from mutating manager and registry internals |
+| Staging and Controlled Publication | Downloader and converters | Prevents partially materialized artifacts from appearing ready |
+| Lazy Import | Runtime providers and inspectors | Keeps optional frameworks out of base import and unrelated workflows |
+
+These patterns enforce dependency direction. For example, a capability protocol
+ceases to be a useful port if callers inspect its concrete engine, and shared
+reuse becomes unsafe if handles are not closed on cancellation paths.
+
+## Public API and import discipline
+
+`src/hugging_mac_sdk/__init__.py` is the curated application-facing export
+boundary. New exports require a stable cross-model use case, typed behavior, and
+tests. Internal convenience is not sufficient reason to expose a model engine or
+provider object.
+
+Importing `hugging_mac_sdk` must not:
+
+- load or inspect model files;
+- contact Hugging Face or another network source;
+- import every optional heavy framework;
+- create a runtime session or model instance;
+- create application storage or start background tasks.
+
+Model package `__init__.py` files export only the definition, parsed manifest,
+and registration function. Applications that need inference import capability
+and schema contracts from the SDK public surface, then obtain implementations
+through `ModelHandle`.
+
+## Adding a model integration
+
+The normal implementation order is:
+
+1. Define or reuse public capability and schema contracts.
+2. Create a canonical model package and declare its identity, variants, runtimes,
+   artifacts, sources, required files/modules, and shared relations in
+   `model.yaml`.
+3. Define frozen instance/resource options in `config.py` without duplicating
+   static manifest facts.
+4. Implement the runtime-neutral instance and register real capability objects in
+   `CREATED` state.
+5. Implement runtime engines/factories and lazy framework loading.
+6. Implement resource status/download/delete and optional conversion using the
+   injected manifest/artifacts.
+7. Compose the package in `definition.py` and expose a side-effect-free
+   registration function.
+8. Add schema, registration, resource, lifecycle, capability, inference,
+   conversion, path-safety, and cancellation tests as applicable.
+9. Register the definition only in the consuming application's composition root.
+
+The full package layout, YAML field order, canonical artifact paths, shared
+artifact rules, and per-model review checklist are defined exclusively in
+[`models/readme.md`](src/hugging_mac_sdk/models/readme.md).
+
+## Testing and review invariants
+
+Default unit and contract tests must not download model files, access the network,
+or require every Apple/runtime framework. Real-model and framework-dependent
+checks belong in explicit smoke/integration lanes.
+
+SDK review should verify:
+
+1. Registration, YAML parsing, catalog, and status remain side-effect free.
+2. Static facts have one declarative owner and are not copied into Python or App
+   code.
+3. Every declared runtime has an implemented factory and complete artifact
+   contract.
+4. Every declared capability is registered and exercised through its protocol.
+5. Automatic runtime fallback occurs only for missing local artifacts, not
+   arbitrary load or inference failures.
+6. Downloads and conversions use explicit overwrite and safe staging/publication.
+7. Shared dependencies are selected through the consuming artifact's
+   `required_shares`, not global or variant-level assumptions.
+8. Dedicated/shared handles release references correctly on success, failure,
+   cancellation, and warmup errors.
+9. Lifecycle and inference locks protect only their owning mutable state and do
+   not serialize unrelated models.
+10. Public schemas/errors contain no framework objects, secrets, unsafe paths, or
+    application-specific transport concerns.
+11. Runtime and model packages remain lazily importable without unrelated
+    optional dependencies.
+12. Model storage, inspection, conversion, and deletion all resolve the same
+    declared canonical artifact paths.
+
+Typical repository checks are:
 
 ```bash
-uv sync --package hugging-mac-sdk --extra yolo
+uv run pytest tests/sdk
+uv run ruff check packages/hugging_mac_sdk/src tests/sdk
+uv run mypy packages/hugging_mac_sdk/src apps/web/backend/src
+git diff --check
 ```
 
-下载并转换已注册 YOLOv8 的 `s` variant：
-
-```python
-from pathlib import Path
-
-from hugging_mac_sdk import (
-    ArtifactFormat,
-    ConversionRequest,
-    ConversionService,
-    ConverterRegistry,
-    ModelRegistry,
-    ResourceDownloader,
-)
-from hugging_mac_sdk.models.yolov8 import register_yolov8
-
-models = ModelRegistry()
-converters = ConverterRegistry()
-definition = register_yolov8(models, converters)
-
-variant = "s"
-source_spec = definition.manifest.get_variant(variant).resources[0]
-source = await ResourceDownloader().download(
-    source_spec,
-    Path("models/ultralytics/yolov8s.pt"),
-)
-
-result = await ConversionService(converters).convert(
-    ConversionRequest(
-        model_id=definition.manifest.model_id,
-        model_revision=definition.manifest.revision,
-        variant=variant,
-        source=source,
-        source_format=ArtifactFormat.PYTORCH,
-        target_format=ArtifactFormat.COREML,
-        output_path=Path("models/ultralytics/yolov8s.mlpackage"),
-    ),
-    definition=definition,
-)
-```
-
-YOLOv8 的 `n/s/m` 专用转换器默认使用固定 `640×640`、batch 1、FP16 和静态 shape。转换产物保留
-原始预测输出，由模型 `utils/postprocess.py` 对 PyTorch、Core ML 和 ONNX 统一执行 NMS。转换与推理均不依赖
-Ultralytics Python 包；Core ML compute unit 在 `CoreMLProvider` 加载 session 时应用。
-
-源模型来自 `Ultralytics/YOLOv8` 的 `yolov8{n,s,m}.pt`，revision 与各自 SHA-256 已固定。这些文件包含 Python
-pickle 对象，只能作为 manifest 中明确允许的受信任来源加载，不能把任意第三方 `.pt` 当成安全数据文件。
-
-## Audio8-ASR 推理
-
-Audio8-ASR 的 snapshot 只包含 safetensors 权重与 JSON/tokenizer 配置；SDK 不下载或执行模型仓库里的
-Python 文件。安装依赖：
-
-```bash
-uv sync --package hugging-mac-sdk --extra asr
-```
-
-显式下载并调用 `SpeechTranscription`：
-
-```python
-from pathlib import Path
-
-from hugging_mac_sdk import AudioInput, ModelSdk, TranscriptionRequest
-from hugging_mac_sdk.capabilities import SpeechTranscription
-from hugging_mac_sdk.models.audio8_asr import register_audio8_asr
-
-sdk = ModelSdk()
-register_audio8_asr(sdk.registry)
-options = {"model_home": Path("models")}
-
-await sdk.resources.download_source(
-    "audio8/audio8-asr",
-    options=options,
-)
-handle = await sdk.load(
-    "audio8/audio8-asr",
-    runtime="pytorch-mps",
-    options=options,
-)
-result = await handle.require(SpeechTranscription).transcribe(
-    TranscriptionRequest(audio=AudioInput(path=Path("sample.wav")))
-)
-print(result.text)
-```
-
-转换并使用 Core ML/ANE 音频塔：
-
-```python
-from hugging_mac_sdk import ArtifactFormat
-
-await sdk.resources.convert(
-    "audio8/audio8-asr",
-    ArtifactFormat.COREML,
-    options=options,
-    overwrite=True,
-)
-handle = await sdk.load(
-    "audio8/audio8-asr",
-    runtime="coreml",
-    device="cpu-and-neural-engine",
-    options=options,
-)
-```
-
-该 runtime 使用三档固定 shape 的 multifunction Core ML 音频塔（5/10/30 秒），并保留 PyTorch MPS
-Qwen2 decoder 的 KV cache；它是明确的混合 runtime，不把 decoder 标注为 ANE。源模型许可证为
-`CC-BY-NC-4.0`，且当前集成针对最长 30 秒的短音频。
-
-## SenseVoiceSmall 语音理解
-
-SenseVoiceSmall 使用模型私有的 Kaldi fbank、LFR、CMVN、SANM 与 CTC 实现，不依赖 FunASR，也不执行
-Hugging Face 仓库中的 Python 文件。它同时提供普通 ASR 和富语音理解 capability：
-
-```python
-from pathlib import Path
-
-from hugging_mac_sdk import (
-    AudioInput,
-    ModelSdk,
-    SpeechUnderstandingRequest,
-)
-from hugging_mac_sdk.capabilities import SpeechUnderstanding
-from hugging_mac_sdk.models.sensevoice import register_sensevoice
-
-sdk = ModelSdk()
-register_sensevoice(sdk.registry)
-options = {"model_home": Path("models")}
-
-await sdk.resources.download_source(
-    "funaudiollm/sensevoice",
-    variant="small",
-    options=options,
-)
-handle = await sdk.load(
-    "funaudiollm/sensevoice",
-    runtime="pytorch-mps",
-    options=options,
-)
-result = await handle.require(SpeechUnderstanding).understand_speech(
-    SpeechUnderstandingRequest(
-        audio=AudioInput(path=Path("sample.wav")),
-        language="auto",
-    )
-)
-print(result.text)
-print(result.languages, result.emotion, result.events)
-```
-
-当前 runtime 为 PyTorch MPS，最长处理 30 秒音频。模型权重使用
-`FunASR Model Open Source License Agreement 1.1`，不随 SDK 的 MIT 许可证重新授权。
-
-## YOLOv8 推理
-
-注册后可创建 PyTorch MPS、Core ML 或 ONNX Runtime 实例。Core ML 是默认 runtime，但实例只加载已经存在的资产；
-缺失时抛出 `ResourceNotFoundError`：
-
-```python
-from pathlib import Path
-
-from hugging_mac_sdk import DetectionRequest, ImageInput
-from hugging_mac_sdk.capabilities import ObjectDetection
-from hugging_mac_sdk.converters import ConverterRegistry
-from hugging_mac_sdk.core.registry import ModelRegistry
-from hugging_mac_sdk.models.yolov8 import register_yolov8
-
-models = ModelRegistry()
-register_yolov8(models, ConverterRegistry())
-
-instance = models.create_instance(
-    "ultralytics/yolov8",
-    variant="s",
-    runtime="coreml",
-    options={"model_home": Path("models")},
-)
-await instance.load()
-
-detector = instance.require(ObjectDetection)
-result = await detector.detect(
-    DetectionRequest(
-        image=ImageInput(path=Path("example.jpg")),
-        confidence=0.5,
-    )
-)
-
-await instance.unload()
-```
-
-拿到 definition 时也可以直接使用同一个工厂契约：
-
-```python
-definition = models.get("ultralytics/yolov8")
-instance = definition.create(
-    variant="m",
-    runtime="coreml",
-    options={"model_home": Path("models")},
-)
-```
-
-`runtime` 会根据 manifest 中的 `RuntimeSpec` 校验。如果 `runtime` 参数与 `options["runtime"]` 冲突，
-或者模型没有声明该 runtime，会抛出 `UnsupportedRuntimeError`。
-
-`DetectionResponse` 不包含 torch tensor 或 Core ML 对象，统一返回：
-
-- 原图宽高；
-- `xyxy` bounding box；
-- confidence；
-- class ID 和 COCO label；
-- preprocess、inference、postprocess 耗时；
-- 声明 runtime 和实际 execution device。
-
-`pytorch-mps` 默认要求 MPS 真实可用，不会静默回退 CPU。诊断环境可以显式设置
-`allow_cpu_fallback=True`，响应中的 `device` 会报告实际执行设备。
-
-运行真实 smoke test：
-
-```bash
-uv run --all-packages --extra yolo scripts/smoke_yolov8.py --download
-uv run --all-packages --extra yolo scripts/smoke_yolov8.py \
-  --runtime coreml --download --convert
-```
+The SDK and Web architecture meet at public capability, schema, catalog,
+resource, and instance APIs. The cross-layer rules are documented in
+[`apps/web/README.md`](../../apps/web/README.md); business behavior must not leak
+back into this package.

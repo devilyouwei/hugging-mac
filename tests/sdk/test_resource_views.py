@@ -59,7 +59,6 @@ def test_shared_snapshot_is_unavailable_until_declared_files_exist(
     tokenizer.mkdir()
     artifact = ModelArtifact(
         artifact_id="tokenizer",
-        runtime="mlx",
         format=ArtifactFormat.TOKENIZER,
         path=Path("tokenizer"),
         kind=ArtifactKind.DIRECTORY,
@@ -85,6 +84,7 @@ def test_stripped_snapshot_checks_patterns_relative_to_installed_directory(
     artifact = ModelArtifact(
         artifact_id="coreml",
         runtime="coreml",
+        variant="default",
         format=ArtifactFormat.COREML,
         path=Path("yolov8n.mlpackage"),
         kind=ArtifactKind.DIRECTORY,
