@@ -86,9 +86,7 @@ def _format_segment(segment: str) -> str:
     clean = _SPECIAL_TOKEN.sub("", clean)
 
     event_prefix = "".join(
-        emoji
-        for tag, (_, emoji) in _EVENT_TAGS.items()
-        if emoji and counts[tag] > 0
+        emoji for tag, (_, emoji) in _EVENT_TAGS.items() if emoji and counts[tag] > 0
     )
     emotion_tag = _most_common(
         [tag for tag in _EMOTION_TAGS if counts[tag] > 0],

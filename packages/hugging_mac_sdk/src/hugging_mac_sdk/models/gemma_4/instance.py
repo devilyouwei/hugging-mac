@@ -18,8 +18,9 @@ from hugging_mac_sdk.schemas.chat import (
     ChatStreamEvent,
     ChatTimings,
 )
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 
-from .config import GEMMA_4_MODEL_ID, Gemma4MlxInstanceConfig
+from .config import Gemma4MlxInstanceConfig
 from .utils.types import GenerationOutput
 
 
@@ -36,15 +37,19 @@ class Gemma4Engine(Protocol):
 
 
 class Gemma4MlxInstance(BaseModelInstance):
-    def __init__(self, config: Gemma4MlxInstanceConfig, engine: Gemma4Engine) -> None:
+    def __init__(
+        self, config: Gemma4MlxInstanceConfig, engine: Gemma4Engine, manifest: ModelManifest
+    ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=GEMMA_4_MODEL_ID,
-            revision="variant-pinned",
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=config.device,
         )
         self._engine, self._inference_lock = engine, asyncio.Lock()
+        self._manifest_model_id = manifest.model_id
         self.register_capability(Chat, cast(Chat, self))  # type: ignore[type-abstract]
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
@@ -61,7 +66,7 @@ class Gemma4MlxInstance(BaseModelInstance):
                     "Gemma 4 chat failed", details={"reason": str(error)[:500]}, cause=error
                 ) from error
         return ChatResponse(
-            model_id=GEMMA_4_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

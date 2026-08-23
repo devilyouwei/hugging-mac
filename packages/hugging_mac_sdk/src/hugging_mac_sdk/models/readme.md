@@ -31,9 +31,6 @@ runtimes: [pytorch-mps, mlx, onnx, coreml]
 artifacts: source-bf16, mlx-4bit, onnx-int8, coreml-int8
 ```
 
-The existing tree contains legacy packages that do not yet satisfy this identity rule. They are
-migration targets, not examples to copy.
-
 ## 2. Architecture boundary
 
 Applications program against capability protocols, never model classes, runtime adapters, or
@@ -73,36 +70,153 @@ Responsibilities are strict:
 - `__init__.py` exports only the definition, manifest, and registration function.
 - `readme.md` summarizes the model, canonical identity, supported variants and runtimes,
   capability APIs, implementation status, and the responsibility of every package file.
-- `model.yaml` contains declarative identity, revision, license, capabilities, variants, runtimes,
-  sources, and artifacts. YAML must not import or execute Python.
-- `config.py` defines frozen, strongly typed instance/resource/runtime options.
+- `model.yaml` is the only source of truth for declarative identity, license, capabilities,
+  variants, runtimes, sources, artifacts, download selections, and required files.
+  YAML must not import or execute Python.
+- `config.py` defines only frozen, strongly typed instance/resource/runtime input options such as
+  storage overrides, credentials, device policy, and inference controls. It must not repeat model
+  IDs, repository IDs, variant inventories, or artifact filename inventories.
 - `definition.py` binds every declared runtime to a concrete factory and registers resources and
-  converters.
+  converters. It is the package composition root: it loads `model.yaml`, selects artifacts by
+  semantic key, and injects the parsed manifest/artifacts into instances, engines, and resource
+  providers. Converter requests must be built from that same injected context.
 - `instance.py` owns lifecycle, concurrency, capability registration, common pre/postprocessing,
   and composition with an engine protocol. It must not import concrete runtime engines.
 - Runtime files load and execute one backend through the shared runtime providers where possible.
-- `resources.py` resolves, validates, reports, downloads, and deletes only this model's assets.
+- `resources.py` resolves, validates, reports, downloads, and deletes only this model's assets. It
+  consumes injected manifest/artifact objects and must not redeclare static model facts.
 - `converter.py` contains model-specific conversion logic; general framework mechanics belong in
   `converters/`.
 - `utils/` is private to the package. A model package must not import another model package.
 
 ## 4. Manifest, variants, runtimes, and artifacts
 
-Pin reproducible upstream revisions and declare the upstream license and trust boundary. Each
+Declare the upstream repository, license, and trust boundary. Hugging Face sources intentionally
+follow the repository's default `main` revision and are trusted without content-hash validation. Each
 variant must describe a weight/model choice that preserves the same public task contract. Each
 runtime must describe an implementation that actually exists on the instance factory path.
 
-Every declared runtime must have:
+Every supported `(variant, runtime)` combination must have:
 
-1. a concrete factory in `runtime_factories`;
-2. all required artifacts declared for every supported variant;
+1. a concrete runtime factory in `runtime_factories`;
+2. all artifacts required by that combination;
 3. a resource status whose aggregated runtime availability is accurate;
 4. a load/unload implementation and an inference contract test.
 
+A runtime does not have to support every variant. The presence of a scoped artifact declares a
+supported combination; a missing combination must be rejected during definition creation rather
+than passed to the runtime factory or reported as ready.
+
 An artifact is a physical input to a runtime. It may be a file or directory and may contain weight
 shards, tokenizer files, processors, configuration, or compiled graphs. A runtime may require more
-than one artifact. Prebuilt conversions are downloadable artifacts; locally produced conversions
-use `provisioning: convert`. Artifact IDs are SDK data and must not become application logic.
+than one artifact. `source` makes an artifact downloadable; `convert: true` makes it a supported
+local conversion target. Both may be declared on the same artifact when a prebuilt download and a
+local conversion are alternative ways to provision exactly the same files at exactly the same
+path. `provisioning` is derived resource-status output, not a `model.yaml` field. Artifact IDs are
+SDK data and must not become model-specific application logic.
+
+### `model.yaml` standard fields
+
+The common template contains only fields that have the same meaning for every model package:
+
+- `manifest`: canonical identity, presentation, license, capabilities, variants,
+  runtimes, defaults, and upstream source links;
+- `artifacts`: runtime/variant ownership, format, canonical managed path, kind, optional source,
+  conversion support, sharing, required files, and required shares;
+- `extensions`: an optional namespaced area for model-private declarative data that does not belong
+  in the common schema.
+
+A representative declaration is:
+
+```yaml
+manifest:
+  schema_version: '1'
+  model_id: upstream/example-model
+  display_name: Example Model
+  family: example
+  capabilities: [embedding]
+  runtimes:
+  - name: coreml
+    required_modules: [coremltools, numpy]
+  variants:
+  - name: base
+    display_name: Base
+  default_variant: base
+  default_runtime: coreml
+
+artifacts:
+- artifact_id: coreml-fp16
+  variant: base
+  runtime: coreml
+  format: coreml
+  path: upstream/example-model/base/coreml/coreml-fp16
+  kind: directory
+  required_files: [Manifest.json, Data/model.mlmodel]
+  required_shares: [tokenizer]
+  convert: true
+  source:
+    kind: huggingface
+    repo_id: upstream/example-model-coreml
+    allow_patterns:
+    - example.mlpackage/**
+    strip_prefix: example.mlpackage
+
+- artifact_id: tokenizer
+  format: tokenizer
+  path: upstream/example-model/_shared/tokenizer
+  kind: directory
+  shared: true
+  required_files: [tokenizer.json, tokenizer_config.json]
+  source:
+    kind: huggingface
+    repo_id: upstream/example-model
+    allow_patterns:
+    - tokenizer.json
+    - tokenizer_config.json
+```
+
+Every directory artifact declares its complete `required_files` inventory as a YAML flow array,
+for example `required_files: [config.json, model.safetensors]`. Every runtime declares
+`required_modules` in the same array form. A Hugging Face repository snapshot declares the exact
+download selection through a block-style `allow_patterns` list. A single-file source may use
+`filename`, because it is downloaded through the Hub file API rather than as a snapshot.
+File artifacts do not declare `required_files`; their canonical file path is the availability
+check. Put `required_shares` beside `required_files` so the artifact's complete dependency contract
+is readable in one place.
+
+Within one package, `(variant, runtime, artifact_id)` must be unique. Every `required_shares` entry
+must name a declared shared artifact. The package loader validates both rules and rejects YAML that
+depends on ordering or an undeclared share.
+
+Do not add `revision`, `expected_sha256`, `file_sha256`, or other digest fields. Resource
+availability is based on the complete required-file inventory; downloaded bytes are trusted from
+the declared upstream source. The SDK may still calculate a digest for result metadata, but it must
+not compare that digest with a configured expected value.
+
+Download sources have exactly one owner: `artifacts[*].source`. Neither `manifest` nor a variant
+may declare `resources`. Definitions, resource providers, converters, and application inventory
+must select the artifact semantically and consume its injected `source`; they must not maintain a
+second variant-to-source mapping.
+
+Shared tokenizers and other reusable downloads are unscoped `shared: true` artifacts with their own
+source. A shared artifact must not declare `variant`, `runtime`, or another shared dependency.
+Dependencies belong to the consuming scoped artifact through `required_shares: [tokenizer]`, not to
+the variant. This forms an explicit many-to-many relation: one runtime artifact may require several
+shares, and one share may be reused by artifacts from several variants or runtimes. Status, download,
+conversion preparation, and application readiness checks resolve the shares of the exact artifact(s)
+being operated on. Direct download/delete operations still address a shared artifact by its
+`artifact_id`.
+
+Do not promote model-specific concepts such as sample rate, default voice, decoder graph names,
+vocabulary shape, or architecture knobs into new common manifest/artifact fields. Put a simple fact
+that belongs to one variant under `manifest.variants[].metadata`. Put package-level or structured
+model-private declarative data under a namespaced `extensions` entry. Pure implementation and
+algorithm constants stay in model-private Python modules. Instance-overridable values stay in
+`config.py`.
+
+Static facts must have one owner. Python code may derive local values from the parsed package
+config, but must not copy the same literal into `config.py`, `resources.py`, a converter, or an
+application service.
 
 ## 5. Capability contract: no declaration without implementation
 
@@ -125,16 +239,44 @@ and manifest-only capability declarations are prohibited.
 
 ## 6. Resource lifecycle
 
-Resources live outside the Python package under the configured model storage root. Use the layout:
+Resources live outside the Python package under the configured model storage root. Every
+`artifacts[*].path` must use the compact canonical layout below; package loading rejects any other
+layout:
 
 ```text
-<model_home>/<model_id>/<revision>/<variant>/<runtime-or-source>/<artifact>/
+scoped directory:
+<model_home>/<model_id>/<variant>/<runtime>/<artifact_id>/
+
+scoped file:
+<model_home>/<model_id>/<variant>/<runtime>/<artifact_id>/<filename>
+
+shared directory:
+<model_home>/<model_id>/_shared/<artifact_id>/
+
+shared file:
+<model_home>/<model_id>/_shared/<artifact_id>/<filename>
 ```
 
+- `model_id` keeps its organization/name hierarchy. `variant`, `runtime`, and `artifact_id` use
+  their exact declared values; `_shared` is the only reserved path segment.
+- Do not put `revision`, `main`, repository hashes, source kind, format aliases, or duplicated model
+  filenames into directory levels. The source repository may advance while the local storage
+  address remains stable.
+- `ModelArtifact.resolve(model_home)` resolves the exact artifact, while
+  `ModelArtifact.storage_path(model_home)` resolves its owning directory for safe cleanup. Resource
+  providers, runtime engines, application inventory, download endpoints, and deletion logic must
+  consume these helpers instead of rebuilding paths from strings.
+- A conversion reads the declared source artifact and writes exactly to the declared target
+  artifact path. In particular, a Core ML converter must not invent a `.mlpackage`, `.mlmodelc`, or
+  `coreml/model` sibling path. Its `ConversionRequest.output_path`, subsequent status check, and
+  runtime loader must all refer to the same target artifact.
+- Hugging Face `strip_prefix` must be used when selected repository files live below a wrapper
+  directory, so the bytes committed at the artifact root match `required_files` exactly.
 - `status()` is read-only and validates every required file, not just the directory.
 - Downloads and conversions are explicit SDK operations; `load()` must never download or convert.
 - Downloads/conversions use staging and atomic commit where possible.
-- Fix revisions and hashes for reproducibility, especially for executable or pickle-backed files.
+- Hugging Face downloads use the source schema's internal default branch (`main`) without a YAML
+  revision or configured hash check. The revision is not part of the canonical local path.
 - `delete()` is idempotent and must reject paths outside the model's managed root.
 - Resource responses expose availability and size, never absolute local paths.
 - Tokenizers, processors, vocoders, auxiliary graphs, and generation configs are first-class
@@ -162,8 +304,10 @@ to the platform composition root. Registration must not load weights or touch th
 
 An application may select models by capability and optional product policy. It may request
 `runtime="auto"` or a user-selected runtime and inspect SDK catalog/resource availability. It must
-not duplicate model revisions, variants, artifact IDs, file layouts, preprocessing, or fallback
+not duplicate model variants, artifact IDs, file layouts, preprocessing, or fallback
 rules. Adding a conforming model should not modify an application's inference pipeline.
+Application business modules must not import `models.<package>.config`; model selection belongs to
+the application manifest/composition root and discovery uses the SDK registry/catalog.
 
 ## 9. Required tests
 
@@ -187,7 +331,7 @@ real managed artifacts before a capability is advertised to applications.
 
 ## 10. Implementation sequence
 
-1. Identify the canonical upstream model, revision, license, trust boundary, and public capability.
+1. Identify the canonical upstream model, repository, license, trust boundary, and public capability.
 2. Decide whether differences are variants, runtimes, or artifacts; do not create derived IDs.
 3. Create the canonical package and `model.yaml`.
 4. Add typed config and complete resource lifecycle support.

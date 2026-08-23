@@ -7,6 +7,7 @@ from pathlib import Path
 from hugging_mac_sdk.converters.registry import ConverterRegistry
 from hugging_mac_sdk.core.config import load_model_config
 from hugging_mac_sdk.core.registry import ModelDefinition, ModelRegistry
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource
 
 from .config import Audio8AsrInstanceConfig
@@ -21,25 +22,48 @@ AUDIO8_ASR_MANIFEST = AUDIO8_ASR_CONFIG.manifest
 
 
 def _source() -> HuggingFaceSource:
-    resources = AUDIO8_ASR_MANIFEST.get_variant("0.1b").resources
-    if len(resources) != 1 or not isinstance(resources[0], HuggingFaceSource):
+    source = _source_artifact().source
+    if not isinstance(source, HuggingFaceSource):
         raise TypeError("Audio8-ASR needs one Hugging Face snapshot source")
-    return resources[0]
+    return source
 
 
 def _tokenizer_source() -> HuggingFaceSource:
-    shared = AUDIO8_ASR_CONFIG.artifacts[-1]
+    shared = _tokenizer_artifact()
     if not shared.shared or not isinstance(shared.source, HuggingFaceSource):
         raise TypeError("Audio8-ASR needs one shared tokenizer source")
     return shared.source
 
 
+def _source_artifact() -> ModelArtifact:
+    return AUDIO8_ASR_CONFIG.get_artifact("source", variant="0.1b", runtime="pytorch-mps")
+
+
+def _coreml_artifact() -> ModelArtifact:
+    return AUDIO8_ASR_CONFIG.get_artifact("coreml", variant="0.1b", runtime="coreml")
+
+
+def _tokenizer_artifact() -> ModelArtifact:
+    return AUDIO8_ASR_CONFIG.get_artifact("tokenizer", shared=True)
+
+
+def _converter() -> Audio8AsrConverter:
+    return Audio8AsrConverter(AUDIO8_ASR_MANIFEST.model_id, "0.1b")
+
+
 def _create_pytorch_mps(options: dict[str, object]) -> Audio8AsrInstance:
     config = Audio8AsrInstanceConfig.model_validate(options | {"runtime": "pytorch-mps"})
     resources = Audio8AsrResourceResolver(
-        _source(), config, tokenizer_source=_tokenizer_source()
+        _source(),
+        config,
+        manifest=AUDIO8_ASR_MANIFEST,
+        source_artifact=_source_artifact(),
+        coreml_artifact=_coreml_artifact(),
+        tokenizer_artifact=_tokenizer_artifact(),
+        tokenizer_source=_tokenizer_source(),
+        converter=_converter(),
     )
-    return Audio8AsrInstance(config, TorchAudio8AsrEngine(config, resources))
+    return Audio8AsrInstance(config, TorchAudio8AsrEngine(config, resources), AUDIO8_ASR_MANIFEST)
 
 
 def _create_coreml(options: dict[str, object]) -> Audio8AsrInstance:
@@ -49,9 +73,16 @@ def _create_coreml(options: dict[str, object]) -> Audio8AsrInstance:
         normalized["compute_units"] = requested_device
     config = Audio8AsrInstanceConfig.model_validate(normalized | {"runtime": "coreml"})
     resources = Audio8AsrResourceResolver(
-        _source(), config, tokenizer_source=_tokenizer_source()
+        _source(),
+        config,
+        manifest=AUDIO8_ASR_MANIFEST,
+        source_artifact=_source_artifact(),
+        coreml_artifact=_coreml_artifact(),
+        tokenizer_artifact=_tokenizer_artifact(),
+        tokenizer_source=_tokenizer_source(),
+        converter=_converter(),
     )
-    return Audio8AsrInstance(config, CoreMlAudio8AsrEngine(config, resources))
+    return Audio8AsrInstance(config, CoreMlAudio8AsrEngine(config, resources), AUDIO8_ASR_MANIFEST)
 
 
 AUDIO8_ASR_DEFINITION = ModelDefinition(
@@ -62,7 +93,14 @@ AUDIO8_ASR_DEFINITION = ModelDefinition(
     },
     artifacts=AUDIO8_ASR_CONFIG.artifacts,
     converter_ids=("audio8.audio8-asr-0.1b",),
-    resource_provider=Audio8AsrResourceProvider(_source(), _tokenizer_source()),
+    resource_provider=Audio8AsrResourceProvider(
+        _source(),
+        _tokenizer_source(),
+        manifest=AUDIO8_ASR_MANIFEST,
+        source_artifact=_source_artifact(),
+        coreml_artifact=_coreml_artifact(),
+        tokenizer_artifact=_tokenizer_artifact(),
+    ),
 )
 
 
@@ -72,9 +110,9 @@ def register_audio8_asr(
     *,
     replace: bool = False,
 ) -> ModelDefinition:
-    """Register the pinned Audio8-ASR source model."""
+    """Register the Audio8-ASR source model."""
 
     if converters is not None:
-        converters.register(Audio8AsrConverter(), replace=replace)
+        converters.register(_converter(), replace=replace)
     models.register(AUDIO8_ASR_DEFINITION, replace=replace)
     return AUDIO8_ASR_DEFINITION

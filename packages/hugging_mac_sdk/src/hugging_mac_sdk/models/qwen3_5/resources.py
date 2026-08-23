@@ -14,7 +14,9 @@ from hugging_mac_sdk.errors import (
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_size
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
     ModelArtifactStatus,
@@ -22,14 +24,7 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
 )
 
-from .config import (
-    QWEN3_5_MLX_MODEL_ID,
-    QWEN3_5_MLX_REQUIRED_FILES,
-    QWEN3_5_MLX_VARIANTS,
-    QWEN3_5_TOKENIZER_REQUIRED_FILES,
-    QWEN3_5_TOKENIZER_REVISION,
-    Qwen35MlxInstanceConfig,
-)
+from .config import Qwen35MlxInstanceConfig
 
 
 class Qwen35MlxResourceResolver:
@@ -38,26 +33,22 @@ class Qwen35MlxResourceResolver:
         source: HuggingFaceSource,
         config: Qwen35MlxInstanceConfig,
         *,
+        manifest: ModelManifest,
+        artifact: ModelArtifact,
+        tokenizer_artifact: ModelArtifact,
         tokenizer_source: HuggingFaceSource | None = None,
         downloader: ResourceDownloader | None = None,
     ) -> None:
         self._source = source
+        self._manifest, self._artifact = manifest, artifact
+        self._tokenizer_artifact = tokenizer_artifact
         self._tokenizer_source = tokenizer_source or source
         self._config = config
         self._downloader = downloader or ResourceDownloader(timeout=3600)
 
     @property
     def path(self) -> Path:
-        return (
-            self._config.source_path
-            or self._config.model_home
-            / "qwen"
-            / "qwen3.5"
-            / self._config.variant
-            / self._source.revision
-            / "mlx"
-            / "model"
-        )
+        return self._config.source_path or self._artifact.resolve(self._config.model_home)
 
     async def resolve_source(self) -> ResolvedResource:
         self._validate(self.path, self._config.variant)
@@ -67,20 +58,14 @@ class Qwen35MlxResourceResolver:
 
     @property
     def tokenizer_path(self) -> Path:
-        return (
-            self._config.tokenizer_path
-            or self._config.model_home
-            / "qwen"
-            / "qwen3.5"
-            / "shared"
-            / "tokenizer"
-            / QWEN3_5_TOKENIZER_REVISION
+        return self._config.tokenizer_path or self._tokenizer_artifact.resolve(
+            self._config.model_home
         )
 
     async def resolve_tokenizer(self) -> ResolvedResource:
         missing = [
             name
-            for name in QWEN3_5_TOKENIZER_REQUIRED_FILES
+            for name in self._tokenizer_artifact.required_files
             if not (self.tokenizer_path / name).is_file()
         ]
         if missing:
@@ -110,15 +95,14 @@ class Qwen35MlxResourceResolver:
 
     def status(self) -> ModelResourceStatus:
         available = self.path.is_dir() and all(
-            (self.path / name).is_file()
-            for name in QWEN3_5_MLX_REQUIRED_FILES[self._config.variant]
+            (self.path / name).is_file() for name in self._artifact.required_files
         )
         tokenizer_available = all(
             (self.tokenizer_path / name).is_file()
-            for name in QWEN3_5_TOKENIZER_REQUIRED_FILES
+            for name in self._tokenizer_artifact.required_files
         )
         return ModelResourceStatus(
-            model_id=QWEN3_5_MLX_MODEL_ID,
+            model_id=self._manifest.model_id,
             revision=self._source.revision,
             variant=self._config.variant,
             artifacts=(
@@ -126,6 +110,7 @@ class Qwen35MlxResourceResolver:
                     artifact_id="mlx-optiq-4bit",
                     format=ArtifactFormat.MLX.value,
                     runtime="mlx",
+                    required_shares=self._artifact.required_shares,
                     available=available,
                     size_bytes=directory_size(self.path) if available else None,
                 ),
@@ -146,22 +131,16 @@ class Qwen35MlxResourceResolver:
         if runtime not in {None, "mlx"}:
             raise UnsupportedRuntimeError(f"Qwen3.5 does not support runtime {runtime}")
         target = self.path.expanduser().resolve(strict=False)
-        root = (
-            (self._config.model_home / "qwen" / "qwen3.5" / self._config.variant)
-            .expanduser()
-            .resolve(strict=False)
-        )
+        root = self._artifact.storage_path(self._config.model_home).parents[1]
         if not target.is_relative_to(root):
             raise ResourceIntegrityError(
                 "Refusing to delete Qwen3.5 resources outside the variant directory"
             )
         await asyncio.to_thread(shutil.rmtree, target if runtime else root, True)
 
-    @staticmethod
-    def _validate(path: Path, variant: str) -> None:
-        missing = [
-            name for name in QWEN3_5_MLX_REQUIRED_FILES[variant] if not (path / name).is_file()
-        ]
+    def _validate(self, path: Path, variant: str) -> None:
+        del variant
+        missing = [name for name in self._artifact.required_files if not (path / name).is_file()]
         if missing:
             raise ResourceNotFoundError(
                 "Qwen3.5 MLX snapshot is incomplete", details={"missing": missing}
@@ -173,9 +152,14 @@ class Qwen35MlxResourceProvider:
         self,
         sources: Mapping[str, HuggingFaceSource],
         tokenizer_source: HuggingFaceSource,
+        manifest: ModelManifest,
+        artifacts: Mapping[str, ModelArtifact],
+        tokenizer_artifact: ModelArtifact,
     ) -> None:
         self._sources = dict(sources)
         self._tokenizer_source = tokenizer_source
+        self._manifest, self._artifacts = manifest, dict(artifacts)
+        self._tokenizer_artifact = tokenizer_artifact
 
     async def status(
         self, variant: str, options: Mapping[str, object] | None = None
@@ -214,7 +198,7 @@ class Qwen35MlxResourceProvider:
     def _resolver(
         self, variant: str, options: Mapping[str, object] | None
     ) -> Qwen35MlxResourceResolver:
-        if variant not in QWEN3_5_MLX_VARIANTS:
+        if variant not in self._artifacts:
             raise ResourceNotFoundError(f"Qwen3.5 variant is not registered: {variant}")
         normalized = dict(options or {})
         if normalized.get("variant") not in {None, variant}:
@@ -222,5 +206,8 @@ class Qwen35MlxResourceProvider:
         return Qwen35MlxResourceResolver(
             self._sources[variant],
             Qwen35MlxInstanceConfig.model_validate(normalized | {"variant": variant}),
+            manifest=self._manifest,
+            artifact=self._artifacts[variant],
+            tokenizer_artifact=self._tokenizer_artifact,
             tokenizer_source=self._tokenizer_source,
         )

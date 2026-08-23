@@ -23,9 +23,7 @@ from .utils.types import TtsEngineOutput
 def _precompute_rope(torch: Any, length: int, head_dim: int, base: float) -> Any:
     """Build the pinned ArkTTS rotary buffer outside Transformers' init guard."""
 
-    frequencies = 1.0 / (
-        base ** (torch.arange(0, head_dim, 2).float()[: head_dim // 2] / head_dim)
-    )
+    frequencies = 1.0 / (base ** (torch.arange(0, head_dim, 2).float()[: head_dim // 2] / head_dim))
     phases = torch.outer(torch.arange(length), frequencies)
     values = torch.polar(torch.ones_like(phases), phases)
     return torch.stack((values.real, values.imag), dim=-1).to(torch.bfloat16)
@@ -86,9 +84,7 @@ class TorchAudio8TtsEngine:
     async def load(self, artifact: Path) -> None:
         provider = TorchProvider()
         if not provider.is_available():
-            raise UnsupportedRuntimeError(
-                "PyTorch is not installed; install hugging-mac-sdk[tts]"
-            )
+            raise UnsupportedRuntimeError("PyTorch is not installed; install hugging-mac-sdk[tts]")
         self._device = provider.resolve_device(
             self._config.device,
             allow_cpu_fallback=False,
@@ -117,9 +113,7 @@ class TorchAudio8TtsEngine:
         torch = importlib.import_module("torch")
         transformers = importlib.import_module("transformers")
         dtype = self._resolve_dtype(torch)
-        model_view = merged_directory_view(
-            artifact, (self._resources.tokenizer_path,)
-        )
+        model_view = merged_directory_view(artifact, (self._resources.tokenizer_path,))
         path = model_view.__enter__()
         try:
             processor = transformers.AutoProcessor.from_pretrained(
@@ -127,12 +121,16 @@ class TorchAudio8TtsEngine:
                 trust_remote_code=True,
                 local_files_only=True,
             )
-            model = transformers.AutoModel.from_pretrained(
-                path,
-                trust_remote_code=True,
-                local_files_only=True,
-                dtype=dtype,
-            ).eval().to(self._device)
+            model = (
+                transformers.AutoModel.from_pretrained(
+                    path,
+                    trust_remote_code=True,
+                    local_files_only=True,
+                    dtype=dtype,
+                )
+                .eval()
+                .to(self._device)
+            )
             # Transformers 5 guards tensor initialization while constructing custom
             # models. ArkTTS creates its non-persistent RoPE buffers in __init__, so
             # that guard leaves them as uninitialized memory (often NaN). Rebuild
@@ -191,14 +189,7 @@ class TorchAudio8TtsEngine:
                 )
                 waveforms, lengths = model.decode_audio(output.codes)
             sample_count = int(lengths[0])
-            waveform = (
-                waveforms[0, :sample_count]
-                .detach()
-                .float()
-                .cpu()
-                .contiguous()
-                .numpy()
-            )
+            waveform = waveforms[0, :sample_count].detach().float().cpu().contiguous().numpy()
             sample_rate = int(model.config.codec_sample_rate)
             generated_tokens = int(output.codes.shape[-1])
             return TtsEngineOutput(

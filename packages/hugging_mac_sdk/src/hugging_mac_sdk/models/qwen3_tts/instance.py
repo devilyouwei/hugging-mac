@@ -10,13 +10,14 @@ from typing import Protocol, cast
 from hugging_mac_sdk.capabilities import SpeechSynthesis
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import InferenceError
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.speech_synthesis import (
     SpeechSynthesisRequest,
     SpeechSynthesisResponse,
     SpeechSynthesisTimings,
 )
 
-from .config import QWEN3_TTS_MODEL_ID, QWEN3_TTS_REVISION, Qwen3TtsInstanceConfig
+from .config import Qwen3TtsInstanceConfig
 from .utils.types import Qwen3TtsEngineOutput
 
 
@@ -36,14 +37,18 @@ class Qwen3TtsEngine(Protocol):
 
 
 class Qwen3TtsInstance(BaseModelInstance):
-    def __init__(self, config: Qwen3TtsInstanceConfig, engine: Qwen3TtsEngine) -> None:
+    def __init__(
+        self, config: Qwen3TtsInstanceConfig, engine: Qwen3TtsEngine, manifest: ModelManifest
+    ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=QWEN3_TTS_MODEL_ID,
-            revision=QWEN3_TTS_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=config.device,
         )
+        self._manifest_model_id = manifest.model_id
         self._engine = engine
         self._inference_lock = asyncio.Lock()
         self.register_capability(
@@ -67,7 +72,7 @@ class Qwen3TtsInstance(BaseModelInstance):
             inference_ms = (perf_counter() - inference_started) * 1000
         postprocess_started = perf_counter()
         return SpeechSynthesisResponse(
-            model_id=QWEN3_TTS_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

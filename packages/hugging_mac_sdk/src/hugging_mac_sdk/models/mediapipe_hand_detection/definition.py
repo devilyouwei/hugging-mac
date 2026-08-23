@@ -21,20 +21,32 @@ from .resources import (
 
 MEDIAPIPE_HAND_DETECTION_CONFIG = load_model_config(Path(__file__).with_name("model.yaml"))
 MEDIAPIPE_HAND_DETECTION_MANIFEST = MEDIAPIPE_HAND_DETECTION_CONFIG.manifest
+MEDIAPIPE_HAND_DETECTION_CONVERTER = MediaPipeHandDetectionConverter(
+    MEDIAPIPE_HAND_DETECTION_MANIFEST.model_id
+)
 
 
 def _source() -> UrlArchiveSource:
-    resources = MEDIAPIPE_HAND_DETECTION_MANIFEST.get_variant("float").resources
-    if len(resources) != 1 or not isinstance(resources[0], UrlArchiveSource):
+    source = MEDIAPIPE_HAND_DETECTION_CONFIG.get_artifact(artifact_id="onnx-float").source
+    if not isinstance(source, UrlArchiveSource):
         raise TypeError("MediaPipe Hand Detection requires one URL archive source")
-    return resources[0]
+    return source
 
 
 def _create_onnx(options: dict[str, object]) -> MediaPipeHandDetectionInstance:
     config = MediaPipeHandDetectionInstanceConfig.model_validate(options | {"runtime": "onnx"})
-    resources = MediaPipeHandDetectionResourceResolver(_source(), config)
+    resources = MediaPipeHandDetectionResourceResolver(
+        _source(),
+        config,
+        MEDIAPIPE_HAND_DETECTION_MANIFEST,
+        MEDIAPIPE_HAND_DETECTION_CONFIG.get_artifact(artifact_id="onnx-float"),
+        MEDIAPIPE_HAND_DETECTION_CONFIG.get_artifact(artifact_id="coreml-fp32"),
+        converter=MEDIAPIPE_HAND_DETECTION_CONVERTER,
+    )
     return MediaPipeHandDetectionInstance(
-        config, OnnxMediaPipeHandDetectionEngine(config, resources)
+        config,
+        OnnxMediaPipeHandDetectionEngine(config, resources),
+        MEDIAPIPE_HAND_DETECTION_MANIFEST,
     )
 
 
@@ -44,9 +56,18 @@ def _create_coreml(options: dict[str, object]) -> MediaPipeHandDetectionInstance
     if requested_device is not None:
         normalized["compute_units"] = requested_device
     config = MediaPipeHandDetectionInstanceConfig.model_validate(normalized | {"runtime": "coreml"})
-    resources = MediaPipeHandDetectionResourceResolver(_source(), config)
+    resources = MediaPipeHandDetectionResourceResolver(
+        _source(),
+        config,
+        MEDIAPIPE_HAND_DETECTION_MANIFEST,
+        MEDIAPIPE_HAND_DETECTION_CONFIG.get_artifact(artifact_id="onnx-float"),
+        MEDIAPIPE_HAND_DETECTION_CONFIG.get_artifact(artifact_id="coreml-fp32"),
+        converter=MEDIAPIPE_HAND_DETECTION_CONVERTER,
+    )
     return MediaPipeHandDetectionInstance(
-        config, CoreMlMediaPipeHandDetectionEngine(config, resources)
+        config,
+        CoreMlMediaPipeHandDetectionEngine(config, resources),
+        MEDIAPIPE_HAND_DETECTION_MANIFEST,
     )
 
 
@@ -55,7 +76,12 @@ MEDIAPIPE_HAND_DETECTION_DEFINITION = ModelDefinition(
     runtime_factories={"onnx": _create_onnx, "coreml": _create_coreml},
     artifacts=MEDIAPIPE_HAND_DETECTION_CONFIG.artifacts,
     converter_ids=("qualcomm.mediapipe-hand-detection",),
-    resource_provider=MediaPipeHandDetectionResourceProvider(_source()),
+    resource_provider=MediaPipeHandDetectionResourceProvider(
+        _source(),
+        MEDIAPIPE_HAND_DETECTION_MANIFEST,
+        MEDIAPIPE_HAND_DETECTION_CONFIG.get_artifact(artifact_id="onnx-float"),
+        MEDIAPIPE_HAND_DETECTION_CONFIG.get_artifact(artifact_id="coreml-fp32"),
+    ),
 )
 
 
@@ -65,6 +91,6 @@ def register_mediapipe_hand_detection(
     *,
     replace: bool = False,
 ) -> ModelDefinition:
-    converters.register(MediaPipeHandDetectionConverter(), replace=replace)
+    converters.register(MEDIAPIPE_HAND_DETECTION_CONVERTER, replace=replace)
     models.register(MEDIAPIPE_HAND_DETECTION_DEFINITION, replace=replace)
     return MEDIAPIPE_HAND_DETECTION_DEFINITION

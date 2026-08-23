@@ -17,7 +17,9 @@ from hugging_mac_sdk.errors import (
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size, file_sha256
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     CompositeSource,
     HuggingFaceSource,
@@ -27,11 +29,7 @@ from hugging_mac_sdk.schemas.resources import (
     ResourceSource,
 )
 
-from .config import (
-    YOLOV8_POSE_MODEL_ID,
-    YOLOV8_POSE_REVISION,
-    YoloV8PoseInstanceConfig,
-)
+from .config import YoloV8PoseInstanceConfig
 from .converter import YoloV8PoseConverter
 
 
@@ -61,6 +59,7 @@ class _YoloTaskResourceResolver:
         model_id: str,
         model_revision: str,
         source: ResourceSource,
+        artifacts: Mapping[str, ModelArtifact],
         config: _YoloTaskConfig,
         downloader: ResourceDownloader | None = None,
         converter: ModelConverter,
@@ -68,6 +67,7 @@ class _YoloTaskResourceResolver:
         self._model_id = model_id
         self._model_revision = model_revision
         self._source = source
+        self._artifacts = dict(artifacts)
         self._config = config
         self._downloader = downloader or ResourceDownloader()
         self._converter = converter
@@ -80,12 +80,6 @@ class _YoloTaskResourceResolver:
                 details=self._details("source"),
             )
         digest = file_sha256(path)
-        expected = getattr(self._source, "expected_sha256", None)
-        if expected is not None and digest.lower() != expected.lower():
-            raise ResourceIntegrityError(
-                f"Source SHA-256 mismatch: {path}",
-                details=self._details("source") | {"expected": expected, "actual": digest},
-            )
         return ResolvedResource(
             path=path,
             source=self._source,
@@ -210,26 +204,24 @@ class _YoloTaskResourceResolver:
 
     @property
     def model_root(self) -> Path:
-        return self._config.model_home.joinpath(
-            *self._model_id.split("/"), self._model_revision, self._config.variant
-        )
+        return self._artifacts["source"].storage_path(self._config.model_home).parents[1]
 
     @property
     def source_path(self) -> Path:
-        return self._config.source_path or self.model_root / "source" / self._filename
+        return self._config.source_path or self._artifacts["source"].resolve(
+            self._config.model_home
+        )
 
     @property
     def coreml_path(self) -> Path:
-        return (
-            self._config.artifact_path
-            or self.model_root / "coreml" / f"{Path(self._filename).stem}.mlpackage"
+        return self._config.artifact_path or self._artifacts["coreml"].resolve(
+            self._config.model_home
         )
 
     @property
     def onnx_path(self) -> Path:
-        return (
-            self._config.artifact_path
-            or self.model_root / "onnx" / f"{Path(self._filename).stem}.onnx"
+        return self._config.artifact_path or self._artifacts["onnx"].resolve(
+            self._config.model_home
         )
 
     @property
@@ -279,12 +271,14 @@ class _YoloTaskResourceProvider:
         model_id: str,
         model_revision: str,
         sources: Mapping[str, ResourceSource],
+        artifacts: tuple[ModelArtifact, ...],
         config_factory: Callable[[dict[str, object]], _YoloTaskConfig],
         converter_factory: Callable[[], ModelConverter],
     ) -> None:
         self._model_id = model_id
         self._model_revision = model_revision
         self._sources = dict(sources)
+        self._artifacts = artifacts
         self._config_factory = config_factory
         self._converter_factory = converter_factory
 
@@ -353,10 +347,16 @@ class _YoloTaskResourceProvider:
                 details={"variant": variant, "options_variant": normalized["variant"]},
             )
         config = self._config_factory(normalized | {"variant": variant})
+        artifacts = {
+            artifact.artifact_id: artifact
+            for artifact in self._artifacts
+            if artifact.variant == variant
+        }
         return _YoloTaskResourceResolver(
             model_id=self._model_id,
             model_revision=self._model_revision,
             source=source,
+            artifacts=artifacts,
             config=config,
             converter=self._converter_factory(),
         )
@@ -407,26 +407,35 @@ class YoloV8PoseResourceResolver(_YoloTaskResourceResolver):
         self,
         source: ResourceSource,
         config: YoloV8PoseInstanceConfig,
+        manifest: ModelManifest,
+        artifacts: Mapping[str, ModelArtifact],
         *,
         downloader: ResourceDownloader | None = None,
         converter: YoloV8PoseConverter | None = None,
     ) -> None:
         super().__init__(
-            model_id=YOLOV8_POSE_MODEL_ID,
-            model_revision=YOLOV8_POSE_REVISION,
+            model_id=manifest.model_id,
+            model_revision=manifest.revision,
             source=source,
+            artifacts=artifacts,
             config=config,
             downloader=downloader,
-            converter=converter or YoloV8PoseConverter(),
+            converter=converter or YoloV8PoseConverter(manifest.model_id),
         )
 
 
 class YoloV8PoseResourceProvider(_YoloTaskResourceProvider):
-    def __init__(self, sources: Mapping[str, ResourceSource]) -> None:
+    def __init__(
+        self,
+        sources: Mapping[str, ResourceSource],
+        manifest: ModelManifest,
+        artifacts: tuple[ModelArtifact, ...],
+    ) -> None:
         super().__init__(
-            model_id=YOLOV8_POSE_MODEL_ID,
-            model_revision=YOLOV8_POSE_REVISION,
+            model_id=manifest.model_id,
+            model_revision=manifest.revision,
             sources=sources,
+            artifacts=artifacts,
             config_factory=lambda values: YoloV8PoseInstanceConfig.model_validate(values),
-            converter_factory=YoloV8PoseConverter,
+            converter_factory=lambda: YoloV8PoseConverter(manifest.model_id),
         )

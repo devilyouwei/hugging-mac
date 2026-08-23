@@ -1,45 +1,43 @@
 manifest:
-  schema_version: "1"
+  schema_version: '1'
   model_id: deepfilternet/deepfilternet3
-  revision: 937bad9811f1ffc1a06ea0d676461b080b2bdc93
   display_name: DeepFilterNet3
   description: Precompiled INT8 Core ML speech denoiser with its required DSP assets.
   tags: [audio, speech-enhancement, denoise, coreml, int8, ane]
   family: deepfilternet
   capabilities: [speech-enhancement]
-  runtimes:
-    - name: coreml
-      devices: [ane, gpu, cpu]
-      dtypes: [int8, float16]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [coremltools, numpy, scipy, soundfile]
-  variants:
-    - name: default
-      display_name: DeepFilterNet3 INT8 Core ML
-      metadata:
-        parameters_millions: 2.1
-        sample_rate: 48000
-        frame_ms: 10
-      resources:
-        - kind: huggingface
-          repo_id: aufklarer/DeepFilterNet3-CoreML
-          revision: 937bad9811f1ffc1a06ea0d676461b080b2bdc93
-          allow_patterns: [DeepFilterNet3.mlmodelc/**, auxiliary.npz, config.json]
-  default_variant: default
-  license: Apache-2.0
   source_url: https://huggingface.co/aufklarer/DeepFilterNet3-CoreML
+  license: Apache-2.0
+
+  runtimes:
+  - name: coreml
+    devices: [ane, gpu, cpu]
+    dtypes: [int8, float16]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coremltools, numpy, scipy, soundfile]
   default_runtime: coreml
+  variants:
+  - name: default
+    display_name: DeepFilterNet3 INT8 Core ML
+    metadata:
+      parameters_millions: 2.1
+      sample_rate: 48000
+      frame_ms: 10
+  default_variant: default
 
 artifacts:
-  - artifact_id: coreml-int8
-    variant: default
-    runtime: coreml
-    format: coreml
-    path: deepfilternet/deepfilternet3/937bad9811f1ffc1a06ea0d676461b080b2bdc93/default/coreml/model
-    kind: directory
-    source:
-      kind: huggingface
-      repo_id: aufklarer/DeepFilterNet3-CoreML
-      revision: 937bad9811f1ffc1a06ea0d676461b080b2bdc93
-      allow_patterns: [DeepFilterNet3.mlmodelc/**, auxiliary.npz, config.json]
+- artifact_id: coreml-int8
+  variant: default
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: deepfilternet/deepfilternet3/default/coreml/coreml-int8
+  required_files: [DeepFilterNet3.mlmodelc/model.mil, DeepFilterNet3.mlmodelc/weights/weight.bin, auxiliary.npz, config.json]
+  source:
+    kind: huggingface
+    repo_id: aufklarer/DeepFilterNet3-CoreML
+    allow_patterns:
+    - DeepFilterNet3.mlmodelc/**
+    - auxiliary.npz
+    - config.json

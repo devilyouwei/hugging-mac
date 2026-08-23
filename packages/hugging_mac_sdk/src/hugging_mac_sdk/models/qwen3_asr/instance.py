@@ -8,17 +8,14 @@ from typing import Protocol, cast
 from hugging_mac_sdk.capabilities import SpeechTranscription
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import InferenceError
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.transcription import (
     TranscriptionRequest,
     TranscriptionResponse,
     TranscriptionTimings,
 )
 
-from .config import (
-    QWEN3_ASR_COREML_MODEL_ID,
-    QWEN3_ASR_COREML_REVISION,
-    Qwen3AsrCoreMlInstanceConfig,
-)
+from .config import Qwen3AsrCoreMlInstanceConfig
 from .utils.audio import prepare_audio
 from .utils.types import AsrEngineOutput, PreparedAudio
 
@@ -37,15 +34,22 @@ class Qwen3AsrCoreMlEngine(Protocol):
 
 
 class Qwen3AsrCoreMlInstance(BaseModelInstance):
-    def __init__(self, config: Qwen3AsrCoreMlInstanceConfig, engine: Qwen3AsrCoreMlEngine) -> None:
+    def __init__(
+        self,
+        config: Qwen3AsrCoreMlInstanceConfig,
+        engine: Qwen3AsrCoreMlEngine,
+        manifest: ModelManifest,
+    ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=QWEN3_ASR_COREML_MODEL_ID,
-            revision=QWEN3_ASR_COREML_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=config.device,
         )
         self._engine = engine
+        self._manifest_model_id = manifest.model_id
         self._config = config
         self._inference_lock = asyncio.Lock()
         self.register_capability(
@@ -80,7 +84,7 @@ class Qwen3AsrCoreMlInstance(BaseModelInstance):
         text = output.text.strip()
         postprocess_ms = (perf_counter() - started) * 1000
         return TranscriptionResponse(
-            model_id=QWEN3_ASR_COREML_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

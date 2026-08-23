@@ -22,8 +22,6 @@ from hugging_mac_sdk.schemas.conversion import (
     ConversionResult,
 )
 
-from .config import AUDIO8_ASR_MODEL_ID
-
 _COPIED_CONFIG_FILES = (
     "config.json",
     "generation_config.json",
@@ -35,6 +33,10 @@ _COPIED_CONFIG_FILES = (
 class Audio8AsrConverter(ModelConverter):
     """Convert the audio tower to Core ML and package the cached Qwen2 decoder."""
 
+    def __init__(self, model_id: str, variant: str) -> None:
+        self._model_id = model_id
+        self._variant = variant
+
     @property
     def converter_id(self) -> str:
         return "audio8.audio8-asr-0.1b"
@@ -45,8 +47,8 @@ class Audio8AsrConverter(ModelConverter):
 
     def supports(self, request: ConversionRequest) -> bool:
         return (
-            request.model_id == AUDIO8_ASR_MODEL_ID
-            and request.variant == "0.1b"
+            request.model_id == self._model_id
+            and request.variant == self._variant
             and request.source_format is ArtifactFormat.SAFETENSORS
             and request.target_format is ArtifactFormat.COREML
             and request.source.path.is_dir()

@@ -2,7 +2,7 @@
 
 ## Summary
 
-Canonical package for `nvidia/nemotron-3.5-asr-streaming-0.6b`. It consumes FluidInference's pinned, precompiled Core ML derivative and provides short-form multilingual transcription through the SDK capability API.
+Canonical package for `nvidia/nemotron-3.5-asr-streaming-0.6b`. It consumes FluidInference's precompiled Core ML derivative and provides short-form multilingual transcription through the SDK capability API.
 
 ## Runtimes and variants
 
@@ -18,7 +18,7 @@ Canonical package for `nvidia/nemotron-3.5-asr-streaming-0.6b`. It consumes Flui
 ## Package structure
 
 - `__init__.py`: definition, manifest, and registration exports.
-- `model.yaml`: canonical identity, pinned Core ML sources, variants, runtime, and artifacts.
+- `model.yaml`: canonical identity, trusted Core ML sources, download selections, variants, runtime, and artifacts.
 - `config.py`: frozen Core ML/resource options and variant parsing.
 - `definition.py`: Core ML factory and registry binding.
 - `instance.py`: lifecycle, locking, preprocessing, and capability response.

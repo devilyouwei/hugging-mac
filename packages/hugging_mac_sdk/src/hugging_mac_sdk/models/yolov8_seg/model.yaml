@@ -1,108 +1,144 @@
 manifest:
-  schema_version: "1"
+  schema_version: '1'
   model_id: ultralytics/yolov8-seg
-  revision: v8.2.0
   display_name: Ultralytics YOLOv8 Seg
   description: 为每个检测目标输出实例轮廓的 YOLOv8 分割模型。
   tags: [vision, instance-segmentation, yolo]
   family: yolov8
   capabilities: [instance-segmentation]
-  runtimes:
-    - name: pytorch-mps
-      devices: [mps, cpu]
-      dtypes: [float32]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [torch]
-    - name: coreml
-      devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
-      dtypes: [float16, float32]
-      quantizations: [float16, int8]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [coremltools]
-    - name: onnx
-      devices: [coreml, cpu]
-      dtypes: [float32]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [onnxruntime]
-  variants:
-    - name: n
-      display_name: YOLOv8 Seg Nano
-      description: 轻量实例分割权重。
-      metadata: {source_size_bytes: 7071756}
-      resources:
-        - kind: url_file
-          url: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n-seg.pt
-    - name: s
-      display_name: YOLOv8 Seg Small
-      description: 平衡速度和精度的实例分割权重。
-      metadata: {source_size_bytes: 23914764}
-      resources:
-        - kind: url_file
-          url: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8s-seg.pt
-    - name: m
-      display_name: YOLOv8 Seg Medium
-      description: 更高精度的实例分割权重。
-      metadata: {source_size_bytes: 54921020}
-      resources:
-        - kind: url_file
-          url: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8m-seg.pt
-  default_variant: n
-  license: AGPL-3.0
   source_url: https://github.com/ultralytics/assets/releases/tag/v8.2.0
+  license: AGPL-3.0
+
+  runtimes:
+  - name: pytorch-mps
+    devices: [mps, cpu]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [torch]
+  - name: coreml
+    devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
+    dtypes: [float16, float32]
+    quantizations: [float16, int8]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coremltools]
+  - name: onnx
+    devices: [coreml, cpu]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [onnxruntime]
   default_runtime: coreml
+  variants:
+  - name: n
+    display_name: YOLOv8 Seg Nano
+    description: 轻量实例分割权重。
+    metadata:
+      source_size_bytes: 7071756
+  - name: s
+    display_name: YOLOv8 Seg Small
+    description: 平衡速度和精度的实例分割权重。
+    metadata:
+      source_size_bytes: 23914764
+  - name: m
+    display_name: YOLOv8 Seg Medium
+    description: 更高精度的实例分割权重。
+    metadata:
+      source_size_bytes: 54921020
+  default_variant: n
 
 artifacts:
-  - {artifact_id: source, variant: n, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-seg/v8.2.0/n/source/yolov8n-seg.pt, kind: file}
-  - artifact_id: coreml
-    variant: n
-    runtime: coreml
-    format: coreml
-    path: ultralytics/yolov8-seg/v8.2.0/n/coreml/yolov8n-seg.mlpackage
-    kind: directory
-    convert: true
-    expected_sha256: 40e067215baf17be1d4c1a63483538d0fa39c5d0f231cb63248c404e929ce9bc
-    source:
-      kind: huggingface
-      repo_id: hugging-mac/yolov8-seg-coreml
-      revision: df834eb3ceacfd395690498f7ab3a96447c78f0c
-      allow_patterns: [yolov8n-seg.mlpackage/Manifest.json, yolov8n-seg.mlpackage/Data/**]
-      strip_prefix: yolov8n-seg.mlpackage
-      expected_sha256: 40e067215baf17be1d4c1a63483538d0fa39c5d0f231cb63248c404e929ce9bc
-  - {artifact_id: onnx, variant: n, runtime: onnx, format: onnx, path: ultralytics/yolov8-seg/v8.2.0/n/onnx/yolov8n-seg.onnx, kind: file, convert: true}
-  - {artifact_id: source, variant: s, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-seg/v8.2.0/s/source/yolov8s-seg.pt, kind: file}
-  - artifact_id: coreml
-    variant: s
-    runtime: coreml
-    format: coreml
-    path: ultralytics/yolov8-seg/v8.2.0/s/coreml/yolov8s-seg.mlpackage
-    kind: directory
-    convert: true
-    expected_sha256: ab06bcad128a494510f6451c22cdebb79a58db01f628e9a9a60216b246691399
-    source:
-      kind: huggingface
-      repo_id: hugging-mac/yolov8-seg-coreml
-      revision: df834eb3ceacfd395690498f7ab3a96447c78f0c
-      allow_patterns: [yolov8s-seg.mlpackage/Manifest.json, yolov8s-seg.mlpackage/Data/**]
-      strip_prefix: yolov8s-seg.mlpackage
-      expected_sha256: ab06bcad128a494510f6451c22cdebb79a58db01f628e9a9a60216b246691399
-  - {artifact_id: onnx, variant: s, runtime: onnx, format: onnx, path: ultralytics/yolov8-seg/v8.2.0/s/onnx/yolov8s-seg.onnx, kind: file, convert: true}
-  - {artifact_id: source, variant: m, runtime: pytorch-mps, format: pytorch, path: ultralytics/yolov8-seg/v8.2.0/m/source/yolov8m-seg.pt, kind: file}
-  - artifact_id: coreml
-    variant: m
-    runtime: coreml
-    format: coreml
-    path: ultralytics/yolov8-seg/v8.2.0/m/coreml/yolov8m-seg.mlpackage
-    kind: directory
-    convert: true
-    expected_sha256: 685049dbc644c5f9abd088aa398942b052d3256819dfe7bf27456e7136c0e6a5
-    source:
-      kind: huggingface
-      repo_id: hugging-mac/yolov8-seg-coreml
-      revision: df834eb3ceacfd395690498f7ab3a96447c78f0c
-      allow_patterns: [yolov8m-seg.mlpackage/Manifest.json, yolov8m-seg.mlpackage/Data/**]
-      strip_prefix: yolov8m-seg.mlpackage
-      expected_sha256: 685049dbc644c5f9abd088aa398942b052d3256819dfe7bf27456e7136c0e6a5
-  - {artifact_id: onnx, variant: m, runtime: onnx, format: onnx, path: ultralytics/yolov8-seg/v8.2.0/m/onnx/yolov8m-seg.onnx, kind: file, convert: true}
+- artifact_id: source
+  variant: n
+  runtime: pytorch-mps
+  format: pytorch
+  kind: file
+  path: ultralytics/yolov8-seg/n/pytorch-mps/source/yolov8n-seg.pt
+  source:
+    kind: url_file
+    url: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n-seg.pt
+- artifact_id: coreml
+  convert: true
+  variant: n
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: ultralytics/yolov8-seg/n/coreml/coreml
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/yolov8-seg-coreml
+    allow_patterns:
+    - yolov8n-seg.mlpackage/Manifest.json
+    - yolov8n-seg.mlpackage/Data/**
+    strip_prefix: yolov8n-seg.mlpackage
+  required_files: [Manifest.json]
+- artifact_id: onnx
+  convert: true
+  variant: n
+  runtime: onnx
+  format: onnx
+  kind: file
+  path: ultralytics/yolov8-seg/n/onnx/onnx/yolov8n-seg.onnx
+- artifact_id: source
+  variant: s
+  runtime: pytorch-mps
+  format: pytorch
+  kind: file
+  path: ultralytics/yolov8-seg/s/pytorch-mps/source/yolov8s-seg.pt
+  source:
+    kind: url_file
+    url: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8s-seg.pt
+- artifact_id: coreml
+  convert: true
+  variant: s
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: ultralytics/yolov8-seg/s/coreml/coreml
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/yolov8-seg-coreml
+    allow_patterns:
+    - yolov8s-seg.mlpackage/Manifest.json
+    - yolov8s-seg.mlpackage/Data/**
+    strip_prefix: yolov8s-seg.mlpackage
+  required_files: [Manifest.json]
+- artifact_id: onnx
+  convert: true
+  variant: s
+  runtime: onnx
+  format: onnx
+  kind: file
+  path: ultralytics/yolov8-seg/s/onnx/onnx/yolov8s-seg.onnx
+- artifact_id: source
+  variant: m
+  runtime: pytorch-mps
+  format: pytorch
+  kind: file
+  path: ultralytics/yolov8-seg/m/pytorch-mps/source/yolov8m-seg.pt
+  source:
+    kind: url_file
+    url: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8m-seg.pt
+- artifact_id: coreml
+  convert: true
+  variant: m
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: ultralytics/yolov8-seg/m/coreml/coreml
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/yolov8-seg-coreml
+    allow_patterns:
+    - yolov8m-seg.mlpackage/Manifest.json
+    - yolov8m-seg.mlpackage/Data/**
+    strip_prefix: yolov8m-seg.mlpackage
+  required_files: [Manifest.json]
+- artifact_id: onnx
+  convert: true
+  variant: m
+  runtime: onnx
+  format: onnx
+  kind: file
+  path: ultralytics/yolov8-seg/m/onnx/onnx/yolov8m-seg.onnx

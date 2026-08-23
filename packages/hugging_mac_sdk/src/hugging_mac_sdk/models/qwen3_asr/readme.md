@@ -2,7 +2,7 @@
 
 ## Summary
 
-Canonical package for `qwen/qwen3-asr`. It currently manages a pinned prebuilt Core ML encoder, embedding graph, and stateful decoder graph set.
+Canonical package for `qwen/qwen3-asr`. It currently manages a prebuilt Core ML encoder, embedding graph, and stateful decoder graph set.
 
 ## Runtimes and variants
 
@@ -26,6 +26,6 @@ The package implements `SpeechTranscription.transcribe(TranscriptionRequest) -> 
 - `resources.py`: graph-and-tokenizer bundle validation, status, download, and deletion.
 
 The catalog exposes one install action for `coreml-int8`. Before downloading that runtime artifact,
-the shared-artifact layer checks and installs the three tokenizer files from the pinned official
-`Qwen/Qwen3-ASR-0.6B` revision. The tokenizer remains reusable if another runtime or variant is
+the shared-artifact layer checks and installs the three tokenizer files from the official
+`Qwen/Qwen3-ASR-0.6B` repository. The tokenizer remains reusable if another runtime or variant is
 installed later.

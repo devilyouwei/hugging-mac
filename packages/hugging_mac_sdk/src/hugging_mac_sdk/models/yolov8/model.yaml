@@ -1,153 +1,150 @@
 manifest:
-  schema_version: "1"
+  schema_version: '1'
   model_id: ultralytics/yolov8
-  revision: 8a9e1a5
   display_name: Ultralytics YOLOv8
   description: 共享检测结构和输入输出协议、支持多种权重规模的实时 COCO 目标检测模型。
   tags: [vision, object-detection, yolo]
   family: yolov8
   capabilities: [object-detection]
-  runtimes:
-    - name: pytorch-mps
-      devices: [mps, cpu]
-      dtypes: [float32]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [torch]
-    - name: coreml
-      devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
-      dtypes: [float16, float32]
-      quantizations: [float16, int8]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [coremltools]
-    - name: onnx
-      devices: [coreml, cpu]
-      dtypes: [float32]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [onnxruntime]
-  variants:
-    - name: n
-      display_name: YOLOv8 Nano
-      description: 最小、最快的 YOLOv8 检测权重。
-      metadata: {parameters_millions: 3.2, source_size_bytes: 6534387}
-      resources:
-        - kind: huggingface
-          repo_id: Ultralytics/YOLOv8
-          revision: 8a9e1a5
-          filename: yolov8n.pt
-          expected_sha256: 31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95
-    - name: s
-      display_name: YOLOv8 Small
-      description: 在速度和精度之间取得平衡的较小权重。
-      metadata: {parameters_millions: 11.2, source_size_bytes: 22573363}
-      resources:
-        - kind: huggingface
-          repo_id: Ultralytics/YOLOv8
-          revision: 8a9e1a5
-          filename: yolov8s.pt
-          expected_sha256: 268e5bb54c640c96c3510224833bc2eeacab4135c6deb41502156e39986b562d
-    - name: m
-      display_name: YOLOv8 Medium
-      description: 更高精度、计算和内存开销更高的中型权重。
-      metadata: {parameters_millions: 25.9, source_size_bytes: 52117635}
-      resources:
-        - kind: huggingface
-          repo_id: Ultralytics/YOLOv8
-          revision: 8a9e1a5
-          filename: yolov8m.pt
-          expected_sha256: 6c25b0b63b1a433843f06d821a9ac1deb8d5805f74f0f38772c7308c5adc55a5
-  default_variant: n
-  license: AGPL-3.0
   source_url: https://huggingface.co/Ultralytics/YOLOv8
+  license: AGPL-3.0
+
+  runtimes:
+  - name: pytorch-mps
+    devices: [mps, cpu]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [torch]
+  - name: coreml
+    devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
+    dtypes: [float16, float32]
+    quantizations: [float16, int8]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coremltools]
+  - name: onnx
+    devices: [coreml, cpu]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [onnxruntime]
   default_runtime: coreml
+  variants:
+  - name: n
+    display_name: YOLOv8 Nano
+    description: 最小、最快的 YOLOv8 检测权重。
+    metadata:
+      parameters_millions: 3.2
+      source_size_bytes: 6534387
+  - name: s
+    display_name: YOLOv8 Small
+    description: 在速度和精度之间取得平衡的较小权重。
+    metadata:
+      parameters_millions: 11.2
+      source_size_bytes: 22573363
+  - name: m
+    display_name: YOLOv8 Medium
+    description: 更高精度、计算和内存开销更高的中型权重。
+    metadata:
+      parameters_millions: 25.9
+      source_size_bytes: 52117635
+  default_variant: n
 
 artifacts:
-  - artifact_id: source
-    variant: n
-    runtime: pytorch-mps
-    format: pytorch
-    path: ultralytics/yolov8/8a9e1a5/n/source/yolov8n.pt
-    kind: file
-    source:
-      kind: huggingface
-      repo_id: Ultralytics/YOLOv8
-      revision: 8a9e1a5
-      filename: yolov8n.pt
-      expected_sha256: 31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95
-    expected_sha256: 31e20dde3def09e2cf938c7be6fe23d9150bbbe503982af13345706515f2ef95
-  - artifact_id: coreml
-    convert: true
-    variant: n
-    runtime: coreml
-    format: coreml
-    path: ultralytics/yolov8/8a9e1a5/n/coreml/yolov8n.mlpackage
-    kind: directory
-    expected_sha256: c8eb62862dddac01512e47469e5dc15ad707d85c2d713d78a5b17b17d365f4a4
-    source:
-      kind: huggingface
-      repo_id: hugging-mac/yolov8-coreml
-      revision: 6de29a7726591776b001f51dcb1cb45b0c49b9d5
-      allow_patterns: [yolov8n.mlpackage/Manifest.json, yolov8n.mlpackage/Data/**]
-      strip_prefix: yolov8n.mlpackage
-      expected_sha256: c8eb62862dddac01512e47469e5dc15ad707d85c2d713d78a5b17b17d365f4a4
-  - {artifact_id: onnx, variant: n, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/n/onnx/yolov8n.onnx, kind: file, convert: true}
-  - artifact_id: source
-    variant: s
-    runtime: pytorch-mps
-    format: pytorch
-    path: ultralytics/yolov8/8a9e1a5/s/source/yolov8s.pt
-    kind: file
-    source:
-      kind: huggingface
-      repo_id: Ultralytics/YOLOv8
-      revision: 8a9e1a5
-      filename: yolov8s.pt
-      expected_sha256: 268e5bb54c640c96c3510224833bc2eeacab4135c6deb41502156e39986b562d
-    expected_sha256: 268e5bb54c640c96c3510224833bc2eeacab4135c6deb41502156e39986b562d
-  - artifact_id: coreml
-    convert: true
-    variant: s
-    runtime: coreml
-    format: coreml
-    path: ultralytics/yolov8/8a9e1a5/s/coreml/yolov8s.mlpackage
-    kind: directory
-    expected_sha256: c5178bbaf83f8d4be513e2ce6f8081d44882466ab4a4eb62c704e1c9c95d3eac
-    source:
-      kind: huggingface
-      repo_id: hugging-mac/yolov8-coreml
-      revision: 6de29a7726591776b001f51dcb1cb45b0c49b9d5
-      allow_patterns: [yolov8s.mlpackage/Manifest.json, yolov8s.mlpackage/Data/**]
-      strip_prefix: yolov8s.mlpackage
-      expected_sha256: c5178bbaf83f8d4be513e2ce6f8081d44882466ab4a4eb62c704e1c9c95d3eac
-  - {artifact_id: onnx, variant: s, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/s/onnx/yolov8s.onnx, kind: file, convert: true}
-  - artifact_id: source
-    variant: m
-    runtime: pytorch-mps
-    format: pytorch
-    path: ultralytics/yolov8/8a9e1a5/m/source/yolov8m.pt
-    kind: file
-    source:
-      kind: huggingface
-      repo_id: Ultralytics/YOLOv8
-      revision: 8a9e1a5
-      filename: yolov8m.pt
-      expected_sha256: 6c25b0b63b1a433843f06d821a9ac1deb8d5805f74f0f38772c7308c5adc55a5
-    expected_sha256: 6c25b0b63b1a433843f06d821a9ac1deb8d5805f74f0f38772c7308c5adc55a5
-  - artifact_id: coreml
-    convert: true
-    variant: m
-    runtime: coreml
-    format: coreml
-    path: ultralytics/yolov8/8a9e1a5/m/coreml/yolov8m.mlpackage
-    kind: directory
-    expected_sha256: d4e4e1a92b891cd8cfc3c41e15a57b92b26abc263deed6dc409874c1fbefe6a5
-    source:
-      kind: huggingface
-      repo_id: hugging-mac/yolov8-coreml
-      revision: 6de29a7726591776b001f51dcb1cb45b0c49b9d5
-      allow_patterns: [yolov8m.mlpackage/Manifest.json, yolov8m.mlpackage/Data/**]
-      strip_prefix: yolov8m.mlpackage
-      expected_sha256: d4e4e1a92b891cd8cfc3c41e15a57b92b26abc263deed6dc409874c1fbefe6a5
-  - {artifact_id: onnx, variant: m, runtime: onnx, format: onnx, path: ultralytics/yolov8/8a9e1a5/m/onnx/yolov8m.onnx, kind: file, convert: true}
+- artifact_id: source
+  variant: n
+  runtime: pytorch-mps
+  format: pytorch
+  kind: file
+  path: ultralytics/yolov8/n/pytorch-mps/source/yolov8n.pt
+  source:
+    kind: huggingface
+    repo_id: Ultralytics/YOLOv8
+    filename: yolov8n.pt
+- artifact_id: coreml
+  convert: true
+  variant: n
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: ultralytics/yolov8/n/coreml/coreml
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/yolov8-coreml
+    allow_patterns:
+    - yolov8n.mlpackage/Manifest.json
+    - yolov8n.mlpackage/Data/**
+    strip_prefix: yolov8n.mlpackage
+  required_files: [Manifest.json]
+- artifact_id: onnx
+  convert: true
+  variant: n
+  runtime: onnx
+  format: onnx
+  kind: file
+  path: ultralytics/yolov8/n/onnx/onnx/yolov8n.onnx
+- artifact_id: source
+  variant: s
+  runtime: pytorch-mps
+  format: pytorch
+  kind: file
+  path: ultralytics/yolov8/s/pytorch-mps/source/yolov8s.pt
+  source:
+    kind: huggingface
+    repo_id: Ultralytics/YOLOv8
+    filename: yolov8s.pt
+- artifact_id: coreml
+  convert: true
+  variant: s
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: ultralytics/yolov8/s/coreml/coreml
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/yolov8-coreml
+    allow_patterns:
+    - yolov8s.mlpackage/Manifest.json
+    - yolov8s.mlpackage/Data/**
+    strip_prefix: yolov8s.mlpackage
+  required_files: [Manifest.json]
+- artifact_id: onnx
+  convert: true
+  variant: s
+  runtime: onnx
+  format: onnx
+  kind: file
+  path: ultralytics/yolov8/s/onnx/onnx/yolov8s.onnx
+- artifact_id: source
+  variant: m
+  runtime: pytorch-mps
+  format: pytorch
+  kind: file
+  path: ultralytics/yolov8/m/pytorch-mps/source/yolov8m.pt
+  source:
+    kind: huggingface
+    repo_id: Ultralytics/YOLOv8
+    filename: yolov8m.pt
+- artifact_id: coreml
+  convert: true
+  variant: m
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: ultralytics/yolov8/m/coreml/coreml
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/yolov8-coreml
+    allow_patterns:
+    - yolov8m.mlpackage/Manifest.json
+    - yolov8m.mlpackage/Data/**
+    strip_prefix: yolov8m.mlpackage
+  required_files: [Manifest.json]
+- artifact_id: onnx
+  convert: true
+  variant: m
+  runtime: onnx
+  format: onnx
+  kind: file
+  path: ultralytics/yolov8/m/onnx/onnx/yolov8m.onnx

@@ -18,8 +18,9 @@ from hugging_mac_sdk.schemas.chat import (
     ChatStreamEvent,
     ChatTimings,
 )
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 
-from .config import QWEN3_5_MLX_MODEL_ID, Qwen35MlxInstanceConfig
+from .config import Qwen35MlxInstanceConfig
 from .utils.types import GenerationOutput
 
 
@@ -36,15 +37,19 @@ class Qwen35Engine(Protocol):
 
 
 class Qwen35MlxInstance(BaseModelInstance):
-    def __init__(self, config: Qwen35MlxInstanceConfig, engine: Qwen35Engine) -> None:
+    def __init__(
+        self, config: Qwen35MlxInstanceConfig, engine: Qwen35Engine, manifest: ModelManifest
+    ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=QWEN3_5_MLX_MODEL_ID,
-            revision="variant-pinned",
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=config.device,
         )
         self._engine, self._inference_lock = engine, asyncio.Lock()
+        self._manifest_model_id = manifest.model_id
         self.register_capability(Chat, cast(Chat, self))  # type: ignore[type-abstract]
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
@@ -61,7 +66,7 @@ class Qwen35MlxInstance(BaseModelInstance):
                     "Qwen3.5 chat failed", details={"reason": str(error)[:500]}, cause=error
                 ) from error
         return ChatResponse(
-            model_id=QWEN3_5_MLX_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

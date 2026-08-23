@@ -16,7 +16,9 @@ from hugging_mac_sdk.errors import (
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     ModelArtifactStatus,
     ModelResourceStatus,
@@ -24,20 +26,8 @@ from hugging_mac_sdk.schemas.resources import (
     UrlArchiveSource,
 )
 
-from .config import (
-    MEDIAPIPE_HAND_DETECTION_MODEL_ID,
-    MEDIAPIPE_HAND_DETECTION_REVISION,
-    MediaPipeHandDetectionInstanceConfig,
-)
+from .config import MediaPipeHandDetectionInstanceConfig
 from .converter import MediaPipeHandDetectionConverter
-
-_REQUIRED = (
-    "hand_detector.onnx",
-    "hand_detector.data",
-    "hand_landmark_detector.onnx",
-    "hand_landmark_detector.data",
-    "metadata.json",
-)
 
 
 class MediaPipeHandDetectionResourceResolver:
@@ -45,24 +35,24 @@ class MediaPipeHandDetectionResourceResolver:
         self,
         source: UrlArchiveSource,
         config: MediaPipeHandDetectionInstanceConfig,
+        manifest: ModelManifest,
+        source_artifact: ModelArtifact,
+        coreml_artifact: ModelArtifact,
         *,
         downloader: ResourceDownloader | None = None,
         converter: MediaPipeHandDetectionConverter | None = None,
     ) -> None:
         self._source = source
         self._config = config
+        self._manifest = manifest
+        self._source_artifact = source_artifact
+        self._coreml_artifact = coreml_artifact
         self._downloader = downloader or ResourceDownloader()
-        self._converter = converter or MediaPipeHandDetectionConverter()
+        self._converter = converter or MediaPipeHandDetectionConverter(manifest.model_id)
 
     @property
     def model_root(self) -> Path:
-        return (
-            self._config.model_home
-            / "qualcomm"
-            / "mediapipe-hand-detection"
-            / MEDIAPIPE_HAND_DETECTION_REVISION
-            / self._config.variant
-        )
+        return self._source_artifact.storage_path(self._config.model_home).parents[1]
 
     @property
     def source_path(self) -> Path:
@@ -70,16 +60,20 @@ class MediaPipeHandDetectionResourceResolver:
             return self._config.source_path
         if self._config.runtime == "onnx" and self._config.artifact_path is not None:
             return self._config.artifact_path
-        return self.model_root / "onnx"
+        return self._source_artifact.resolve(self._config.model_home)
 
     @property
     def coreml_path(self) -> Path:
         if self._config.runtime == "coreml" and self._config.artifact_path is not None:
             return self._config.artifact_path
-        return self.model_root / "coreml"
+        return self._coreml_artifact.resolve(self._config.model_home)
 
     async def resolve_source(self) -> ResolvedResource:
-        missing = [name for name in _REQUIRED if not (self.source_path / name).is_file()]
+        missing = [
+            name
+            for name in self._source_artifact.required_files
+            if not (self.source_path / name).is_file()
+        ]
         if missing:
             raise ResourceNotFoundError(
                 "MediaPipe Hand Detection ONNX source is not downloaded",
@@ -94,10 +88,7 @@ class MediaPipeHandDetectionResourceResolver:
 
     async def resolve_coreml(self) -> ResolvedResource:
         path = self.coreml_path
-        required = (
-            path / "hand_detector.mlpackage" / "Manifest.json",
-            path / "hand_landmark_detector.mlpackage" / "Manifest.json",
-        )
+        required = tuple(path / name for name in self._coreml_artifact.required_files)
         if not path.is_dir() or not all(item.is_file() for item in required):
             raise ResourceNotFoundError(
                 "MediaPipe Hand Detection Core ML detector and landmark artifacts "
@@ -131,8 +122,8 @@ class MediaPipeHandDetectionResourceResolver:
         source = await self.resolve_source()
         await self._converter.convert(
             ConversionRequest(
-                model_id=MEDIAPIPE_HAND_DETECTION_MODEL_ID,
-                model_revision=MEDIAPIPE_HAND_DETECTION_REVISION,
+                model_id=self._manifest.model_id,
+                model_revision=self._manifest.revision,
                 variant=self._config.variant,
                 source=source,
                 source_format=ArtifactFormat.ONNX,
@@ -144,14 +135,15 @@ class MediaPipeHandDetectionResourceResolver:
         )
 
     def status(self) -> ModelResourceStatus:
-        source_available = all((self.source_path / name).is_file() for name in _REQUIRED)
+        source_available = all(
+            (self.source_path / name).is_file() for name in self._source_artifact.required_files
+        )
         coreml_available = all(
-            (self.coreml_path / name / "Manifest.json").is_file()
-            for name in ("hand_detector.mlpackage", "hand_landmark_detector.mlpackage")
+            (self.coreml_path / name).is_file() for name in self._coreml_artifact.required_files
         )
         return ModelResourceStatus(
-            model_id=MEDIAPIPE_HAND_DETECTION_MODEL_ID,
-            revision=MEDIAPIPE_HAND_DETECTION_REVISION,
+            model_id=self._manifest.model_id,
+            revision=self._manifest.revision,
             variant=self._config.variant,
             artifacts=(
                 _status(
@@ -193,8 +185,17 @@ class MediaPipeHandDetectionResourceResolver:
 
 
 class MediaPipeHandDetectionResourceProvider:
-    def __init__(self, source: UrlArchiveSource) -> None:
+    def __init__(
+        self,
+        source: UrlArchiveSource,
+        manifest: ModelManifest,
+        source_artifact: ModelArtifact,
+        coreml_artifact: ModelArtifact,
+    ) -> None:
         self._source = source
+        self._manifest = manifest
+        self._source_artifact = source_artifact
+        self._coreml_artifact = coreml_artifact
 
     def _resolver(
         self,
@@ -209,6 +210,9 @@ class MediaPipeHandDetectionResourceProvider:
         return MediaPipeHandDetectionResourceResolver(
             self._source,
             MediaPipeHandDetectionInstanceConfig.model_validate(normalized | {"variant": variant}),
+            self._manifest,
+            self._source_artifact,
+            self._coreml_artifact,
         )
 
     async def status(

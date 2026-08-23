@@ -31,9 +31,7 @@ class CoreMlSenseVoiceSmallEngine:
         # Core ML / Accelerate objects are native and are not reliably thread-affine
         # when successive calls are dispatched through asyncio's shared executor.
         # Keep all prediction work for this engine on one dedicated OS thread.
-        self._executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="sensevoice-coreml"
-        )
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sensevoice-coreml")
         self._tokenizer: Any | None = None
         self._artifact: Path | None = None
 
@@ -49,10 +47,7 @@ class CoreMlSenseVoiceSmallEngine:
     async def load(self, artifact: Path) -> None:
         sentencepiece = importlib.import_module("sentencepiece")
         self._tokenizer = sentencepiece.SentencePieceProcessor(
-            model_file=str(
-                self._resources.tokenizer_path
-                / "chn_jpn_yue_eng_ko_spectok.bpe.model"
-            )
+            model_file=str(self._resources.tokenizer_path / "chn_jpn_yue_eng_ko_spectok.bpe.model")
         )
         self._artifact = artifact
 

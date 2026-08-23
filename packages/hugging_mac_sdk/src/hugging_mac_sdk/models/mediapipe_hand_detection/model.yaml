@@ -1,73 +1,65 @@
 manifest:
-  schema_version: "1"
+  schema_version: '1'
   model_id: qualcomm/mediapipe-hand-detection
-  revision: 013e27b599e37c3b4c69439de15de53cc5b5708e
   display_name: MediaPipe Hand Detection
   description: Qualcomm AI Hub 发布的 MediaPipe Hand 双模型流水线，输出手框并可选输出 21 个手部关键点。
   tags: [vision, hand-detection, hand-landmarks, mediapipe, onnx]
   family: mediapipe-hand
   capabilities: [hand-detection]
-  runtimes:
-    - name: onnx
-      devices: [auto, coreml, cpu]
-      dtypes: [float32]
-      platforms: [darwin]
-      architectures: [arm64, x86_64]
-      required_modules: [onnxruntime, numpy, PIL]
-    - name: coreml
-      devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
-      dtypes: [float32]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [coremltools, numpy, PIL]
-  variants:
-    - name: float
-      display_name: MediaPipe Hand float
-      description: Qualcomm AI Hub v0.60.0 通用 float ONNX 发布包；包含 palm detector 与可选加载的 hand landmark detector。
-      metadata:
-        release: 0.60.0
-        input_size: 256
-        detector_parameters: 1760000
-        landmark_parameters: 2010000
-        landmark_points: 21
-      resources:
-        - kind: url_archive
-          url: https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/mediapipe_hand/releases/v0.60.0/mediapipe_hand-onnx-float.zip
-          format: zip
-          strip_components: 1
-          expected_sha256: 712063283b6b5c86c87ae631a84d16e832828d4d523cedc3d11a5a637ae96f69
-  default_variant: float
-  license: other
   source_url: https://huggingface.co/qualcomm/MediaPipe-Hand-Detection
+  license: other
+
+  runtimes:
+  - name: onnx
+    devices: [auto, coreml, cpu]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64, x86_64]
+    required_modules: [onnxruntime, numpy, PIL]
+  - name: coreml
+    devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coremltools, numpy, PIL]
   default_runtime: coreml
+  variants:
+  - name: float
+    display_name: MediaPipe Hand float
+    description: Qualcomm AI Hub v0.60.0 通用 float ONNX 发布包；包含 palm detector 与可选加载的 hand landmark detector。
+    metadata:
+      release: 0.60.0
+      input_size: 256
+      detector_parameters: 1760000
+      landmark_parameters: 2010000
+      landmark_points: 21
+  default_variant: float
 
 artifacts:
-  - artifact_id: onnx-float
-    variant: float
-    runtime: onnx
-    format: onnx
-    path: qualcomm/mediapipe-hand-detection/013e27b599e37c3b4c69439de15de53cc5b5708e/float/onnx
-    kind: directory
-    source:
-      kind: url_archive
-      url: https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/mediapipe_hand/releases/v0.60.0/mediapipe_hand-onnx-float.zip
-      format: zip
-      strip_components: 1
-      expected_sha256: 712063283b6b5c86c87ae631a84d16e832828d4d523cedc3d11a5a637ae96f69
-  - artifact_id: coreml-fp32
-    variant: float
-    runtime: coreml
-    format: coreml
-    path: qualcomm/mediapipe-hand-detection/013e27b599e37c3b4c69439de15de53cc5b5708e/float/coreml
-    kind: directory
-    convert: true
-    expected_sha256: 5432c988be7ed2fd6847097f823e0d813f97be7dc7a7d6587129386dbcd75929
-    source:
-      kind: huggingface
-      repo_id: hugging-mac/mediapipe-hand-coreml
-      revision: ddf3c3a6a6f832fde2fff50910c8383beed2c0a0
-      allow_patterns:
-        - coreml/hand_detector.mlpackage/**
-        - coreml/hand_landmark_detector.mlpackage/**
-      strip_prefix: coreml
-      expected_sha256: 5432c988be7ed2fd6847097f823e0d813f97be7dc7a7d6587129386dbcd75929
+- artifact_id: onnx-float
+  variant: float
+  runtime: onnx
+  format: onnx
+  kind: directory
+  path: qualcomm/mediapipe-hand-detection/float/onnx/onnx-float
+  required_files: [hand_detector.onnx, hand_detector.data, hand_landmark_detector.onnx, hand_landmark_detector.data, metadata.json]
+  source:
+    kind: url_archive
+    url: https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/mediapipe_hand/releases/v0.60.0/mediapipe_hand-onnx-float.zip
+    format: zip
+    strip_components: 1
+- artifact_id: coreml-fp32
+  convert: true
+  variant: float
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: qualcomm/mediapipe-hand-detection/float/coreml/coreml-fp32
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/mediapipe-hand-coreml
+    allow_patterns:
+    - coreml/hand_detector.mlpackage/**
+    - coreml/hand_landmark_detector.mlpackage/**
+    strip_prefix: coreml
+  required_files: [hand_detector.mlpackage/Manifest.json, hand_landmark_detector.mlpackage/Manifest.json]

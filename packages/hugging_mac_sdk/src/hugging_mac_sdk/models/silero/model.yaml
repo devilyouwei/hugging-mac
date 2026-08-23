@@ -1,72 +1,60 @@
 manifest:
-  schema_version: "1"
+  schema_version: '1'
   model_id: snakers4/silero-vad
-  revision: 7e30209a3e901f9842f81b225f3e93d8199902b1
   display_name: Silero VAD
   description: Lightweight multilingual stateful voice activity detection.
   tags: [audio, vad, voice-activity-detection, streaming]
   family: silero
   capabilities: [voice-activity-detection]
-  runtimes:
-    - name: coreml
-      devices: [all, cpu-and-neural-engine, cpu-and-gpu, cpu-only]
-      dtypes: [float16]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [coremltools, numpy, soundfile, scipy]
-    - name: onnx
-      devices: [coreml, cpu]
-      dtypes: [float32]
-      platforms: [darwin]
-      architectures: [arm64, x86_64]
-      required_modules: [onnxruntime, numpy, soundfile, scipy]
-  variants:
-    - name: v6.2.1
-      display_name: Silero VAD v6.2.1
-      description: Official 8/16 kHz streaming model; the SDK uses 16 kHz 512-sample chunks.
-      metadata:
-        parameters: 260000
-        source_size_bytes: 2327524
-        sample_rate: 16000
-        chunk_samples: 512
-        state_shape: "2x1x128"
-      resources:
-        - kind: url_file
-          url: https://raw.githubusercontent.com/snakers4/silero-vad/7e30209a3e901f9842f81b225f3e93d8199902b1/src/silero_vad/data/silero_vad.onnx
-          expected_sha256: 1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3
-        - kind: huggingface
-          repo_id: aufklarer/Silero-VAD-v6.2.1-CoreML
-          revision: 523876545a57961474fee9df913e833e130560b8
-          allow_patterns:
-            - silero_vad.mlmodelc/**
-            - config.json
-  default_variant: v6.2.1
-  license: MIT
   source_url: https://github.com/snakers4/silero-vad
+  license: MIT
+
+  runtimes:
+  - name: coreml
+    devices: [all, cpu-and-neural-engine, cpu-and-gpu, cpu-only]
+    dtypes: [float16]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coremltools, numpy, soundfile, scipy]
+  - name: onnx
+    devices: [coreml, cpu]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64, x86_64]
+    required_modules: [onnxruntime, numpy, soundfile, scipy]
   default_runtime: coreml
+  variants:
+  - name: v6.2.1
+    display_name: Silero VAD v6.2.1
+    description: Official 8/16 kHz streaming model; the SDK uses 16 kHz 512-sample chunks.
+    metadata:
+      parameters: 260000
+      source_size_bytes: 2327524
+      sample_rate: 16000
+      chunk_samples: 512
+      state_shape: 2x1x128
+  default_variant: v6.2.1
 
 artifacts:
-  - artifact_id: onnx
-    variant: v6.2.1
-    runtime: onnx
-    format: onnx
-    path: snakers4/silero-vad/7e30209a3e901f9842f81b225f3e93d8199902b1/v6.2.1/onnx/silero_vad.onnx
-    kind: file
-    source:
-      kind: url_file
-      url: https://raw.githubusercontent.com/snakers4/silero-vad/7e30209a3e901f9842f81b225f3e93d8199902b1/src/silero_vad/data/silero_vad.onnx
-      expected_sha256: 1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3
-    expected_sha256: 1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3
-  - artifact_id: coreml
-    variant: v6.2.1
-    runtime: coreml
-    format: coreml
-    path: snakers4/silero-vad/7e30209a3e901f9842f81b225f3e93d8199902b1/v6.2.1/coreml/silero_vad.mlmodelc
-    kind: directory
-    source:
-      kind: huggingface
-      repo_id: aufklarer/Silero-VAD-v6.2.1-CoreML
-      revision: 523876545a57961474fee9df913e833e130560b8
-      allow_patterns:
-        - silero_vad.mlmodelc/**
-        - config.json
+- artifact_id: onnx
+  variant: v6.2.1
+  runtime: onnx
+  format: onnx
+  kind: file
+  path: snakers4/silero-vad/v6.2.1/onnx/onnx/silero_vad.onnx
+  source:
+    kind: url_file
+    url: https://raw.githubusercontent.com/snakers4/silero-vad/master/src/silero_vad/data/silero_vad.onnx
+- artifact_id: coreml
+  variant: v6.2.1
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: snakers4/silero-vad/v6.2.1/coreml/coreml
+  source:
+    kind: huggingface
+    repo_id: aufklarer/Silero-VAD-v6.2.1-CoreML
+    allow_patterns:
+    - silero_vad.mlmodelc/**
+    strip_prefix: silero_vad.mlmodelc
+  required_files: [coremldata.bin, metadata.json, model.mil, weights/weight.bin]

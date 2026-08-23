@@ -16,10 +16,13 @@ from hugging_mac_sdk.errors import ResourceNotFoundError, UnsupportedRuntimeErro
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest, ConversionResult
 
-from .config import MEDIAPIPE_HAND_DETECTION_MODEL_ID, MediaPipeHandDetectionCoreMlConfig
+from .config import MediaPipeHandDetectionCoreMlConfig
 
 
 class MediaPipeHandDetectionConverter(ModelConverter):
+    def __init__(self, model_id: str) -> None:
+        self._model_id = model_id
+
     @property
     def converter_id(self) -> str:
         return "qualcomm.mediapipe-hand-detection"
@@ -35,7 +38,7 @@ class MediaPipeHandDetectionConverter(ModelConverter):
             for name in ("hand_detector.onnx", "hand_landmark_detector.onnx")
         )
         return (
-            request.model_id == MEDIAPIPE_HAND_DETECTION_MODEL_ID
+            request.model_id == self._model_id
             and request.variant == "float"
             and request.source_format is ArtifactFormat.ONNX
             and request.target_format is ArtifactFormat.COREML
@@ -114,7 +117,7 @@ class MediaPipeHandDetectionConverter(ModelConverter):
             )
             converted.user_defined_metadata.update(
                 {
-                    "hugging_mac_model_id": MEDIAPIPE_HAND_DETECTION_MODEL_ID,
+                    "hugging_mac_model_id": self._model_id,
                     "hugging_mac_component": name,
                     "hugging_mac_task": "hand-detection",
                     "hugging_mac_input_size": "256",

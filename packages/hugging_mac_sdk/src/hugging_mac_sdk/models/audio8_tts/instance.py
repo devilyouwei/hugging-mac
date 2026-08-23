@@ -10,18 +10,14 @@ from typing import Protocol, cast
 from hugging_mac_sdk.capabilities import SpeechSynthesis
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import InferenceError
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.speech_synthesis import (
     SpeechSynthesisRequest,
     SpeechSynthesisResponse,
     SpeechSynthesisTimings,
 )
 
-from .config import (
-    AUDIO8_TTS_MODEL_ID,
-    AUDIO8_TTS_REVISION,
-    Audio8TtsInstanceConfig,
-    Audio8TtsMlxInstanceConfig,
-)
+from .config import Audio8TtsInstanceConfig, Audio8TtsMlxInstanceConfig
 from .utils.types import TtsEngineOutput
 
 
@@ -47,24 +43,25 @@ class Audio8TtsInstance(BaseModelInstance):
         self,
         config: Audio8TtsInstanceConfig | Audio8TtsMlxInstanceConfig,
         engine: Audio8TtsEngine,
+        manifest: ModelManifest,
     ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=AUDIO8_TTS_MODEL_ID,
-            revision=AUDIO8_TTS_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=config.device,
         )
         self._engine = engine
+        self._manifest_model_id = manifest.model_id
         self._inference_lock = asyncio.Lock()
         self.register_capability(
             SpeechSynthesis,  # type: ignore[type-abstract]
             cast(SpeechSynthesis, self),
         )
 
-    async def synthesize(
-        self, request: SpeechSynthesisRequest
-    ) -> SpeechSynthesisResponse:
+    async def synthesize(self, request: SpeechSynthesisRequest) -> SpeechSynthesisResponse:
         if self.state is not ModelState.READY:
             raise InferenceError("Audio8-TTS instance must be READY before synthesize")
         preprocess_started = perf_counter()
@@ -84,7 +81,7 @@ class Audio8TtsInstance(BaseModelInstance):
             inference_ms = (perf_counter() - inference_started) * 1000
         postprocess_started = perf_counter()
         response = SpeechSynthesisResponse(
-            model_id=AUDIO8_TTS_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

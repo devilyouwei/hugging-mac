@@ -195,9 +195,7 @@ class CoreMlQwen3TtsEngine:
             if frame_index >= 1:
                 logits[_EOS] = eos_logit
             for token in set(generated_cb0):
-                logits[token] = (
-                    logits[token] / 1.05 if logits[token] > 0 else logits[token] * 1.05
-                )
+                logits[token] = logits[token] / 1.05 if logits[token] > 0 else logits[token] * 1.05
             cb0 = self._sample(logits, request, np)
             generated_cb0.append(cb0)
             if cb0 == _EOS:
@@ -239,9 +237,7 @@ class CoreMlQwen3TtsEngine:
         update[0, position] = 1
         input_embedding = np.asarray(embedding, np.float16)
         if input_embedding.size != _HIDDEN_SIZE:
-            raise ValueError(
-                f"Qwen3-TTS decoder embedding must contain {_HIDDEN_SIZE} values"
-            )
+            raise ValueError(f"Qwen3-TTS decoder embedding must contain {_HIDDEN_SIZE} values")
         inputs = {
             "input_embeds": input_embedding.reshape(1, _HIDDEN_SIZE, 1, 1),
             "cache_length": np.asarray([position], np.int32),

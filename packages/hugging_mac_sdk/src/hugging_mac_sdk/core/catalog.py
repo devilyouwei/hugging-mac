@@ -90,6 +90,8 @@ class ModelCatalogService:
                     family=manifest.family,
                     tags=tuple(sorted(manifest.tags)),
                     capabilities=tuple(sorted(manifest.capabilities)),
+                    license=manifest.license,
+                    source_url=manifest.source_url,
                     runtimes=runtimes,
                     default_runtime=default_runtime,
                     instantiated=bool(model_instances),

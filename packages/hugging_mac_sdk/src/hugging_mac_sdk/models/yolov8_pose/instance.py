@@ -11,13 +11,10 @@ from hugging_mac_sdk.capabilities import PoseEstimation
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import InferenceError
 from hugging_mac_sdk.schemas.detection import ImageSize
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.pose import PoseEstimationResponse, PoseRequest
 
-from .config import (
-    YOLOV8_POSE_MODEL_ID,
-    YOLOV8_POSE_REVISION,
-    YoloV8PoseInstanceConfig,
-)
+from .config import YoloV8PoseInstanceConfig
 from .utils.postprocess import postprocess
 from .utils.preprocess import prepare_image
 from .utils.types import PreparedImage
@@ -47,15 +44,19 @@ class YoloV8PoseEngine(Protocol):
 class YoloV8PoseInstance(BaseModelInstance):
     """PoseEstimation capability composed with one selected runtime engine."""
 
-    def __init__(self, config: YoloV8PoseInstanceConfig, engine: YoloV8PoseEngine) -> None:
+    def __init__(
+        self, config: YoloV8PoseInstanceConfig, engine: YoloV8PoseEngine, manifest: ModelManifest
+    ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=YOLOV8_POSE_MODEL_ID,
-            revision=YOLOV8_POSE_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=(config.compute_units if config.runtime == "coreml" else config.device),
         )
         self._config = config
+        self._manifest_model_id = manifest.model_id
         self._engine = engine
         self._inference_lock = asyncio.Lock()
         self.register_capability(
@@ -84,7 +85,7 @@ class YoloV8PoseInstance(BaseModelInstance):
             inference_ms,
         )
         return PoseEstimationResponse(
-            model_id=YOLOV8_POSE_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

@@ -15,8 +15,9 @@ from hugging_mac_sdk.schemas.detection import (
     FaceDetectionResponse,
     ImageSize,
 )
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 
-from .config import RETINAFACE_MODEL_ID, RETINAFACE_REVISION, RetinaFaceInstanceConfig
+from .config import RetinaFaceInstanceConfig
 from .utils.postprocess import postprocess
 from .utils.preprocess import prepare_image
 from .utils.types import PreparedImage
@@ -34,15 +35,19 @@ class RetinaFaceEngine(Protocol):
 
 
 class RetinaFaceInstance(BaseModelInstance):
-    def __init__(self, config: RetinaFaceInstanceConfig, engine: RetinaFaceEngine) -> None:
+    def __init__(
+        self, config: RetinaFaceInstanceConfig, engine: RetinaFaceEngine, manifest: ModelManifest
+    ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=RETINAFACE_MODEL_ID,
-            revision=RETINAFACE_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=config.compute_units,
         )
         self._config = config
+        self._manifest_model_id = manifest.model_id
         self._engine = engine
         self._inference_lock = asyncio.Lock()
         self.register_capability(FaceDetection, cast(FaceDetection, self))  # type: ignore[type-abstract]
@@ -64,7 +69,7 @@ class RetinaFaceInstance(BaseModelInstance):
             postprocess, dict(outputs), request, prepared, inference_ms
         )
         return FaceDetectionResponse(
-            model_id=RETINAFACE_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

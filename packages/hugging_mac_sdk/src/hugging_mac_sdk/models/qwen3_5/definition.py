@@ -4,6 +4,7 @@ from pathlib import Path
 
 from hugging_mac_sdk.core.config import load_model_config
 from hugging_mac_sdk.core.registry import ModelDefinition, ModelRegistry
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource
 
 from .config import Qwen35MlxInstanceConfig
@@ -16,17 +17,25 @@ QWEN3_5_MANIFEST = QWEN3_5_CONFIG.manifest
 
 
 def _source(variant: str) -> HuggingFaceSource:
-    resources = QWEN3_5_MANIFEST.get_variant(variant).resources
-    if len(resources) != 1 or not isinstance(resources[0], HuggingFaceSource):
+    source = _artifact(variant).source
+    if not isinstance(source, HuggingFaceSource):
         raise TypeError(f"Qwen3.5 variant {variant} needs one Hugging Face snapshot source")
-    return resources[0]
+    return source
 
 
 def _tokenizer_source() -> HuggingFaceSource:
-    shared = QWEN3_5_CONFIG.artifacts[-1]
+    shared = _tokenizer_artifact()
     if not shared.shared or not isinstance(shared.source, HuggingFaceSource):
         raise TypeError("Qwen3.5 needs one shared tokenizer source")
     return shared.source
+
+
+def _artifact(variant: str) -> ModelArtifact:
+    return QWEN3_5_CONFIG.get_artifact("mlx-optiq-4bit", variant=variant, runtime="mlx")
+
+
+def _tokenizer_artifact() -> ModelArtifact:
+    return QWEN3_5_CONFIG.get_artifact("tokenizer", shared=True)
 
 
 def _create_mlx(options: dict[str, object]) -> Qwen35MlxInstance:
@@ -36,9 +45,15 @@ def _create_mlx(options: dict[str, object]) -> Qwen35MlxInstance:
         MlxQwen35Engine(
             config,
             Qwen35MlxResourceResolver(
-                _source(config.variant), config, tokenizer_source=_tokenizer_source()
+                _source(config.variant),
+                config,
+                manifest=QWEN3_5_MANIFEST,
+                artifact=_artifact(config.variant),
+                tokenizer_artifact=_tokenizer_artifact(),
+                tokenizer_source=_tokenizer_source(),
             ),
         ),
+        QWEN3_5_MANIFEST,
     )
 
 
@@ -49,6 +64,9 @@ QWEN3_5_DEFINITION = ModelDefinition(
     resource_provider=Qwen35MlxResourceProvider(
         {variant.name: _source(variant.name) for variant in QWEN3_5_MANIFEST.variants},
         _tokenizer_source(),
+        QWEN3_5_MANIFEST,
+        {variant.name: _artifact(variant.name) for variant in QWEN3_5_MANIFEST.variants},
+        _tokenizer_artifact(),
     ),
 )
 

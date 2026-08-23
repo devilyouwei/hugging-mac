@@ -15,7 +15,9 @@ from hugging_mac_sdk.errors import (
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_size
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
     ModelArtifactStatus,
@@ -23,16 +25,7 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
 )
 
-from .config import (
-    QWEN3_TTS_COREML_GRAPHS,
-    QWEN3_TTS_COREML_REQUIRED_FILES,
-    QWEN3_TTS_MODEL_ID,
-    QWEN3_TTS_REQUIRED_FILES,
-    QWEN3_TTS_REVISION,
-    QWEN3_TTS_TOKENIZER_REQUIRED_FILES,
-    QWEN3_TTS_VARIANT,
-    Qwen3TtsInstanceConfig,
-)
+from .config import QWEN3_TTS_COREML_GRAPHS, Qwen3TtsInstanceConfig
 
 
 class Qwen3TtsCoreMlResourceResolver:
@@ -43,38 +36,31 @@ class Qwen3TtsCoreMlResourceResolver:
         source: HuggingFaceSource,
         tokenizer_source: HuggingFaceSource,
         config: Qwen3TtsInstanceConfig,
+        manifest: ModelManifest,
+        artifact: ModelArtifact,
+        tokenizer_artifact: ModelArtifact,
         *,
         downloader: ResourceDownloader | None = None,
     ) -> None:
         self._source, self._tokenizer_source, self._config = source, tokenizer_source, config
+        self._manifest = manifest
+        self._artifact = artifact
+        self._tokenizer_artifact = tokenizer_artifact
         self._downloader = downloader or ResourceDownloader(timeout=3600)
 
     @property
     def path(self) -> Path:
-        return self._config.coreml_path or (
-            self._config.model_home
-            / "qwen"
-            / "qwen3-tts-12hz"
-            / self._source.revision
-            / self._config.variant
-            / "coreml"
-            / "model"
-        )
+        return self._config.coreml_path or self._artifact.resolve(self._config.model_home)
 
     @property
     def tokenizer_path(self) -> Path:
-        return self._config.tokenizer_path or (
+        return self._config.tokenizer_path or self._tokenizer_artifact.resolve(
             self._config.model_home
-            / "qwen"
-            / "qwen3-tts-12hz"
-            / "shared"
-            / "tokenizers"
-            / QWEN3_TTS_REVISION
         )
 
     async def resolve_source(self) -> ResolvedResource:
         missing = [
-            name for name in QWEN3_TTS_COREML_REQUIRED_FILES if not (self.path / name).is_file()
+            name for name in self._artifact.required_files if not (self.path / name).is_file()
         ]
         if missing:
             raise ResourceNotFoundError(
@@ -88,13 +74,13 @@ class Qwen3TtsCoreMlResourceResolver:
     async def resolve_tokenizers(self) -> ResolvedResource:
         missing = [
             name
-            for name in QWEN3_TTS_TOKENIZER_REQUIRED_FILES
+            for name in self._tokenizer_artifact.required_files
             if not (self.tokenizer_path / name).is_file()
         ]
         if missing:
             raise ResourceNotFoundError(
                 "Qwen3-TTS shared tokenizers are incomplete",
-                details={"model_id": QWEN3_TTS_MODEL_ID, "missing": missing},
+                details={"model_id": self._manifest.model_id, "missing": missing},
             )
         return ResolvedResource(
             path=self.tokenizer_path,
@@ -118,22 +104,24 @@ class Qwen3TtsCoreMlResourceResolver:
         return await self.resolve_source()
 
     def available(self) -> bool:
-        return all((self.path / name).is_file() for name in QWEN3_TTS_COREML_REQUIRED_FILES)
+        return all((self.path / name).is_file() for name in self._artifact.required_files)
 
     def status(self) -> ModelResourceStatus:
         available = self.available()
         tokenizer_available = all(
-            (self.tokenizer_path / name).is_file() for name in QWEN3_TTS_TOKENIZER_REQUIRED_FILES
+            (self.tokenizer_path / name).is_file()
+            for name in self._tokenizer_artifact.required_files
         )
         return ModelResourceStatus(
-            model_id=QWEN3_TTS_MODEL_ID,
-            revision=QWEN3_TTS_REVISION,
+            model_id=self._manifest.model_id,
+            revision=self._manifest.revision,
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
                     artifact_id="coreml-w8a16",
                     format="coreml",
                     runtime="coreml",
+                    required_shares=self._artifact.required_shares,
                     available=available,
                     size_bytes=directory_size(self.path) if available else None,
                 ),
@@ -166,9 +154,7 @@ class Qwen3TtsCoreMlResourceResolver:
 
     async def delete(self) -> None:
         target = self.path.expanduser().resolve(strict=False)
-        root = (
-            (self._config.model_home / "qwen" / "qwen3-tts-12hz").expanduser().resolve(strict=False)
-        )
+        root = self._artifact.storage_path(self._config.model_home).parents[2]
         if target != root and not target.is_relative_to(root):
             raise ResourceIntegrityError(
                 "Refusing to delete Qwen3-TTS Core ML resources outside model root"
@@ -181,6 +167,9 @@ class Qwen3TtsResourceResolver:
         self,
         source: HuggingFaceSource,
         config: Qwen3TtsInstanceConfig,
+        manifest: ModelManifest,
+        artifact: ModelArtifact,
+        tokenizer_artifact: ModelArtifact,
         *,
         tokenizer_source: HuggingFaceSource | None = None,
         downloader: ResourceDownloader | None = None,
@@ -188,22 +177,19 @@ class Qwen3TtsResourceResolver:
         self._source = source
         self._tokenizer_source = tokenizer_source or source
         self._config = config
+        self._manifest = manifest
+        self._artifact = artifact
+        self._tokenizer_artifact = tokenizer_artifact
         self._downloader = downloader or ResourceDownloader(timeout=3600)
 
     @property
     def path(self) -> Path:
-        return self._config.source_path or self._model_root() / "mlx" / "model"
+        return self._config.source_path or self._artifact.resolve(self._config.model_home)
 
     @property
     def tokenizer_path(self) -> Path:
-        return (
-            self._config.tokenizer_path
-            or self._config.model_home
-            / "qwen"
-            / "qwen3-tts-12hz"
-            / "shared"
-            / "tokenizers"
-            / QWEN3_TTS_REVISION
+        return self._config.tokenizer_path or self._tokenizer_artifact.resolve(
+            self._config.model_home
         )
 
     async def resolve_source(self) -> ResolvedResource:
@@ -217,13 +203,13 @@ class Qwen3TtsResourceResolver:
     async def resolve_tokenizers(self) -> ResolvedResource:
         missing = [
             name
-            for name in QWEN3_TTS_TOKENIZER_REQUIRED_FILES
+            for name in self._tokenizer_artifact.required_files
             if not (self.tokenizer_path / name).is_file()
         ]
         if missing:
             raise ResourceNotFoundError(
                 "Qwen3-TTS shared tokenizers are incomplete",
-                details={"model_id": QWEN3_TTS_MODEL_ID, "missing": missing},
+                details={"model_id": self._manifest.model_id, "missing": missing},
             )
         return ResolvedResource(
             path=self.tokenizer_path,
@@ -252,17 +238,19 @@ class Qwen3TtsResourceResolver:
     def status(self) -> ModelResourceStatus:
         available = self._files_exist(self.path)
         tokenizers_available = all(
-            (self.tokenizer_path / name).is_file() for name in QWEN3_TTS_TOKENIZER_REQUIRED_FILES
+            (self.tokenizer_path / name).is_file()
+            for name in self._tokenizer_artifact.required_files
         )
         return ModelResourceStatus(
-            model_id=QWEN3_TTS_MODEL_ID,
-            revision=QWEN3_TTS_REVISION,
+            model_id=self._manifest.model_id,
+            revision=self._manifest.revision,
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
                     artifact_id="mlx-4bit",
                     format=ArtifactFormat.MLX.value,
                     runtime="mlx",
+                    required_shares=self._artifact.required_shares,
                     available=available,
                     size_bytes=directory_size(self.path) if available else None,
                 ),
@@ -291,31 +279,23 @@ class Qwen3TtsResourceResolver:
         await asyncio.to_thread(shutil.rmtree, target, True)
 
     def _model_root(self) -> Path:
-        return (
-            self._config.model_home
-            / "qwen"
-            / "qwen3-tts-12hz"
-            / self._source.revision
-            / self._config.variant
-        )
+        return self._artifact.storage_path(self._config.model_home).parents[1]
 
-    @staticmethod
-    def _files_exist(path: Path) -> bool:
+    def _files_exist(self, path: Path) -> bool:
         return (
             path.is_dir()
-            and all((path / name).is_file() for name in QWEN3_TTS_REQUIRED_FILES)
+            and all((path / name).is_file() for name in self._artifact.required_files)
             and any(path.glob("*.safetensors"))
         )
 
-    @classmethod
-    def _validate(cls, path: Path) -> None:
-        missing = [name for name in QWEN3_TTS_REQUIRED_FILES if not (path / name).is_file()]
+    def _validate(self, path: Path) -> None:
+        missing = [name for name in self._artifact.required_files if not (path / name).is_file()]
         if not any(path.glob("*.safetensors")):
-            missing.append("*.safetensors")
+            missing.append(Path("*.safetensors"))
         if missing:
             raise ResourceNotFoundError(
                 "Qwen3-TTS MLX snapshot is incomplete",
-                details={"model_id": QWEN3_TTS_MODEL_ID, "missing": missing},
+                details={"model_id": self._manifest.model_id, "missing": missing},
             )
         config = json.loads((path / "config.json").read_text(encoding="utf-8"))
         if config.get("model_type") != "qwen3_tts":
@@ -330,11 +310,19 @@ class Qwen3TtsResourceProvider:
         self,
         source: HuggingFaceSource,
         tokenizer_source: HuggingFaceSource,
+        manifest: ModelManifest,
+        artifact: ModelArtifact,
+        tokenizer_artifact: ModelArtifact,
         coreml_source: HuggingFaceSource | None = None,
+        coreml_artifact: ModelArtifact | None = None,
     ) -> None:
         self._source = source
         self._tokenizer_source = tokenizer_source
+        self._manifest = manifest
+        self._artifact = artifact
+        self._tokenizer_artifact = tokenizer_artifact
         self._coreml_source = coreml_source
+        self._coreml_artifact = coreml_artifact
 
     async def status(
         self, variant: str, options: Mapping[str, object] | None = None
@@ -403,7 +391,7 @@ class Qwen3TtsResourceProvider:
     def _resolver(
         self, variant: str, options: Mapping[str, object] | None
     ) -> Qwen3TtsResourceResolver | Qwen3TtsCoreMlResourceResolver:
-        if variant != QWEN3_TTS_VARIANT:
+        if variant not in {item.name for item in self._manifest.variants}:
             raise ResourceNotFoundError(f"Qwen3-TTS variant is not registered: {variant}")
         normalized = dict(options or {})
         option_variant = normalized.get("variant")
@@ -412,13 +400,21 @@ class Qwen3TtsResourceProvider:
         config = Qwen3TtsInstanceConfig.model_validate(normalized | {"variant": variant})
         selected_runtime = str(normalized.get("runtime", "mlx"))
         if selected_runtime == "coreml":
-            if self._coreml_source is None:
+            if self._coreml_source is None or self._coreml_artifact is None:
                 raise ResourceNotFoundError("Qwen3-TTS Core ML source is not registered")
             return Qwen3TtsCoreMlResourceResolver(
-                self._coreml_source, self._tokenizer_source, config
+                self._coreml_source,
+                self._tokenizer_source,
+                config,
+                self._manifest,
+                self._coreml_artifact,
+                self._tokenizer_artifact,
             )
         return Qwen3TtsResourceResolver(
             self._source,
             config,
+            self._manifest,
+            self._artifact,
+            self._tokenizer_artifact,
             tokenizer_source=self._tokenizer_source,
         )

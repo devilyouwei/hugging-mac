@@ -88,6 +88,7 @@ class ModelResourceService:
         await self.ensure_shared_artifacts(
             model_id,
             revision=revision,
+            variant=selected_variant,
             options=options,
             overwrite=overwrite,
         )
@@ -113,6 +114,8 @@ class ModelResourceService:
         await self.ensure_shared_artifacts(
             model_id,
             revision=revision,
+            variant=selected_variant,
+            target_format=target_format.value,
             options=options,
             overwrite=False,
         )
@@ -149,17 +152,26 @@ class ModelResourceService:
         model_id: str,
         *,
         revision: str | None = None,
+        variant: str | None = None,
+        runtime: str | None = None,
+        artifact_id: str | None = None,
+        target_format: str | None = None,
         options: Mapping[str, object] | None = None,
         overwrite: bool = False,
     ) -> None:
-        """Install missing model-wide artifacts before a scoped resource operation."""
+        """Install shares required by matching artifacts of the selected variant."""
 
         definition = self._registry.get(model_id, revision)
         model_home = self._model_home(options)
         downloader = ResourceDownloader()
         token_value = (options or {}).get("hf_token")
         token = str(token_value) if token_value is not None else None
-        for artifact in definition.shared_artifacts:
+        for artifact in definition.required_shared_artifacts(
+            variant=variant,
+            runtime=runtime,
+            artifact_id=artifact_id,
+            target_format=target_format,
+        ):
             path = artifact.resolve(model_home)
             if not overwrite and artifact_available(artifact, path):
                 continue
@@ -210,13 +222,32 @@ class ModelResourceService:
         status: ModelResourceStatus,
         options: Mapping[str, object] | None,
     ) -> ModelResourceStatus:
-        shared_artifacts = definition.shared_artifacts
-        if not shared_artifacts:
-            return status
-        shared_ids = {artifact.artifact_id for artifact in shared_artifacts}
-        artifacts = tuple(
-            artifact for artifact in status.artifacts if artifact.artifact_id not in shared_ids
-        ) + tuple(
+        declared_shared_ids = {artifact.artifact_id for artifact in definition.shared_artifacts}
+        scoped_statuses: list[ModelArtifactStatus] = []
+        required_share_ids: set[str] = set()
+        for item in status.artifacts:
+            if item.shared or item.artifact_id in declared_shared_ids:
+                continue
+            declared = next(
+                (
+                    artifact
+                    for artifact in definition.artifacts
+                    if not artifact.shared
+                    and artifact.variant == status.variant
+                    and artifact.runtime == item.runtime
+                    and artifact.artifact_id == item.artifact_id
+                ),
+                None,
+            )
+            required_shares = declared.required_shares if declared is not None else ()
+            required_share_ids.update(required_shares)
+            scoped_statuses.append(item.model_copy(update={"required_shares": required_shares}))
+        shared_artifacts = tuple(
+            artifact
+            for artifact in definition.shared_artifacts
+            if artifact.artifact_id in required_share_ids
+        )
+        artifacts = tuple(scoped_statuses) + tuple(
             self._shared_status(artifact, options) for artifact in shared_artifacts
         )
         return ModelResourceStatus(
@@ -239,9 +270,7 @@ class ModelResourceService:
             runtime=None,
             shared=True,
             available=available,
-            size_bytes=(
-                directory_size(path) if path.is_dir() else path.stat().st_size
-            )
+            size_bytes=(directory_size(path) if path.is_dir() else path.stat().st_size)
             if available
             else None,
         )

@@ -12,7 +12,9 @@ from hugging_mac_sdk.errors import (
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
     ModelArtifactStatus,
@@ -20,23 +22,12 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
 )
 
-from .config import (
-    NEMOTRON_3_5_ASR_MODEL_ID,
-    NEMOTRON_3_5_ASR_REVISION,
-    NemotronCoreMlInstanceConfig,
-    variant_source_path,
-)
+from .config import NemotronCoreMlInstanceConfig
 
-_GRAPHS = ("preprocessor.mlmodelc", "encoder.mlmodelc", "decoder_joint.mlmodelc")
-_REQUIRED = (
-    *tuple(
-        path
-        for name in _GRAPHS
-        for path in (f"{name}/model.mil", f"{name}/coremldata.bin", f"{name}/weights/weight.bin")
-    ),
-    "metadata.json",
-    "tokenizer.json",
-)
+
+def _variant_source_path(variant: str) -> str:
+    script, tier = variant.split("-", maxsplit=1)
+    return f"{script}/{tier}"
 
 
 class NemotronCoreMlResourceResolver:
@@ -45,32 +36,28 @@ class NemotronCoreMlResourceResolver:
         source: HuggingFaceSource,
         config: NemotronCoreMlInstanceConfig,
         *,
+        manifest: ModelManifest,
+        artifact: ModelArtifact,
         downloader: ResourceDownloader | None = None,
     ) -> None:
         self._source, self._config = source, config
+        self._manifest = manifest
+        self._artifact = artifact
         self._downloader = downloader or ResourceDownloader()
 
     def root(self) -> Path:
         if self._config.artifact_path is not None:
             return self._config.artifact_path
-        return (
-            self._config.model_home
-            / "nvidia"
-            / "nemotron-3.5-asr-streaming-0.6b"
-            / NEMOTRON_3_5_ASR_REVISION
-            / self._config.variant
-            / "coreml"
-            / "model"
-        )
+        return self._artifact.resolve(self._config.model_home)
 
     def bundle_root(self) -> Path:
         root = self.root()
-        nested = root / variant_source_path(self._config.variant)
+        nested = root / _variant_source_path(self._config.variant)
         return nested if nested.exists() else root
 
     async def resolve(self) -> ResolvedResource:
         root = self.bundle_root()
-        missing = [name for name in _REQUIRED if not (root / name).is_file()]
+        missing = [name for name in self._artifact.required_files if not (root / name).is_file()]
         if missing:
             raise ResourceNotFoundError(
                 "Nemotron Core ML artifact is not downloaded", details={"missing": missing}
@@ -84,10 +71,10 @@ class NemotronCoreMlResourceResolver:
 
     def status(self) -> ModelResourceStatus:
         root = self.bundle_root()
-        available = all((root / name).is_file() for name in _REQUIRED)
+        available = all((root / name).is_file() for name in self._artifact.required_files)
         return ModelResourceStatus(
-            model_id=NEMOTRON_3_5_ASR_MODEL_ID,
-            revision=NEMOTRON_3_5_ASR_REVISION,
+            model_id=self._manifest.model_id,
+            revision=self._manifest.revision,
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
@@ -107,19 +94,22 @@ class NemotronCoreMlResourceResolver:
 
     async def delete(self) -> None:
         root = self.root().expanduser().resolve(strict=False)
-        model_root = (
-            (self._config.model_home / "nvidia" / "nemotron-3.5-asr-streaming-0.6b")
-            .expanduser()
-            .resolve(strict=False)
-        )
+        model_root = self._artifact.storage_path(self._config.model_home).parents[2]
         if root != model_root and not root.is_relative_to(model_root):
             raise ResourceIntegrityError("Refusing to delete Nemotron resources outside model root")
         await asyncio.to_thread(shutil.rmtree, root, True)
 
 
 class NemotronCoreMlResourceProvider:
-    def __init__(self, sources: Mapping[str, HuggingFaceSource]) -> None:
+    def __init__(
+        self,
+        sources: Mapping[str, HuggingFaceSource],
+        artifacts: Mapping[str, ModelArtifact],
+        manifest: ModelManifest,
+    ) -> None:
         self._sources = dict(sources)
+        self._artifacts = dict(artifacts)
+        self._manifest = manifest
 
     def _resolver(
         self, variant: str, options: Mapping[str, object] | None
@@ -127,6 +117,8 @@ class NemotronCoreMlResourceProvider:
         return NemotronCoreMlResourceResolver(
             self._sources[variant],
             NemotronCoreMlInstanceConfig.model_validate(dict(options or {}) | {"variant": variant}),
+            manifest=self._manifest,
+            artifact=self._artifacts[variant],
         )
 
     async def status(

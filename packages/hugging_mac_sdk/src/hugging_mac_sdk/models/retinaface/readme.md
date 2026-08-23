@@ -28,7 +28,7 @@ RetinaFace Core ML packages are neither discovered nor supported.
 
 ## Package structure
 
-- `model.yaml`: pinned source, artifacts, runtimes, capability, and license.
+- `model.yaml`: trusted source, download selections, artifacts, runtimes, capability, and license.
 - `config.py`: frozen instance and resource options.
 - `definition.py`: PyTorch/Core ML factories, converter, and model registration.
 - `instance.py`: lifecycle and runtime-independent face detection.

@@ -49,9 +49,7 @@ class TorchSenseVoiceSmallEngine:
     async def load(self, artifact: Path) -> None:
         provider = TorchProvider()
         if not provider.is_available():
-            raise UnsupportedRuntimeError(
-                "PyTorch is not installed; install hugging-mac-sdk[asr]"
-            )
+            raise UnsupportedRuntimeError("PyTorch is not installed; install hugging-mac-sdk[asr]")
         self._device = provider.resolve_device(
             self._config.device,
             allow_cpu_fallback=self._config.allow_cpu_fallback,
@@ -89,10 +87,7 @@ class TorchSenseVoiceSmallEngine:
         from .utils.modeling import load_sensevoice_model
 
         tokenizer = sentencepiece.SentencePieceProcessor(
-            model_file=str(
-                self._resources.tokenizer_path
-                / "chn_jpn_yue_eng_ko_spectok.bpe.model"
-            )
+            model_file=str(self._resources.tokenizer_path / "chn_jpn_yue_eng_ko_spectok.bpe.model")
         )
         config = yaml.safe_load((artifact / "config.yaml").read_text(encoding="utf-8"))
         dtype = self._resolve_dtype(torch)
@@ -122,13 +117,7 @@ class TorchSenseVoiceSmallEngine:
         tokenizer = self._tokenizer
         artifact = self._artifact
         dtype = self._dtype
-        if (
-            torch is None
-            or model is None
-            or tokenizer is None
-            or artifact is None
-            or dtype is None
-        ):
+        if torch is None or model is None or tokenizer is None or artifact is None or dtype is None:
             raise RuntimeError("SenseVoiceSmall PyTorch engine is not loaded")
         features, lengths = extract_features(
             prepared,

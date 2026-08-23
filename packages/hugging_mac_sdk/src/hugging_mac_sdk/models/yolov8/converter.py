@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from hugging_mac_sdk.converters.yolov8 import YoloV8ExportConverter
+from hugging_mac_sdk.core.config import ModelPackageConfig
 from hugging_mac_sdk.schemas.conversion import (
     ArtifactFormat,
     ConversionRequest,
     ConversionResult,
 )
 
-from .config import YOLOV8_FILENAMES, YOLOV8_MODEL_ID, YoloV8CoreMlConfig, YoloV8Variant
+from .config import YoloV8CoreMlConfig
 from .utils.checkpoint import load_yolov8_checkpoint
 
 
 class YoloV8Converter(YoloV8ExportConverter):
+    def __init__(self, package: ModelPackageConfig) -> None:
+        self._package = package
+
     @property
     def converter_id(self) -> str:
         return "ultralytics.yolov8"
@@ -26,17 +30,16 @@ class YoloV8Converter(YoloV8ExportConverter):
         return 100
 
     def supports(self, request: ConversionRequest) -> bool:
-        variant = cast(YoloV8Variant, request.variant)
+        source = self._package.get_artifact(variant=request.variant, artifact_id="source")
         return (
             super().supports(request)
-            and request.model_id == YOLOV8_MODEL_ID
-            and request.variant in YOLOV8_FILENAMES
-            and request.source.path.name == YOLOV8_FILENAMES[variant]
+            and request.model_id == self._package.manifest.model_id
+            and request.source.path.name == source.path.name
         )
 
     async def convert(self, request: ConversionRequest) -> ConversionResult:
         if request.target_format is ArtifactFormat.COREML:
-            defaults = YoloV8CoreMlConfig(variant=cast(YoloV8Variant, request.variant)).model_dump()
+            defaults = YoloV8CoreMlConfig(variant=request.variant).model_dump()
             defaults.pop("compute_units")
             defaults.pop("variant")
             request = request.model_copy(

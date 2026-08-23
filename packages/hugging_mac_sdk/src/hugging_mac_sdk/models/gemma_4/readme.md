@@ -8,7 +8,7 @@ Canonical SDK package for the `google/gemma-4` family. Effective parameter scale
 
 - Variants: `e4b` (default), `e2b`
 - Runtime: `mlx`
-- Current artifacts: pinned MLX QAT OptiQ mixed-precision snapshots
+- Current artifacts: MLX QAT OptiQ mixed-precision snapshots following `main`
 
 ## Capability API
 
@@ -19,7 +19,7 @@ Canonical SDK package for the `google/gemma-4` family. Effective parameter scale
 ## Package structure
 
 - `__init__.py`: public definition, manifest, and registration exports.
-- `model.yaml`: canonical identity, variants, MLX runtime, pinned sources, and artifacts.
+- `model.yaml`: canonical identity, variants, MLX runtime, trusted sources, download selections, and artifacts.
 - `config.py`: typed variant, resource, and runtime options.
 - `definition.py`: variant-aware MLX factory and registration.
 - `instance.py`: lifecycle, shared chat capability, and engine protocol.

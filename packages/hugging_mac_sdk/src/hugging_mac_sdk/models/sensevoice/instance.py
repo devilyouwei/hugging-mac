@@ -10,6 +10,7 @@ from typing import Protocol, cast
 from hugging_mac_sdk.capabilities import SpeechTranscription, SpeechUnderstanding
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import InferenceError
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.speech_understanding import (
     SpeechUnderstandingRequest,
     SpeechUnderstandingResponse,
@@ -21,11 +22,7 @@ from hugging_mac_sdk.schemas.transcription import (
     TranscriptionTimings,
 )
 
-from .config import (
-    SENSEVOICE_SMALL_MODEL_ID,
-    SENSEVOICE_SMALL_REVISION,
-    SenseVoiceSmallInstanceConfig,
-)
+from .config import SenseVoiceSmallInstanceConfig
 from .utils.audio import prepare_audio
 from .utils.types import (
     PreparedAudio,
@@ -60,16 +57,19 @@ class SenseVoiceSmallInstance(BaseModelInstance):
         self,
         config: SenseVoiceSmallInstanceConfig,
         engine: SenseVoiceSmallEngine,
+        manifest: ModelManifest,
     ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=SENSEVOICE_SMALL_MODEL_ID,
-            revision=SENSEVOICE_SMALL_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=config.device,
         )
         self._config = config
         self._engine = engine
+        self._manifest_model_id = manifest.model_id
         self._inference_lock = asyncio.Lock()
         self.register_capability(
             SpeechTranscription,  # type: ignore[type-abstract]
@@ -86,7 +86,7 @@ class SenseVoiceSmallInstance(BaseModelInstance):
             SenseVoiceInferenceOptions(language="auto", use_itn=True),
         )
         return TranscriptionResponse(
-            model_id=SENSEVOICE_SMALL_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,
@@ -110,7 +110,7 @@ class SenseVoiceSmallInstance(BaseModelInstance):
             ),
         )
         return SpeechUnderstandingResponse(
-            model_id=SENSEVOICE_SMALL_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

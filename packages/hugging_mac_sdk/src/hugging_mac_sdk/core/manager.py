@@ -88,9 +88,7 @@ class InstanceManager:
         ).name
         normalized["variant"] = selected_variant
         selected_runtime = self._runtime_policy.resolve(manifest, runtime)
-        runtime_spec = next(
-            item for item in manifest.runtimes if item.name == selected_runtime
-        )
+        runtime_spec = next(item for item in manifest.runtimes if item.name == selected_runtime)
         option_device = normalized.get("device")
         if device is not None and option_device not in {None, device}:
             raise UnsupportedRuntimeError(
@@ -310,10 +308,7 @@ class InstanceManager:
         )
         async with self._lock:
             current_record = self._records.get(instance_id)
-            can_replace = (
-                current_record is original_record
-                and current_record.reference_count == 0
-            )
+            can_replace = current_record is original_record and current_record.reference_count == 0
         if not can_replace:
             await self.unload(str(replacement.instance_id))
             raise UnsupportedRuntimeError(
@@ -367,10 +362,7 @@ class InstanceManager:
         )
         async with self._lock:
             current_record = self._records.get(instance_id)
-            can_replace = (
-                current_record is original_record
-                and current_record.reference_count == 0
-            )
+            can_replace = current_record is original_record and current_record.reference_count == 0
         if not can_replace:
             await self.unload(str(replacement.instance_id))
             raise UnsupportedRuntimeError(
@@ -542,11 +534,7 @@ def _lifecycle_metrics(
 ) -> LifecycleMetrics:
     duration_ms = (time.perf_counter_ns() - started_ns) / 1_000_000
     rss_after = _process_rss()
-    change = (
-        rss_after - rss_before
-        if rss_before is not None and rss_after is not None
-        else None
-    )
+    change = rss_after - rss_before if rss_before is not None and rss_after is not None else None
     return LifecycleMetrics(
         operation=operation,
         duration_ms=duration_ms,

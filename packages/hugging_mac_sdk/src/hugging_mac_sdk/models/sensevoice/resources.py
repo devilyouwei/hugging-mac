@@ -14,9 +14,11 @@ from hugging_mac_sdk.errors import (
     UnsupportedRuntimeError,
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
-from hugging_mac_sdk.resources.hashing import directory_size, file_sha256
+from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size
 from hugging_mac_sdk.resources.views import merged_directory_view
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
     ModelArtifactStatus,
@@ -24,16 +26,7 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
 )
 
-from .config import (
-    SENSEVOICE_SMALL_MODEL_ID,
-    SENSEVOICE_SMALL_REQUIRED_FILES,
-    SENSEVOICE_SMALL_REVISION,
-    SENSEVOICE_SMALL_TOKENIZER_FILES,
-    SENSEVOICE_SMALL_TOKENIZER_SHA256,
-    SENSEVOICE_SMALL_VARIANT,
-    SENSEVOICE_SMALL_WEIGHT_SHA256,
-    SenseVoiceSmallInstanceConfig,
-)
+from .config import SenseVoiceSmallInstanceConfig
 from .converter import SenseVoiceSmallConverter
 
 
@@ -43,15 +36,22 @@ class SenseVoiceSmallResourceResolver:
         source: HuggingFaceSource,
         config: SenseVoiceSmallInstanceConfig,
         *,
+        manifest: ModelManifest,
+        source_artifact: ModelArtifact,
+        coreml_artifact: ModelArtifact,
+        tokenizer_artifact: ModelArtifact,
         tokenizer_source: HuggingFaceSource | None = None,
         downloader: ResourceDownloader | None = None,
         converter: SenseVoiceSmallConverter | None = None,
     ) -> None:
         self._source = source
+        self._manifest = manifest
+        self._source_artifact, self._coreml_artifact = source_artifact, coreml_artifact
+        self._tokenizer_artifact = tokenizer_artifact
         self._tokenizer_source = tokenizer_source or source
         self._config = config
         self._downloader = downloader or ResourceDownloader(timeout=1800)
-        self._converter = converter or SenseVoiceSmallConverter()
+        self._converter = converter or SenseVoiceSmallConverter(manifest.model_id, config.variant)
 
     async def resolve_source(self) -> ResolvedResource:
         path = self._config.source_path or self._default_source_path()
@@ -65,39 +65,25 @@ class SenseVoiceSmallResourceResolver:
 
     @property
     def tokenizer_path(self) -> Path:
-        return (
-            self._config.tokenizer_path
-            or self._config.model_home
-            / "funaudiollm"
-            / "sensevoice"
-            / "shared"
-            / "tokenizer"
-            / SENSEVOICE_SMALL_TOKENIZER_SHA256
+        return self._config.tokenizer_path or self._tokenizer_artifact.resolve(
+            self._config.model_home
         )
 
     async def resolve_tokenizer(self) -> ResolvedResource:
         missing = [
             name
-            for name in SENSEVOICE_SMALL_TOKENIZER_FILES
+            for name in self._tokenizer_artifact.required_files
             if not (self.tokenizer_path / name).is_file()
         ]
         if missing:
             raise ResourceNotFoundError(
                 "SenseVoiceSmall shared tokenizer is incomplete",
-                details={"model_id": SENSEVOICE_SMALL_MODEL_ID, "missing": missing},
-            )
-        digest = file_sha256(
-            self.tokenizer_path / "chn_jpn_yue_eng_ko_spectok.bpe.model"
-        )
-        if digest != SENSEVOICE_SMALL_TOKENIZER_SHA256:
-            raise ResourceIntegrityError(
-                "SenseVoiceSmall tokenizer SHA-256 mismatch",
-                details={"expected": SENSEVOICE_SMALL_TOKENIZER_SHA256, "actual": digest},
+                details={"model_id": self._manifest.model_id, "missing": missing},
             )
         return ResolvedResource(
             path=self.tokenizer_path,
             source=self._tokenizer_source,
-            digest=digest,
+            digest=directory_sha256(self.tokenizer_path),
             size_bytes=directory_size(self.tokenizer_path),
         )
 
@@ -137,8 +123,8 @@ class SenseVoiceSmallResourceResolver:
         with merged_directory_view(source.path, (tokenizer.path,)) as conversion_source:
             await self._converter.convert(
                 ConversionRequest(
-                    model_id=SENSEVOICE_SMALL_MODEL_ID,
-                    model_revision=SENSEVOICE_SMALL_REVISION,
+                    model_id=self._manifest.model_id,
+                    model_revision=self._manifest.revision,
                     variant=self._config.variant,
                     source=source.model_copy(update={"path": conversion_source}),
                     source_format=ArtifactFormat.PYTORCH,
@@ -152,7 +138,7 @@ class SenseVoiceSmallResourceResolver:
         if runtime not in {None, "pytorch-mps", "coreml"}:
             raise UnsupportedRuntimeError(
                 f"SenseVoiceSmall does not support runtime {runtime}",
-                details={"model_id": SENSEVOICE_SMALL_MODEL_ID, "runtime": runtime},
+                details={"model_id": self._manifest.model_id, "runtime": runtime},
             )
         root = self._model_root().expanduser().resolve(strict=False)
         if runtime is None:
@@ -165,7 +151,7 @@ class SenseVoiceSmallResourceResolver:
         if resolved != root and not resolved.is_relative_to(root):
             raise ResourceIntegrityError(
                 "Refusing to delete SenseVoiceSmall resources outside the model directory",
-                details={"model_id": SENSEVOICE_SMALL_MODEL_ID},
+                details={"model_id": self._manifest.model_id},
             )
         await asyncio.to_thread(self._delete_path, resolved)
 
@@ -176,17 +162,18 @@ class SenseVoiceSmallResourceResolver:
         coreml_available = self._coreml_files_exist(coreml_path)
         tokenizer_available = all(
             (self.tokenizer_path / name).is_file()
-            for name in SENSEVOICE_SMALL_TOKENIZER_FILES
+            for name in self._tokenizer_artifact.required_files
         )
         return ModelResourceStatus(
-            model_id=SENSEVOICE_SMALL_MODEL_ID,
-            revision=SENSEVOICE_SMALL_REVISION,
+            model_id=self._manifest.model_id,
+            revision=self._manifest.revision,
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
                     artifact_id="source",
                     format=ArtifactFormat.PYTORCH.value,
                     runtime="pytorch-mps",
+                    required_shares=self._source_artifact.required_shares,
                     available=available,
                     size_bytes=directory_size(path) if available else None,
                 ),
@@ -205,6 +192,7 @@ class SenseVoiceSmallResourceResolver:
                     format=ArtifactFormat.COREML.value,
                     runtime="coreml",
                     provisioning="convert",
+                    required_shares=self._coreml_artifact.required_shares,
                     available=coreml_available,
                     size_bytes=directory_size(coreml_path) if coreml_available else None,
                 ),
@@ -212,42 +200,29 @@ class SenseVoiceSmallResourceResolver:
         )
 
     def _default_source_path(self) -> Path:
-        return self._model_root() / "pytorch" / "model"
+        return self._source_artifact.resolve(self._config.model_home)
 
     def _default_coreml_path(self) -> Path:
-        return self._model_root() / "coreml" / "sensevoice-small-coreml"
+        return self._coreml_artifact.resolve(self._config.model_home)
 
     def _model_root(self) -> Path:
-        return (
-            self._config.model_home
-            / "funaudiollm"
-            / "sensevoice"
-            / self._source.revision
-            / self._config.variant
+        return self._source_artifact.storage_path(self._config.model_home).parents[1]
+
+    def _snapshot_files_exist(self, path: Path) -> bool:
+        return path.is_dir() and all(
+            (path / name).is_file() for name in self._source_artifact.required_files
         )
 
-    @staticmethod
-    def _snapshot_files_exist(path: Path) -> bool:
+    def _coreml_files_exist(self, path: Path) -> bool:
         return path.is_dir() and all(
-            (path / name).is_file() for name in SENSEVOICE_SMALL_REQUIRED_FILES
-        )
-
-    @staticmethod
-    def _coreml_files_exist(path: Path) -> bool:
-        return path.is_dir() and all(
-            (path / name).exists()
-            for name in (
-                "sensevoice.mlpackage",
-                "am.mvn",
-                "conversion.json",
-            )
+            (path / name).exists() for name in self._coreml_artifact.required_files
         )
 
     def _validate_coreml_artifact(self, path: Path) -> None:
         if not self._coreml_files_exist(path):
             raise ResourceNotFoundError(
                 "SenseVoiceSmall Core ML artifact has not been converted",
-                details={"model_id": SENSEVOICE_SMALL_MODEL_ID, "artifact_id": "coreml"},
+                details={"model_id": self._manifest.model_id, "artifact_id": "coreml"},
             )
         metadata = json.loads((path / "conversion.json").read_text(encoding="utf-8"))
         if metadata.get("format") != "sensevoice-small-coreml":
@@ -261,22 +236,18 @@ class SenseVoiceSmallResourceResolver:
             raise ResourceNotFoundError(
                 "SenseVoiceSmall source model is not downloaded",
                 details={
-                    "model_id": SENSEVOICE_SMALL_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": self._config.variant,
                     "artifact_id": "source",
                 },
             )
-        missing = [name for name in SENSEVOICE_SMALL_REQUIRED_FILES if not (path / name).is_file()]
+        missing = [
+            name for name in self._source_artifact.required_files if not (path / name).is_file()
+        ]
         if missing:
             raise ResourceNotFoundError(
                 "SenseVoiceSmall snapshot is incomplete",
-                details={"model_id": SENSEVOICE_SMALL_MODEL_ID, "missing": missing},
-            )
-        digest = file_sha256(path / "model.pt")
-        if digest != SENSEVOICE_SMALL_WEIGHT_SHA256:
-            raise ResourceIntegrityError(
-                "SenseVoiceSmall weight SHA-256 mismatch",
-                details={"expected": SENSEVOICE_SMALL_WEIGHT_SHA256, "actual": digest},
+                details={"model_id": self._manifest.model_id, "missing": missing},
             )
         metadata = json.loads((path / "configuration.json").read_text(encoding="utf-8"))
         if metadata.get("framework") != "pytorch":
@@ -284,7 +255,7 @@ class SenseVoiceSmallResourceResolver:
                 "SenseVoiceSmall configuration has an unexpected framework",
                 details={"framework": metadata.get("framework")},
             )
-        return digest
+        return directory_sha256(path)
 
     @staticmethod
     def _delete_path(path: Path) -> None:
@@ -299,9 +270,17 @@ class SenseVoiceSmallResourceProvider:
         self,
         source: HuggingFaceSource,
         tokenizer_source: HuggingFaceSource | None = None,
+        *,
+        manifest: ModelManifest,
+        source_artifact: ModelArtifact,
+        coreml_artifact: ModelArtifact,
+        tokenizer_artifact: ModelArtifact,
     ) -> None:
         self._source = source
         self._tokenizer_source = tokenizer_source or source
+        self._manifest = manifest
+        self._source_artifact, self._coreml_artifact = source_artifact, coreml_artifact
+        self._tokenizer_artifact = tokenizer_artifact
 
     async def status(
         self,
@@ -333,7 +312,7 @@ class SenseVoiceSmallResourceProvider:
             raise UnsupportedRuntimeError(
                 f"SenseVoiceSmall conversion to {target_format} is not implemented",
                 details={
-                    "model_id": SENSEVOICE_SMALL_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": variant,
                     "target_format": target_format,
                 },
@@ -358,13 +337,13 @@ class SenseVoiceSmallResourceProvider:
         variant: str,
         options: Mapping[str, object] | None,
     ) -> SenseVoiceSmallResourceResolver:
-        if variant != SENSEVOICE_SMALL_VARIANT:
+        if variant != self._source_artifact.variant:
             raise ResourceNotFoundError(
                 f"SenseVoiceSmall variant is not registered: {variant}",
                 details={
-                    "model_id": SENSEVOICE_SMALL_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": variant,
-                    "supported_variants": [SENSEVOICE_SMALL_VARIANT],
+                    "supported_variants": [self._source_artifact.variant],
                 },
             )
         normalized = dict(options or {})
@@ -376,5 +355,11 @@ class SenseVoiceSmallResourceProvider:
             )
         config = SenseVoiceSmallInstanceConfig.model_validate(normalized | {"variant": variant})
         return SenseVoiceSmallResourceResolver(
-            self._source, config, tokenizer_source=self._tokenizer_source
+            self._source,
+            config,
+            manifest=self._manifest,
+            source_artifact=self._source_artifact,
+            coreml_artifact=self._coreml_artifact,
+            tokenizer_artifact=self._tokenizer_artifact,
+            tokenizer_source=self._tokenizer_source,
         )

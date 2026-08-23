@@ -68,7 +68,10 @@ class ModelDefinition:
                     "implemented": sorted(implemented),
                 },
             )
-        invalid_artifacts = sorted({artifact.runtime for artifact in self.artifacts} - declared)
+        invalid_artifacts = sorted(
+            {artifact.runtime for artifact in self.artifacts if artifact.runtime is not None}
+            - declared
+        )
         if invalid_artifacts:
             raise ManifestError(
                 f"Artifacts reference undeclared runtimes for {self.manifest.model_id}",
@@ -76,7 +79,8 @@ class ModelDefinition:
             )
         declared_variants = {variant.name for variant in self.manifest.variants}
         invalid_variants = sorted(
-            {artifact.variant for artifact in self.artifacts} - declared_variants
+            {artifact.variant for artifact in self.artifacts if artifact.variant is not None}
+            - declared_variants
         )
         if invalid_variants:
             raise ManifestError(
@@ -112,12 +116,53 @@ class ModelDefinition:
                 f"Shared artifacts must be directly downloadable for {self.manifest.model_id}",
                 details={"artifact_ids": invalid_shared},
             )
+        referenced_shared = {
+            artifact_id for artifact in self.artifacts for artifact_id in artifact.required_shares
+        }
+        unknown_shared = sorted(referenced_shared - set(shared_ids))
+        if unknown_shared:
+            raise ManifestError(
+                f"Artifacts reference undeclared shared artifacts for {self.manifest.model_id}",
+                details={"artifact_ids": unknown_shared},
+            )
+        unowned_shared = sorted(set(shared_ids) - referenced_shared)
+        if unowned_shared:
+            raise ManifestError(
+                f"Shared artifacts must be referenced by at least one artifact for "
+                f"{self.manifest.model_id}",
+                details={"artifact_ids": unowned_shared},
+            )
 
     @property
     def shared_artifacts(self) -> tuple[ModelArtifact, ...]:
-        """Artifacts reused by every variant and runtime of this model."""
+        """All variant-independent artifacts declared by this model."""
 
         return tuple(artifact for artifact in self.artifacts if artifact.shared)
+
+    def required_shared_artifacts(
+        self,
+        *,
+        variant: str | None = None,
+        runtime: str | None = None,
+        artifact_id: str | None = None,
+        target_format: str | None = None,
+    ) -> tuple[ModelArtifact, ...]:
+        """Return the shared artifacts required by matching scoped artifacts."""
+
+        selected_variant = self.manifest.get_variant(variant).name
+        required = {
+            share_id
+            for artifact in self.artifacts
+            if not artifact.shared
+            and artifact.variant == selected_variant
+            and (runtime is None or artifact.runtime == runtime)
+            and (artifact_id is None or artifact.artifact_id == artifact_id)
+            and (target_format is None or artifact.format.value == target_format)
+            for share_id in artifact.required_shares
+        }
+        return tuple(
+            artifact for artifact in self.shared_artifacts if artifact.artifact_id in required
+        )
 
     @property
     def supported_runtimes(self) -> tuple[str, ...]:

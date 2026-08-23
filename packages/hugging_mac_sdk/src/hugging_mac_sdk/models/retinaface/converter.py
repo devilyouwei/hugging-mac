@@ -21,7 +21,6 @@ from hugging_mac_sdk.schemas.conversion import (
     ConversionResult,
 )
 
-from .config import RETINAFACE_MODEL_ID
 from .utils.checkpoint import load_retinaface_checkpoint
 
 
@@ -35,9 +34,12 @@ class RetinaFaceConversionOptions(BaseModel):
 class RetinaFaceConverter(ModelConverter):
     converter_id = "py-feat.retinaface"
 
+    def __init__(self, model_id: str) -> None:
+        self._model_id = model_id
+
     def supports(self, request: ConversionRequest) -> bool:
         return (
-            request.model_id == RETINAFACE_MODEL_ID
+            request.model_id == self._model_id
             and request.source_format is ArtifactFormat.PYTORCH
             and request.target_format is ArtifactFormat.COREML
             and request.source.path.is_dir()
@@ -117,7 +119,7 @@ class RetinaFaceConverter(ModelConverter):
             )
             converted.user_defined_metadata.update(
                 {
-                    "hugging_mac_model": RETINAFACE_MODEL_ID,
+                    "hugging_mac_model": self._model_id,
                     "hugging_mac_input_size": str(options.input_size),
                     "hugging_mac_raw_outputs": "true",
                 }

@@ -1,63 +1,199 @@
 manifest:
-  schema_version: "1"
+  schema_version: '1'
   model_id: nvidia/nemotron-3.5-asr-streaming-0.6b
-  revision: 1a41b75758b0337ff67db7d5408280aaaf23074e
   display_name: Nemotron 3.5 ASR Streaming Multilingual 0.6B
   description: Precompiled Core ML edition of NVIDIA Nemotron 3.5 multilingual streaming RNN-T ASR.
   tags: [audio, asr, multilingual, streaming, rnnt, coreml, ane]
   family: nemotron-3.5-asr
   capabilities: [speech-transcription, streaming-speech-transcription]
-  runtimes:
-    - name: coreml
-      devices: [ane, gpu, cpu]
-      dtypes: [int8, int6, float16, float32]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [coremltools, numpy]
-  variants:
-    - name: latin-560ms
-      display_name: Latin 560 ms
-      metadata: {parameters_millions: 600, sample_rate: 16000, chunk_ms: 560, vocab_size: 2828}
-      resources: [{kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [latin/560ms/**]}]
-    - name: latin-1120ms
-      display_name: Latin 1120 ms
-      metadata: {parameters_millions: 600, sample_rate: 16000, chunk_ms: 1120, vocab_size: 2828}
-      resources: [{kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [latin/1120ms/**]}]
-    - name: latin-2240ms
-      display_name: Latin 2240 ms
-      metadata: {parameters_millions: 600, sample_rate: 16000, chunk_ms: 2240, vocab_size: 2828}
-      resources: [{kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [latin/2240ms/**]}]
-    - name: latin-4480ms
-      display_name: Latin 4480 ms
-      metadata: {parameters_millions: 600, sample_rate: 16000, chunk_ms: 4480, vocab_size: 2828}
-      resources: [{kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [latin/4480ms/**]}]
-    - name: multilingual-560ms
-      display_name: Multilingual 560 ms
-      metadata: {parameters_millions: 600, sample_rate: 16000, chunk_ms: 560, vocab_size: 13087}
-      resources: [{kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [multilingual/560ms/**]}]
-    - name: multilingual-1120ms
-      display_name: Multilingual 1120 ms
-      metadata: {parameters_millions: 600, sample_rate: 16000, chunk_ms: 1120, vocab_size: 13087}
-      resources: [{kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [multilingual/1120ms/**]}]
-    - name: multilingual-2240ms
-      display_name: Multilingual 2240 ms
-      metadata: {parameters_millions: 600, sample_rate: 16000, chunk_ms: 2240, vocab_size: 13087}
-      resources: [{kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [multilingual/2240ms/**]}]
-    - name: multilingual-4480ms
-      display_name: Multilingual 4480 ms
-      metadata: {parameters_millions: 600, sample_rate: 16000, chunk_ms: 4480, vocab_size: 13087}
-      resources: [{kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [multilingual/4480ms/**]}]
-  default_variant: multilingual-2240ms
-  license: OpenMDW-1.1
   source_url: https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b
+  license: OpenMDW-1.1
+
+  runtimes:
+  - name: coreml
+    devices: [ane, gpu, cpu]
+    dtypes: [int8, int6, float16, float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coremltools, numpy]
   default_runtime: coreml
+  variants:
+  - name: latin-560ms
+    display_name: Latin 560 ms
+    metadata:
+      parameters_millions: 600
+      sample_rate: 16000
+      chunk_ms: 560
+      vocab_size: 2828
+  - name: latin-1120ms
+    display_name: Latin 1120 ms
+    metadata:
+      parameters_millions: 600
+      sample_rate: 16000
+      chunk_ms: 1120
+      vocab_size: 2828
+  - name: latin-2240ms
+    display_name: Latin 2240 ms
+    metadata:
+      parameters_millions: 600
+      sample_rate: 16000
+      chunk_ms: 2240
+      vocab_size: 2828
+  - name: latin-4480ms
+    display_name: Latin 4480 ms
+    metadata:
+      parameters_millions: 600
+      sample_rate: 16000
+      chunk_ms: 4480
+      vocab_size: 2828
+  - name: multilingual-560ms
+    display_name: Multilingual 560 ms
+    metadata:
+      parameters_millions: 600
+      sample_rate: 16000
+      chunk_ms: 560
+      vocab_size: 13087
+  - name: multilingual-1120ms
+    display_name: Multilingual 1120 ms
+    metadata:
+      parameters_millions: 600
+      sample_rate: 16000
+      chunk_ms: 1120
+      vocab_size: 13087
+  - name: multilingual-2240ms
+    display_name: Multilingual 2240 ms
+    metadata:
+      parameters_millions: 600
+      sample_rate: 16000
+      chunk_ms: 2240
+      vocab_size: 13087
+  - name: multilingual-4480ms
+    display_name: Multilingual 4480 ms
+    metadata:
+      parameters_millions: 600
+      sample_rate: 16000
+      chunk_ms: 4480
+      vocab_size: 13087
+  default_variant: multilingual-2240ms
 
 artifacts:
-  - {artifact_id: coreml-mixed, variant: latin-560ms, runtime: coreml, format: coreml, path: nvidia/nemotron-3.5-asr-streaming-0.6b/1a41b75758b0337ff67db7d5408280aaaf23074e/latin-560ms/coreml/model, kind: directory, source: {kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [latin/560ms/**]}}
-  - {artifact_id: coreml-mixed, variant: latin-1120ms, runtime: coreml, format: coreml, path: nvidia/nemotron-3.5-asr-streaming-0.6b/1a41b75758b0337ff67db7d5408280aaaf23074e/latin-1120ms/coreml/model, kind: directory, source: {kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [latin/1120ms/**]}}
-  - {artifact_id: coreml-mixed, variant: latin-2240ms, runtime: coreml, format: coreml, path: nvidia/nemotron-3.5-asr-streaming-0.6b/1a41b75758b0337ff67db7d5408280aaaf23074e/latin-2240ms/coreml/model, kind: directory, source: {kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [latin/2240ms/**]}}
-  - {artifact_id: coreml-mixed, variant: latin-4480ms, runtime: coreml, format: coreml, path: nvidia/nemotron-3.5-asr-streaming-0.6b/1a41b75758b0337ff67db7d5408280aaaf23074e/latin-4480ms/coreml/model, kind: directory, source: {kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [latin/4480ms/**]}}
-  - {artifact_id: coreml-mixed, variant: multilingual-560ms, runtime: coreml, format: coreml, path: nvidia/nemotron-3.5-asr-streaming-0.6b/1a41b75758b0337ff67db7d5408280aaaf23074e/multilingual-560ms/coreml/model, kind: directory, source: {kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [multilingual/560ms/**]}}
-  - {artifact_id: coreml-mixed, variant: multilingual-1120ms, runtime: coreml, format: coreml, path: nvidia/nemotron-3.5-asr-streaming-0.6b/1a41b75758b0337ff67db7d5408280aaaf23074e/multilingual-1120ms/coreml/model, kind: directory, source: {kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [multilingual/1120ms/**]}}
-  - {artifact_id: coreml-mixed, variant: multilingual-2240ms, runtime: coreml, format: coreml, path: nvidia/nemotron-3.5-asr-streaming-0.6b/1a41b75758b0337ff67db7d5408280aaaf23074e/multilingual-2240ms/coreml/model, kind: directory, source: {kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [multilingual/2240ms/**]}}
-  - {artifact_id: coreml-mixed, variant: multilingual-4480ms, runtime: coreml, format: coreml, path: nvidia/nemotron-3.5-asr-streaming-0.6b/1a41b75758b0337ff67db7d5408280aaaf23074e/multilingual-4480ms/coreml/model, kind: directory, source: {kind: huggingface, repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML, revision: 1a41b75758b0337ff67db7d5408280aaaf23074e, allow_patterns: [multilingual/4480ms/**]}}
+- artifact_id: coreml-mixed
+  variant: latin-560ms
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: nvidia/nemotron-3.5-asr-streaming-0.6b/latin-560ms/coreml/coreml-mixed
+  source:
+    kind: huggingface
+    repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
+    allow_patterns:
+    - latin/560ms/**
+    strip_prefix: latin/560ms
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
+- artifact_id: coreml-mixed
+  variant: latin-1120ms
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: nvidia/nemotron-3.5-asr-streaming-0.6b/latin-1120ms/coreml/coreml-mixed
+  source:
+    kind: huggingface
+    repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
+    allow_patterns:
+    - latin/1120ms/**
+    strip_prefix: latin/1120ms
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
+- artifact_id: coreml-mixed
+  variant: latin-2240ms
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: nvidia/nemotron-3.5-asr-streaming-0.6b/latin-2240ms/coreml/coreml-mixed
+  source:
+    kind: huggingface
+    repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
+    allow_patterns:
+    - latin/2240ms/**
+    strip_prefix: latin/2240ms
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
+- artifact_id: coreml-mixed
+  variant: latin-4480ms
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: nvidia/nemotron-3.5-asr-streaming-0.6b/latin-4480ms/coreml/coreml-mixed
+  source:
+    kind: huggingface
+    repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
+    allow_patterns:
+    - latin/4480ms/**
+    strip_prefix: latin/4480ms
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
+- artifact_id: coreml-mixed
+  variant: multilingual-560ms
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: nvidia/nemotron-3.5-asr-streaming-0.6b/multilingual-560ms/coreml/coreml-mixed
+  source:
+    kind: huggingface
+    repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
+    allow_patterns:
+    - multilingual/560ms/**
+    strip_prefix: multilingual/560ms
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
+- artifact_id: coreml-mixed
+  variant: multilingual-1120ms
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: nvidia/nemotron-3.5-asr-streaming-0.6b/multilingual-1120ms/coreml/coreml-mixed
+  source:
+    kind: huggingface
+    repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
+    allow_patterns:
+    - multilingual/1120ms/**
+    strip_prefix: multilingual/1120ms
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
+- artifact_id: coreml-mixed
+  variant: multilingual-2240ms
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: nvidia/nemotron-3.5-asr-streaming-0.6b/multilingual-2240ms/coreml/coreml-mixed
+  source:
+    kind: huggingface
+    repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
+    allow_patterns:
+    - multilingual/2240ms/**
+    strip_prefix: multilingual/2240ms
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]
+- artifact_id: coreml-mixed
+  variant: multilingual-4480ms
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: nvidia/nemotron-3.5-asr-streaming-0.6b/multilingual-4480ms/coreml/coreml-mixed
+  source:
+    kind: huggingface
+    repo_id: FluidInference/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML
+    allow_patterns:
+    - multilingual/4480ms/**
+    strip_prefix: multilingual/4480ms
+  required_files: [preprocessor.mlmodelc/model.mil, preprocessor.mlmodelc/coremldata.bin, preprocessor.mlmodelc/weights/weight.bin,
+    encoder.mlmodelc/model.mil, encoder.mlmodelc/coremldata.bin, encoder.mlmodelc/weights/weight.bin, decoder_joint.mlmodelc/model.mil,
+    decoder_joint.mlmodelc/coremldata.bin, decoder_joint.mlmodelc/weights/weight.bin, metadata.json, tokenizer.json]

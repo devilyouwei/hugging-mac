@@ -42,14 +42,10 @@ class DeepFilterNet3Dsp:
                 auxiliary, "erb_inv_fb", (ERB_BANDS, FREQUENCY_BINS)
             )
             self._window = self._read_array(auxiliary, "window", (FFT_SIZE,))
-            self._mean_norm_init = self._read_array(
-                auxiliary, "mean_norm_state", (ERB_BANDS,)
-            )
+            self._mean_norm_init = self._read_array(auxiliary, "mean_norm_state", (ERB_BANDS,))
             unit = np.asarray(auxiliary["unit_norm_state"], dtype=np.float32).reshape(-1)
             if unit.shape != (DF_BINS,):
-                raise ValueError(
-                    f"unit_norm_state has shape {unit.shape}; expected {(DF_BINS,)}"
-                )
+                raise ValueError(f"unit_norm_state has shape {unit.shape}; expected {(DF_BINS,)}")
             self._unit_norm_init = np.ascontiguousarray(unit)
 
     @staticmethod
@@ -90,10 +86,7 @@ class DeepFilterNet3Dsp:
                 DF_ORDER, frames, DF_BINS, 2
             )
         except (KeyError, ValueError) as error:
-            shapes = {
-                name: getattr(value, "shape", None)
-                for name, value in raw.items()
-            }
+            shapes = {name: getattr(value, "shape", None) for name, value in raw.items()}
             raise ValueError(f"Unexpected DeepFilterNet3 outputs: {shapes}") from error
 
         enhanced = spectrum * (mask @ self._erb_inv_fb).astype(np.float32)

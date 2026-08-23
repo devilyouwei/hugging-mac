@@ -1,99 +1,91 @@
 manifest:
-  schema_version: "1"
+  schema_version: '1'
   model_id: audio8/audio8-asr
-  revision: 8487da63d581fa4fc9b5c60444cb57c3a523d7aa
   display_name: Audio8-ASR 0.1B
   description: 面向中英等七种语言、最长 30 秒短音频的轻量自回归语音识别模型。
   tags: [audio, asr, speech-recognition, qwen]
   family: audio8-asr
   capabilities: [speech-transcription]
-  runtimes:
-    - name: pytorch-mps
-      devices: [mps, cpu]
-      dtypes: [float16, bfloat16, float32]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [torch, transformers, safetensors, numpy, soundfile, scipy]
-    - name: coreml
-      devices: [cpu-and-neural-engine, all, cpu-and-gpu, cpu-only]
-      dtypes: [float16]
-      quantizations: [float16, int8]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [coremltools, torch, transformers, safetensors, numpy, soundfile, scipy]
-  variants:
-    - name: 0.1b
-      display_name: Audio8-ASR 0.1B
-      description: 0.324B 端到端参数、0.104B 语言模型参数的原始 BF16 权重。
-      metadata:
-        parameters_millions: 323.99
-        weight_size_bytes: 648031000
-        max_audio_seconds: 30
-        sample_rate: 16000
-      resources:
-        - kind: huggingface
-          repo_id: Audio8/Audio8-ASR-0.1B
-          revision: 8487da63d581fa4fc9b5c60444cb57c3a523d7aa
-          allow_patterns:
-            - model.safetensors
-            - config.json
-            - generation_config.json
-            - preprocessor_config.json
-            - processor_config.json
-  default_variant: 0.1b
-  license: CC-BY-NC-4.0
   source_url: https://huggingface.co/Audio8/Audio8-ASR-0.1B
-  default_runtime: pytorch-mps
+  license: CC-BY-NC-4.0
+
+  runtimes:
+  - name: pytorch-mps
+    devices: [mps, cpu]
+    dtypes: [float16, bfloat16, float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [torch, transformers, safetensors, numpy, soundfile, scipy]
+  - name: coreml
+    devices: [cpu-and-neural-engine, all, cpu-and-gpu, cpu-only]
+    dtypes: [float16]
+    quantizations: [float16, int8]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coremltools, torch, transformers, safetensors, numpy, soundfile, scipy]
+  default_runtime: coreml
+  variants:
+  - name: 0.1b
+    display_name: Audio8-ASR 0.1B
+    description: 0.324B 端到端参数、0.104B 语言模型参数的原始 BF16 权重。
+    metadata:
+      parameters_millions: 323.99
+      weight_size_bytes: 648031000
+      max_audio_seconds: 30
+      sample_rate: 16000
+  default_variant: 0.1b
 
 artifacts:
-  - artifact_id: source
-    variant: 0.1b
-    runtime: pytorch-mps
-    format: safetensors
-    path: audio8/audio8-asr/8487da63d581fa4fc9b5c60444cb57c3a523d7aa/0.1b/pytorch/model
-    kind: directory
-    source:
-      kind: huggingface
-      repo_id: Audio8/Audio8-ASR-0.1B
-      revision: 8487da63d581fa4fc9b5c60444cb57c3a523d7aa
-      allow_patterns:
-        - model.safetensors
-        - config.json
-        - generation_config.json
-        - preprocessor_config.json
-        - processor_config.json
-  - artifact_id: coreml
-    convert: true
-    variant: 0.1b
-    runtime: coreml
-    format: coreml
-    path: audio8/audio8-asr/8487da63d581fa4fc9b5c60444cb57c3a523d7aa/0.1b/coreml/audio8-asr-coreml
-    kind: directory
-    expected_sha256: 6721e90590aee02b6091ec79e3ea451ae1997399e18fcf451f079535a44fce48
-    source:
-      kind: huggingface
-      repo_id: hugging-mac/audio8-asr-coreml
-      revision: 22ea4007532364bc48991100f3608291be2c8bf9
-      allow_patterns:
-        - audio8-asr-coreml/audio_tower.mlpackage/**
-        - audio8-asr-coreml/language_model.safetensors
-        - audio8-asr-coreml/projector.safetensors
-        - audio8-asr-coreml/config.json
-        - audio8-asr-coreml/generation_config.json
-        - audio8-asr-coreml/preprocessor_config.json
-        - audio8-asr-coreml/processor_config.json
-        - audio8-asr-coreml/conversion.json
-      strip_prefix: audio8-asr-coreml
-      expected_sha256: 6721e90590aee02b6091ec79e3ea451ae1997399e18fcf451f079535a44fce48
-  - artifact_id: tokenizer
-    variant: 0.1b
-    runtime: pytorch-mps
-    format: tokenizer
-    path: audio8/audio8-asr/shared/tokenizer/778bac55980c1bfbaf79cf4d27ec9bb13682afb8
-    kind: directory
-    shared: true
-    source:
-      kind: huggingface
-      repo_id: Audio8/Audio8-ASR-0.1B
-      revision: 8487da63d581fa4fc9b5c60444cb57c3a523d7aa
-      allow_patterns: [tokenizer.json, tokenizer_config.json, special_tokens_map.json, added_tokens.json]
+- artifact_id: source
+  variant: 0.1b
+  runtime: pytorch-mps
+  format: safetensors
+  kind: directory
+  path: audio8/audio8-asr/0.1b/pytorch-mps/source
+  required_files: [model.safetensors, config.json, generation_config.json, preprocessor_config.json, processor_config.json]
+  required_shares: [tokenizer]
+  source:
+    kind: huggingface
+    repo_id: Audio8/Audio8-ASR-0.1B
+    allow_patterns:
+    - model.safetensors
+    - config.json
+    - generation_config.json
+    - preprocessor_config.json
+    - processor_config.json
+- artifact_id: coreml
+  convert: true
+  variant: 0.1b
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: audio8/audio8-asr/0.1b/coreml/coreml
+  required_files: [audio_tower.mlpackage, language_model.safetensors, projector.safetensors, config.json, preprocessor_config.json, conversion.json]
+  required_shares: [tokenizer]
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/audio8-asr-coreml
+    allow_patterns:
+    - audio8-asr-coreml/audio_tower.mlpackage/**
+    - audio8-asr-coreml/language_model.safetensors
+    - audio8-asr-coreml/projector.safetensors
+    - audio8-asr-coreml/config.json
+    - audio8-asr-coreml/generation_config.json
+    - audio8-asr-coreml/preprocessor_config.json
+    - audio8-asr-coreml/processor_config.json
+    - audio8-asr-coreml/conversion.json
+    strip_prefix: audio8-asr-coreml
+- artifact_id: tokenizer
+  shared: true
+  format: tokenizer
+  kind: directory
+  path: audio8/audio8-asr/_shared/tokenizer
+  required_files: [tokenizer.json, tokenizer_config.json, special_tokens_map.json, added_tokens.json]
+  source:
+    kind: huggingface
+    repo_id: Audio8/Audio8-ASR-0.1B
+    allow_patterns:
+    - tokenizer.json
+    - tokenizer_config.json
+    - special_tokens_map.json
+    - added_tokens.json

@@ -95,6 +95,8 @@ class ModelSummary(BaseModel):
     family: str
     tags: tuple[str, ...]
     capabilities: tuple[str, ...]
+    license: str | None = None
+    source_url: str | None = None
     runtimes: tuple[RuntimeSummary, ...]
     default_runtime: str | None
     instantiated: bool

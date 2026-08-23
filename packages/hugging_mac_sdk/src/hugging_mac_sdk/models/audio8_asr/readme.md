@@ -19,7 +19,7 @@ Applications must obtain this capability from a loaded model handle and must not
 ## Package structure
 
 - `__init__.py`: public definition, manifest, and registration exports.
-- `model.yaml`: canonical metadata, variants, runtimes, resources, and artifacts.
+- `model.yaml`: canonical metadata, variants, runtimes, and artifacts with their owned sources.
 - `config.py`: typed instance and resource configuration.
 - `definition.py`: runtime factories, converter binding, and registry integration.
 - `instance.py`: lifecycle, capability registration, and runtime-neutral transcription flow.
@@ -28,4 +28,3 @@ Applications must obtain this capability from a loaded model handle and must not
 - `resources.py`: source and converted-artifact lifecycle.
 - `converter.py`: Audio8-ASR to Core ML conversion policy.
 - `utils/`: private audio, model, Core ML, and output helpers.
-

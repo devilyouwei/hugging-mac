@@ -2,7 +2,7 @@
 
 ## Summary
 
-Canonical package for `deepfilternet/deepfilternet3`, containing the pinned prebuilt Core ML graph, complete libdf-compatible DSP pipeline, and managed-resource lifecycle.
+Canonical package for `deepfilternet/deepfilternet3`, containing the prebuilt Core ML graph, complete libdf-compatible DSP pipeline, and managed-resource lifecycle.
 
 ## Runtimes and variants
 

@@ -160,9 +160,7 @@ class CoreMlNemotronEngine:
             cache_channel=np.zeros(meta["cache_channel_shape"], dtype=np.float32),
             cache_time=np.zeros(meta["cache_time_shape"], dtype=np.float32),
             cache_len=np.ones((1,), dtype=np.int32),
-            mel_cache=np.zeros(
-                (1, int(meta["mel_features"]), pre_cache), dtype=np.float32
-            ),
+            mel_cache=np.zeros((1, int(meta["mel_features"]), pre_cache), dtype=np.float32),
             h_state=np.zeros(
                 (int(meta["decoder_layers"]), 1, int(meta["decoder_hidden"])),
                 dtype=np.float32,
@@ -188,9 +186,7 @@ class CoreMlNemotronEngine:
         meta = self._metadata
         chunk_frames = int(meta["chunk_mel_frames"])
         chunk_samples = chunk_frames * 160
-        samples = np.concatenate(
-            (state.pending_samples, np.asarray(incoming, dtype=np.float32))
-        )
+        samples = np.concatenate((state.pending_samples, np.asarray(incoming, dtype=np.float32)))
         complete_samples = samples.size - samples.size % chunk_samples
         valid_samples = samples.size
         if final and samples.size > complete_samples:
@@ -224,9 +220,7 @@ class CoreMlNemotronEngine:
                 }
             )
             encoded = np.asarray(_output(enc, "encoded"), dtype=np.float32)
-            state.cache_channel = np.asarray(
-                _output(enc, "cache_channel_out"), dtype=np.float32
-            )
+            state.cache_channel = np.asarray(_output(enc, "cache_channel_out"), dtype=np.float32)
             state.cache_time = np.asarray(_output(enc, "cache_time_out"), dtype=np.float32)
             state.cache_len = np.asarray(_output(enc, "cache_len_out"), dtype=np.int32)
             state.mel_cache = mel[..., -int(meta["pre_encode_cache"]) :].copy()
@@ -251,9 +245,7 @@ class CoreMlNemotronEngine:
                     state.c_state = np.asarray(_output(result, "c_out"), dtype=np.float32)
         language_tags = set(map(int, meta.get("lang_tag_token_ids", ())))
         text = "".join(
-            self._vocab.get(index, "")
-            for index in state.token_ids
-            if index not in language_tags
+            self._vocab.get(index, "") for index in state.token_ids if index not in language_tags
         )
         text = " ".join(text.replace("▁", " ").split())
         delta = text[len(state.text) :] if text.startswith(state.text) else text

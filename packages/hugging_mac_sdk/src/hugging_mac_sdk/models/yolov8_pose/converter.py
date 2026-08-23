@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from hugging_mac_sdk.converters.yolov8 import YoloV8ExportConverter
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest, ConversionResult
 
-from .config import (
-    YOLOV8_POSE_MODEL_ID,
-    YoloV8PoseCoreMlConfig,
-    YoloV8PoseVariant,
-)
+from .config import YoloV8PoseCoreMlConfig
 from .utils.checkpoint import load_yolov8_checkpoint
 
 
 class YoloV8PoseConverter(YoloV8ExportConverter):
+    def __init__(self, model_id: str) -> None:
+        self._model_id = model_id
+
     @property
     def converter_id(self) -> str:
         return "ultralytics.yolov8-pose"
@@ -28,16 +27,14 @@ class YoloV8PoseConverter(YoloV8ExportConverter):
     def supports(self, request: ConversionRequest) -> bool:
         return (
             super().supports(request)
-            and request.model_id == YOLOV8_POSE_MODEL_ID
+            and request.model_id == self._model_id
             and request.variant in {"n", "s", "m"}
             and request.source.path.name == f"yolov8{request.variant}-pose.pt"
         )
 
     async def convert(self, request: ConversionRequest) -> ConversionResult:
         if request.target_format is ArtifactFormat.COREML:
-            defaults = YoloV8PoseCoreMlConfig(
-                variant=cast(YoloV8PoseVariant, request.variant)
-            ).model_dump()
+            defaults = YoloV8PoseCoreMlConfig(variant=request.variant).model_dump()
             defaults.pop("compute_units")
             defaults.pop("variant")
             # Core ML only supports Ultralytics' embedded NMS pipeline for

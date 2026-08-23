@@ -14,7 +14,9 @@ from hugging_mac_sdk.errors import (
     UnsupportedRuntimeError,
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
-from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size, file_sha256
+from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
     ModelArtifactStatus,
@@ -22,21 +24,7 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
 )
 
-from .config import (
-    KOKORO_82M_MODEL_ID,
-    KOKORO_82M_REQUIRED_FILES,
-    KOKORO_82M_REVISION,
-    KOKORO_82M_VARIANT,
-    KOKORO_82M_WEIGHT_SHA256,
-    Kokoro82mInstanceConfig,
-)
-
-_COREML_REQUIRED_FILES = (
-    "kokoro_21_5s.mlmodelc/model.mil",
-    "kokoro_21_5s.mlmodelc/weights/weight.bin",
-    "vocab_index.json",
-    "voices/af_heart.json",
-)
+from .config import Kokoro82mInstanceConfig
 
 
 class Kokoro82mResourceResolver:
@@ -46,11 +34,16 @@ class Kokoro82mResourceResolver:
         coreml_source: HuggingFaceSource,
         config: Kokoro82mInstanceConfig,
         *,
+        manifest: ModelManifest,
+        source_artifact: ModelArtifact,
+        coreml_artifact: ModelArtifact,
         downloader: ResourceDownloader | None = None,
     ) -> None:
         self._source = source
         self._coreml_source = coreml_source
         self._config = config
+        self._manifest = manifest
+        self._source_artifact, self._coreml_artifact = source_artifact, coreml_artifact
         # This repository contains several precompiled bundles. Serial Hub
         # materialization avoids a huggingface_hub local-dir race when moving
         # the large LFS/Xet weight into its final nested path.
@@ -77,7 +70,7 @@ class Kokoro82mResourceResolver:
         )
 
     async def download_source(self, *, overwrite: bool = False) -> tuple[ResolvedResource, ...]:
-        """Download both declared runtime artifacts from their pinned repositories."""
+        """Download both declared runtime artifacts from their repositories."""
 
         pytorch = await self._download_or_resolve(
             self._source,
@@ -111,7 +104,7 @@ class Kokoro82mResourceResolver:
                 token=self._config.hf_token,
             )
         except DownloadError:
-            # Another request may have atomically published the same pinned
+            # Another request may have atomically published the same
             # artifact while this request was downloading its staging copy.
             if path.exists() and not overwrite:
                 return await resolver()
@@ -122,7 +115,7 @@ class Kokoro82mResourceResolver:
         if runtime not in {None, "pytorch-mps", "coreml"}:
             raise UnsupportedRuntimeError(
                 f"Kokoro-82M does not support runtime {runtime}",
-                details={"model_id": KOKORO_82M_MODEL_ID, "runtime": runtime},
+                details={"model_id": self._manifest.model_id, "runtime": runtime},
             )
         root = self._model_root().expanduser().resolve(strict=False)
         if runtime is None:
@@ -135,7 +128,7 @@ class Kokoro82mResourceResolver:
         if resolved != root and not resolved.is_relative_to(root):
             raise ResourceIntegrityError(
                 "Refusing to delete Kokoro-82M resources outside the model directory",
-                details={"model_id": KOKORO_82M_MODEL_ID},
+                details={"model_id": self._manifest.model_id},
             )
         await asyncio.to_thread(self._delete_path, resolved)
 
@@ -145,8 +138,8 @@ class Kokoro82mResourceResolver:
         source_available = self._snapshot_files_exist(source)
         coreml_available = self._coreml_files_exist(coreml)
         return ModelResourceStatus(
-            model_id=KOKORO_82M_MODEL_ID,
-            revision=KOKORO_82M_REVISION,
+            model_id=self._manifest.model_id,
+            revision=self._manifest.revision,
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
@@ -167,55 +160,37 @@ class Kokoro82mResourceResolver:
         )
 
     def _default_source_path(self) -> Path:
-        return self._model_root() / "pytorch" / "model"
+        return self._source_artifact.resolve(self._config.model_home)
 
     def _default_coreml_path(self) -> Path:
-        return (
-            self._config.model_home
-            / "hexgrad"
-            / "kokoro"
-            / self._coreml_source.revision
-            / self._config.variant
-            / "coreml"
-            / "model"
-        )
+        return self._coreml_artifact.resolve(self._config.model_home)
 
     def _model_root(self) -> Path:
-        return (
-            self._config.model_home
-            / "hexgrad"
-            / "kokoro"
-            / self._source.revision
-            / self._config.variant
+        return self._source_artifact.storage_path(self._config.model_home).parents[1]
+
+    def _snapshot_files_exist(self, path: Path) -> bool:
+        return path.is_dir() and all(
+            (path / name).is_file() for name in self._source_artifact.required_files
         )
 
-    @staticmethod
-    def _snapshot_files_exist(path: Path) -> bool:
-        return path.is_dir() and all((path / name).is_file() for name in KOKORO_82M_REQUIRED_FILES)
-
-    @staticmethod
-    def _coreml_files_exist(path: Path) -> bool:
-        return path.is_dir() and all((path / name).is_file() for name in _COREML_REQUIRED_FILES)
+    def _coreml_files_exist(self, path: Path) -> bool:
+        return path.is_dir() and all(
+            (path / name).is_file() for name in self._coreml_artifact.required_files
+        )
 
     def _validate_snapshot(self, path: Path) -> str:
         if not self._snapshot_files_exist(path):
             raise ResourceNotFoundError(
                 "Kokoro-82M PyTorch artifact is not downloaded",
-                details={"model_id": KOKORO_82M_MODEL_ID, "artifact_id": "source"},
+                details={"model_id": self._manifest.model_id, "artifact_id": "source"},
             )
-        digest = file_sha256(path / "kokoro-v1_0.pth")
-        if digest != KOKORO_82M_WEIGHT_SHA256:
-            raise ResourceIntegrityError(
-                "Kokoro-82M weight SHA-256 mismatch",
-                details={"expected": KOKORO_82M_WEIGHT_SHA256, "actual": digest},
-            )
-        return digest
+        return directory_sha256(path)
 
     def _validate_coreml_artifact(self, path: Path) -> str:
         if not self._coreml_files_exist(path):
             raise ResourceNotFoundError(
                 "Kokoro-82M Core ML artifact is not downloaded",
-                details={"model_id": KOKORO_82M_MODEL_ID, "artifact_id": "coreml"},
+                details={"model_id": self._manifest.model_id, "artifact_id": "coreml"},
             )
         return directory_sha256(path)
 
@@ -228,9 +203,18 @@ class Kokoro82mResourceResolver:
 
 
 class Kokoro82mResourceProvider:
-    def __init__(self, source: HuggingFaceSource, coreml_source: HuggingFaceSource) -> None:
+    def __init__(
+        self,
+        source: HuggingFaceSource,
+        coreml_source: HuggingFaceSource,
+        manifest: ModelManifest,
+        source_artifact: ModelArtifact,
+        coreml_artifact: ModelArtifact,
+    ) -> None:
         self._source = source
         self._coreml_source = coreml_source
+        self._manifest = manifest
+        self._source_artifact, self._coreml_artifact = source_artifact, coreml_artifact
 
     async def status(
         self, variant: str, options: Mapping[str, object] | None = None
@@ -267,14 +251,17 @@ class Kokoro82mResourceProvider:
     def _resolver(
         self, variant: str, options: Mapping[str, object] | None
     ) -> Kokoro82mResourceResolver:
-        if variant != KOKORO_82M_VARIANT:
+        if variant != self._source_artifact.variant:
             raise ResourceNotFoundError(
                 f"Kokoro-82M variant is not registered: {variant}",
-                details={"supported_variants": [KOKORO_82M_VARIANT]},
+                details={"supported_variants": [self._source_artifact.variant]},
             )
         config = Kokoro82mInstanceConfig.model_validate(dict(options or {}) | {"variant": variant})
         return Kokoro82mResourceResolver(
             self._source,
             self._coreml_source,
             config,
+            manifest=self._manifest,
+            source_artifact=self._source_artifact,
+            coreml_artifact=self._coreml_artifact,
         )

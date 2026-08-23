@@ -13,7 +13,8 @@ from .resources import DeepFilterNet3ResourceProvider, DeepFilterNet3ResourceRes
 
 _CONFIG = load_model_config(Path(__file__).with_name("model.yaml"))
 DEEPFILTERNET3_MANIFEST = _CONFIG.manifest
-_SOURCE_RESOURCE = DEEPFILTERNET3_MANIFEST.get_variant("default").resources[0]
+_ARTIFACT = _CONFIG.get_artifact("coreml-int8", variant="default", runtime="coreml")
+_SOURCE_RESOURCE = _ARTIFACT.source
 if not isinstance(_SOURCE_RESOURCE, HuggingFaceSource):
     raise TypeError("DeepFilterNet3 requires a Hugging Face source")
 _SOURCE: HuggingFaceSource = _SOURCE_RESOURCE
@@ -21,15 +22,19 @@ _SOURCE: HuggingFaceSource = _SOURCE_RESOURCE
 
 def _create(options: dict[str, object]) -> DeepFilterNet3Instance:
     config = DeepFilterNet3InstanceConfig.model_validate(options | {"runtime": "coreml"})
-    resources = DeepFilterNet3ResourceResolver(_SOURCE, config)
-    return DeepFilterNet3Instance(config, CoreMlDeepFilterNet3Engine(config, resources))
+    resources = DeepFilterNet3ResourceResolver(
+        _SOURCE, config, manifest=DEEPFILTERNET3_MANIFEST, artifact=_ARTIFACT
+    )
+    return DeepFilterNet3Instance(
+        config, CoreMlDeepFilterNet3Engine(config, resources), DEEPFILTERNET3_MANIFEST
+    )
 
 
 DEEPFILTERNET3_DEFINITION = ModelDefinition(
     manifest=DEEPFILTERNET3_MANIFEST,
     runtime_factories={"coreml": _create},
     artifacts=_CONFIG.artifacts,
-    resource_provider=DeepFilterNet3ResourceProvider(_SOURCE),
+    resource_provider=DeepFilterNet3ResourceProvider(_SOURCE, DEEPFILTERNET3_MANIFEST, _ARTIFACT),
 )
 
 

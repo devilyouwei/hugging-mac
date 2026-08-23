@@ -29,11 +29,7 @@ class CoreMlYoloV8SegEngine:
 
     @property
     def device(self) -> str:
-        return (
-            self._session.device
-            if self._session is not None
-            else self._config.compute_units
-        )
+        return self._session.device if self._session is not None else self._config.compute_units
 
     async def resolve(self) -> Path:
         return (await self._resources.resolve_coreml()).path

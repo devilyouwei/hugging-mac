@@ -6,6 +6,7 @@ from pathlib import Path
 
 from hugging_mac_sdk.core.config import load_model_config
 from hugging_mac_sdk.core.registry import ModelDefinition, ModelRegistry
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource
 
 from .config import Audio8TtsInstanceConfig, Audio8TtsMlxInstanceConfig
@@ -19,50 +20,82 @@ AUDIO8_TTS_CONFIG = load_model_config(Path(__file__).with_name("model.yaml"))
 AUDIO8_TTS_MANIFEST = AUDIO8_TTS_CONFIG.manifest
 
 
-def _sources() -> tuple[HuggingFaceSource, HuggingFaceSource]:
-    resources = AUDIO8_TTS_MANIFEST.get_variant("0.6b-preview").resources
-    if len(resources) != 2 or not all(isinstance(item, HuggingFaceSource) for item in resources):
-        raise TypeError("Audio8-TTS needs PyTorch and MLX Hugging Face sources")
-    return resources[0], resources[1]  # type: ignore[return-value]
+def _pytorch_artifact(variant: str) -> ModelArtifact:
+    return AUDIO8_TTS_CONFIG.get_artifact("source", variant=variant, runtime="pytorch")
+
+
+def _pytorch_source(variant: str) -> HuggingFaceSource:
+    source = _pytorch_artifact(variant).source
+    if not isinstance(source, HuggingFaceSource):
+        raise TypeError(f"Audio8-TTS variant {variant} needs a PyTorch Hugging Face source")
+    return source
+
+
+def _mlx_source() -> HuggingFaceSource:
+    source = _mlx_artifact().source
+    if not isinstance(source, HuggingFaceSource):
+        raise TypeError("Audio8-TTS needs one MLX Hugging Face source")
+    return source
+
+
+def _mlx_artifact() -> ModelArtifact:
+    return AUDIO8_TTS_CONFIG.get_artifact("mlx-bf16", variant="0.6b-preview", runtime="mlx")
 
 
 def _tokenizer_source() -> HuggingFaceSource:
-    shared = AUDIO8_TTS_CONFIG.artifacts[-1]
+    shared = _tokenizer_artifact()
     if not shared.shared or not isinstance(shared.source, HuggingFaceSource):
         raise TypeError("Audio8-TTS needs one shared tokenizer source")
     return shared.source
 
 
+def _tokenizer_artifact() -> ModelArtifact:
+    return AUDIO8_TTS_CONFIG.get_artifact("tokenizer", shared=True)
+
+
 def _create_pytorch(options: dict[str, object]) -> Audio8TtsInstance:
-    config = Audio8TtsInstanceConfig.model_validate(
-        options | {"runtime": "pytorch"}
-    )
+    config = Audio8TtsInstanceConfig.model_validate(options | {"runtime": "pytorch"})
     resources = Audio8TtsResourceResolver(
-        _sources()[0], config, tokenizer_source=_tokenizer_source()
+        _pytorch_source(config.variant),
+        config,
+        manifest=AUDIO8_TTS_MANIFEST,
+        artifact=_pytorch_artifact(config.variant),
+        tokenizer_artifact=_tokenizer_artifact(),
+        tokenizer_source=_tokenizer_source(),
     )
-    return Audio8TtsInstance(config, TorchAudio8TtsEngine(config, resources))
+    return Audio8TtsInstance(config, TorchAudio8TtsEngine(config, resources), AUDIO8_TTS_MANIFEST)
 
 
 def _create_mlx(options: dict[str, object]) -> Audio8TtsInstance:
     config = Audio8TtsMlxInstanceConfig.model_validate(options | {"runtime": "mlx"})
     resources = Audio8TtsMlxResourceResolver(
-        _sources()[1], config, tokenizer_source=_tokenizer_source()
+        _mlx_source(),
+        config,
+        manifest=AUDIO8_TTS_MANIFEST,
+        artifact=_mlx_artifact(),
+        tokenizer_artifact=_tokenizer_artifact(),
+        tokenizer_source=_tokenizer_source(),
     )
-    return Audio8TtsInstance(config, MlxAudio8TtsEngine(config, resources))
+    return Audio8TtsInstance(config, MlxAudio8TtsEngine(config, resources), AUDIO8_TTS_MANIFEST)
 
 
 AUDIO8_TTS_DEFINITION = ModelDefinition(
     manifest=AUDIO8_TTS_MANIFEST,
     runtime_factories={"pytorch": _create_pytorch, "mlx": _create_mlx},
     artifacts=AUDIO8_TTS_CONFIG.artifacts,
-    resource_provider=Audio8TtsCombinedResourceProvider(*_sources(), _tokenizer_source()),
+    resource_provider=Audio8TtsCombinedResourceProvider(
+        AUDIO8_TTS_MANIFEST,
+        {variant.name: _pytorch_artifact(variant.name) for variant in AUDIO8_TTS_MANIFEST.variants},
+        _tokenizer_source(),
+        _tokenizer_artifact(),
+        _mlx_source(),
+        _mlx_artifact(),
+    ),
 )
 
 
-def register_audio8_tts(
-    models: ModelRegistry, *, replace: bool = False
-) -> ModelDefinition:
-    """Register the pinned Audio8-TTS Preview model."""
+def register_audio8_tts(models: ModelRegistry, *, replace: bool = False) -> ModelDefinition:
+    """Register the Audio8-TTS Preview model."""
 
     models.register(AUDIO8_TTS_DEFINITION, replace=replace)
     return AUDIO8_TTS_DEFINITION

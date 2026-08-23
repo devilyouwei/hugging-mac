@@ -1,76 +1,64 @@
 manifest:
-  schema_version: "1"
+  schema_version: '1'
   model_id: hexgrad/kokoro
-  revision: f3ff3571791e39611d31c381e3a41a3af07b4987
   display_name: Kokoro 82M v1.0
   description: 官方 PyTorch Kokoro-82M，以及 FluidInference 预编译 Float32 Core ML 版本。
   tags: [audio, tts, styletts2, istftnet, pytorch, coreml, ane]
   family: kokoro
   capabilities: [speech-synthesis]
-  runtimes:
-    - name: pytorch-mps
-      devices: [mps, cpu]
-      dtypes: [float32]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [torch, kokoro, misaki, numpy]
-    - name: coreml
-      devices: [ane, gpu, cpu]
-      dtypes: [float16, float32]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [coremltools, kokoro, misaki, numpy]
-  variants:
-    - name: v1.0
-      display_name: Kokoro 82M v1.0
-      description: 官方 PyTorch checkpoint 与打包 voices。
-      metadata:
-        parameters_millions: 82
-        sample_rate: 24000
-        context_phonemes: 510
-      resources:
-        - kind: huggingface
-          repo_id: hexgrad/Kokoro-82M
-          revision: f3ff3571791e39611d31c381e3a41a3af07b4987
-          allow_patterns:
-            - config.json
-            - kokoro-v1_0.pth
-            - voices/*.pt
-        - kind: huggingface
-          repo_id: FluidInference/kokoro-82m-coreml
-          revision: c94edcb4b671856795458645cd389c0a9184e8bb
-          allow_patterns:
-            - kokoro_21_5s.mlmodelc/**
-            - vocab_index.json
-            - voices/*.json
-  default_variant: v1.0
-  license: Apache-2.0
   source_url: https://huggingface.co/hexgrad/Kokoro-82M
+  license: Apache-2.0
+
+  runtimes:
+  - name: pytorch-mps
+    devices: [mps, cpu]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [torch, kokoro, misaki, numpy]
+  - name: coreml
+    devices: [ane, gpu, cpu]
+    dtypes: [float16, float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coremltools, kokoro, misaki, numpy]
   default_runtime: coreml
+  variants:
+  - name: v1.0
+    display_name: Kokoro 82M v1.0
+    description: 官方 PyTorch checkpoint 与打包 voices。
+    metadata:
+      parameters_millions: 82
+      sample_rate: 24000
+      context_phonemes: 510
+  default_variant: v1.0
 
 artifacts:
-  - artifact_id: source
-    variant: v1.0
-    runtime: pytorch-mps
-    format: pytorch
-    path: hexgrad/kokoro/f3ff3571791e39611d31c381e3a41a3af07b4987/v1.0/pytorch/model
-    kind: directory
-    source:
-      kind: huggingface
-      repo_id: hexgrad/Kokoro-82M
-      revision: f3ff3571791e39611d31c381e3a41a3af07b4987
-      allow_patterns: [config.json, kokoro-v1_0.pth, voices/*.pt]
-  - artifact_id: coreml
-    variant: v1.0
-    runtime: coreml
-    format: coreml
-    path: hexgrad/kokoro/c94edcb4b671856795458645cd389c0a9184e8bb/v1.0/coreml/model
-    kind: directory
-    source:
-      kind: huggingface
-      repo_id: FluidInference/kokoro-82m-coreml
-      revision: c94edcb4b671856795458645cd389c0a9184e8bb
-      allow_patterns:
-        - kokoro_21_5s.mlmodelc/**
-        - vocab_index.json
-        - voices/*.json
+- artifact_id: source
+  variant: v1.0
+  runtime: pytorch-mps
+  format: pytorch
+  kind: directory
+  path: hexgrad/kokoro/v1.0/pytorch-mps/source
+  required_files: [config.json, kokoro-v1_0.pth, voices/af_heart.pt]
+  source:
+    kind: huggingface
+    repo_id: hexgrad/Kokoro-82M
+    allow_patterns:
+    - config.json
+    - kokoro-v1_0.pth
+    - voices/*.pt
+- artifact_id: coreml
+  variant: v1.0
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: hexgrad/kokoro/v1.0/coreml/coreml
+  required_files: [kokoro_21_5s.mlmodelc/model.mil, kokoro_21_5s.mlmodelc/weights/weight.bin, vocab_index.json, voices/af_heart.json]
+  source:
+    kind: huggingface
+    repo_id: FluidInference/kokoro-82m-coreml
+    allow_patterns:
+    - kokoro_21_5s.mlmodelc/**
+    - vocab_index.json
+    - voices/*.json

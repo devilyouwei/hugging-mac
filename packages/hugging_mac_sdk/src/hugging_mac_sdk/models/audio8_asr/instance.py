@@ -10,13 +10,14 @@ from typing import Protocol, cast
 from hugging_mac_sdk.capabilities import SpeechTranscription
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import InferenceError
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.transcription import (
     TranscriptionRequest,
     TranscriptionResponse,
     TranscriptionTimings,
 )
 
-from .config import AUDIO8_ASR_MODEL_ID, AUDIO8_ASR_REVISION, Audio8AsrInstanceConfig
+from .config import Audio8AsrInstanceConfig
 from .utils.audio import prepare_audio
 from .utils.types import AsrEngineOutput, PreparedAudio
 
@@ -47,16 +48,19 @@ class Audio8AsrInstance(BaseModelInstance):
         self,
         config: Audio8AsrInstanceConfig,
         engine: Audio8AsrEngine,
+        manifest: ModelManifest,
     ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=AUDIO8_ASR_MODEL_ID,
-            revision=AUDIO8_ASR_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=(config.compute_units if config.runtime == "coreml" else config.device),
         )
         self._config = config
         self._engine = engine
+        self._manifest_model_id = manifest.model_id
         self._inference_lock = asyncio.Lock()
         self.register_capability(
             SpeechTranscription,  # type: ignore[type-abstract]
@@ -92,7 +96,7 @@ class Audio8AsrInstance(BaseModelInstance):
         text = output.text.strip()
         postprocess_ms = (perf_counter() - postprocess_started) * 1000
         return TranscriptionResponse(
-            model_id=AUDIO8_ASR_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

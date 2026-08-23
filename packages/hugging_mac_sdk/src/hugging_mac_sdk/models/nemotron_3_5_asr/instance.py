@@ -9,6 +9,7 @@ from uuid import uuid4
 from hugging_mac_sdk.capabilities import SpeechTranscription, StreamingSpeechTranscription
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import InferenceError
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.streaming_transcription import (
     StreamingTranscriptionRequest,
     StreamingTranscriptionResponse,
@@ -20,11 +21,7 @@ from hugging_mac_sdk.schemas.transcription import (
     TranscriptionTimings,
 )
 
-from .config import (
-    NEMOTRON_3_5_ASR_MODEL_ID,
-    NEMOTRON_3_5_ASR_REVISION,
-    NemotronCoreMlInstanceConfig,
-)
+from .config import NemotronCoreMlInstanceConfig
 from .utils.audio import prepare_audio
 from .utils.types import AsrEngineOutput, PreparedAudio, StreamingAsrEngineOutput
 
@@ -49,15 +46,22 @@ class NemotronCoreMlEngine(Protocol):
 
 
 class NemotronCoreMlInstance(BaseModelInstance):
-    def __init__(self, config: NemotronCoreMlInstanceConfig, engine: NemotronCoreMlEngine) -> None:
+    def __init__(
+        self,
+        config: NemotronCoreMlInstanceConfig,
+        engine: NemotronCoreMlEngine,
+        manifest: ModelManifest,
+    ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=NEMOTRON_3_5_ASR_MODEL_ID,
-            revision=NEMOTRON_3_5_ASR_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=config.device,
         )
         self._config, self._engine = config, engine
+        self._manifest_model_id = manifest.model_id
         self._inference_lock = asyncio.Lock()
         self._stream_durations: dict[str, float] = {}
         self.register_capability(SpeechTranscription, cast(SpeechTranscription, self))  # type: ignore[type-abstract]
@@ -93,7 +97,7 @@ class NemotronCoreMlInstance(BaseModelInstance):
         text = output.text.strip()
         postprocess_ms = (perf_counter() - started) * 1000
         return TranscriptionResponse(
-            model_id=NEMOTRON_3_5_ASR_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,
@@ -116,7 +120,7 @@ class NemotronCoreMlInstance(BaseModelInstance):
             self._stream_durations[session_id] = 0.0
         return StreamingTranscriptionSession(
             session_id=session_id,
-            model_id=NEMOTRON_3_5_ASR_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,
@@ -201,7 +205,7 @@ class NemotronCoreMlInstance(BaseModelInstance):
     ) -> StreamingTranscriptionResponse:
         return StreamingTranscriptionResponse(
             session_id=session_id,
-            model_id=NEMOTRON_3_5_ASR_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

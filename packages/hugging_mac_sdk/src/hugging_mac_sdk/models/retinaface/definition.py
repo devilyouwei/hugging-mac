@@ -18,19 +18,27 @@ from .torch import TorchRetinaFaceEngine
 
 RETINAFACE_CONFIG = load_model_config(Path(__file__).with_name("model.yaml"))
 RETINAFACE_MANIFEST = RETINAFACE_CONFIG.manifest
+RETINAFACE_CONVERTER = RetinaFaceConverter(RETINAFACE_MANIFEST.model_id)
 
 
 def _source() -> HuggingFaceSource:
-    resources = RETINAFACE_MANIFEST.get_variant("mobilenet0.25").resources
-    if len(resources) != 1 or not isinstance(resources[0], HuggingFaceSource):
+    source = RETINAFACE_CONFIG.get_artifact(artifact_id="source").source
+    if not isinstance(source, HuggingFaceSource):
         raise TypeError("RetinaFace requires one Hugging Face PyTorch source")
-    return resources[0]
+    return source
 
 
 def _create_pytorch(options: dict[str, object]) -> RetinaFaceInstance:
     config = RetinaFaceInstanceConfig.model_validate(options | {"runtime": "pytorch-mps"})
-    resources = RetinaFaceResourceResolver(_source(), config)
-    return RetinaFaceInstance(config, TorchRetinaFaceEngine(config, resources))
+    resources = RetinaFaceResourceResolver(
+        _source(),
+        config,
+        RETINAFACE_MANIFEST,
+        RETINAFACE_CONFIG.get_artifact(artifact_id="source"),
+        RETINAFACE_CONFIG.get_artifact(artifact_id="coreml-fp16"),
+        converter=RETINAFACE_CONVERTER,
+    )
+    return RetinaFaceInstance(config, TorchRetinaFaceEngine(config, resources), RETINAFACE_MANIFEST)
 
 
 def _create_coreml(options: dict[str, object]) -> RetinaFaceInstance:
@@ -39,8 +47,17 @@ def _create_coreml(options: dict[str, object]) -> RetinaFaceInstance:
     if device is not None:
         normalized["compute_units"] = device
     config = RetinaFaceInstanceConfig.model_validate(normalized | {"runtime": "coreml"})
-    resources = RetinaFaceResourceResolver(_source(), config)
-    return RetinaFaceInstance(config, CoreMlRetinaFaceEngine(config, resources))
+    resources = RetinaFaceResourceResolver(
+        _source(),
+        config,
+        RETINAFACE_MANIFEST,
+        RETINAFACE_CONFIG.get_artifact(artifact_id="source"),
+        RETINAFACE_CONFIG.get_artifact(artifact_id="coreml-fp16"),
+        converter=RETINAFACE_CONVERTER,
+    )
+    return RetinaFaceInstance(
+        config, CoreMlRetinaFaceEngine(config, resources), RETINAFACE_MANIFEST
+    )
 
 
 RETINAFACE_DEFINITION = ModelDefinition(
@@ -48,7 +65,12 @@ RETINAFACE_DEFINITION = ModelDefinition(
     runtime_factories={"pytorch-mps": _create_pytorch, "coreml": _create_coreml},
     artifacts=RETINAFACE_CONFIG.artifacts,
     converter_ids=("py-feat.retinaface",),
-    resource_provider=RetinaFaceResourceProvider(_source()),
+    resource_provider=RetinaFaceResourceProvider(
+        _source(),
+        RETINAFACE_MANIFEST,
+        RETINAFACE_CONFIG.get_artifact(artifact_id="source"),
+        RETINAFACE_CONFIG.get_artifact(artifact_id="coreml-fp16"),
+    ),
 )
 
 
@@ -58,6 +80,6 @@ def register_retinaface(
     *,
     replace: bool = False,
 ) -> ModelDefinition:
-    converters.register(RetinaFaceConverter(), replace=replace)
+    converters.register(RETINAFACE_CONVERTER, replace=replace)
     models.register(RETINAFACE_DEFINITION, replace=replace)
     return RETINAFACE_DEFINITION

@@ -14,7 +14,9 @@ from hugging_mac_sdk.errors import (
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size, file_sha256
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
     ModelArtifactStatus,
@@ -23,20 +25,7 @@ from hugging_mac_sdk.schemas.resources import (
     UrlFileSource,
 )
 
-from .config import (
-    SILERO_FILENAME,
-    SILERO_MODEL_ID,
-    SILERO_REVISION,
-    SILERO_SHA256,
-    SileroInstanceConfig,
-)
-
-_COREML_REQUIRED_FILES = (
-    "coremldata.bin",
-    "metadata.json",
-    "model.mil",
-    "weights/weight.bin",
-)
+from .config import SileroInstanceConfig
 
 
 class SileroResourceResolver:
@@ -46,11 +35,16 @@ class SileroResourceResolver:
         coreml_source: HuggingFaceSource,
         config: SileroInstanceConfig,
         *,
+        manifest: ModelManifest,
+        onnx_artifact: ModelArtifact,
+        coreml_artifact: ModelArtifact,
         downloader: ResourceDownloader | None = None,
     ) -> None:
         self._onnx_source = onnx_source
         self._coreml_source = coreml_source
         self._config = config
+        self._manifest = manifest
+        self._onnx_artifact, self._coreml_artifact = onnx_artifact, coreml_artifact
         self._downloader = downloader or ResourceDownloader()
 
     async def resolve_onnx(self) -> ResolvedResource:
@@ -58,11 +52,6 @@ class SileroResourceResolver:
         if not path.is_file():
             raise ResourceNotFoundError("Silero ONNX model is not downloaded")
         digest = file_sha256(path)
-        if digest != SILERO_SHA256:
-            raise ResourceIntegrityError(
-                "Silero ONNX SHA-256 mismatch",
-                details={"expected": SILERO_SHA256, "actual": digest},
-            )
         return ResolvedResource(
             path=path,
             source=self._onnx_source,
@@ -72,7 +61,9 @@ class SileroResourceResolver:
 
     async def resolve_coreml(self) -> ResolvedResource:
         path = self._coreml_path()
-        missing = [name for name in _COREML_REQUIRED_FILES if not (path / name).is_file()]
+        missing = [
+            name for name in self._coreml_artifact.required_files if not (path / name).is_file()
+        ]
         if missing:
             raise ResourceNotFoundError(
                 "Silero Core ML artifact is not downloaded",
@@ -93,19 +84,20 @@ class SileroResourceResolver:
             await self.resolve_onnx()
 
         coreml_path = self._coreml_path()
-        coreml_root = coreml_path.parent
         if overwrite or not coreml_path.exists():
-            await self._downloader.download(self._coreml_source, coreml_root, overwrite=overwrite)
+            await self._downloader.download(self._coreml_source, coreml_path, overwrite=overwrite)
         await self.resolve_coreml()
 
     def status(self) -> ModelResourceStatus:
         onnx_path = self._onnx_path()
-        onnx_available = onnx_path.is_file() and file_sha256(onnx_path) == SILERO_SHA256
+        onnx_available = onnx_path.is_file()
         coreml_path = self._coreml_path()
-        coreml_available = all((coreml_path / name).is_file() for name in _COREML_REQUIRED_FILES)
+        coreml_available = all(
+            (coreml_path / name).is_file() for name in self._coreml_artifact.required_files
+        )
         return ModelResourceStatus(
-            model_id=SILERO_MODEL_ID,
-            revision=SILERO_REVISION,
+            model_id=self._manifest.model_id,
+            revision=self._manifest.revision,
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
@@ -132,7 +124,7 @@ class SileroResourceResolver:
         if runtime is None:
             target = root
         elif runtime == "coreml":
-            target = self._coreml_path().parent
+            target = self._coreml_path()
         else:
             target = self._onnx_path()
         resolved = target.expanduser().resolve(strict=False)
@@ -143,13 +135,13 @@ class SileroResourceResolver:
     def _onnx_path(self) -> Path:
         if self._config.runtime == "onnx" and self._config.artifact_path is not None:
             return self._config.artifact_path
-        return self._model_root() / "onnx" / SILERO_FILENAME
+        return self._onnx_artifact.resolve(self._config.model_home)
 
     def _coreml_path(self) -> Path:
         if self._config.runtime == "coreml" and self._config.artifact_path is not None:
             path = self._config.artifact_path
         else:
-            path = self._model_root() / "coreml" / "silero_vad.mlmodelc"
+            path = self._coreml_artifact.resolve(self._config.model_home)
 
         # Models-page snapshot downloads preserve the repository's top-level
         # ``silero_vad.mlmodelc`` directory. Older declarations used that same
@@ -161,18 +153,11 @@ class SileroResourceResolver:
             return nested
         return path
 
-    @staticmethod
-    def _coreml_complete(path: Path) -> bool:
-        return all((path / name).is_file() for name in _COREML_REQUIRED_FILES)
+    def _coreml_complete(self, path: Path) -> bool:
+        return all((path / name).is_file() for name in self._coreml_artifact.required_files)
 
     def _model_root(self) -> Path:
-        return (
-            self._config.model_home
-            / "snakers4"
-            / "silero-vad"
-            / SILERO_REVISION
-            / self._config.variant
-        )
+        return self._onnx_artifact.storage_path(self._config.model_home).parents[1]
 
     @staticmethod
     def _delete_path(path: Path) -> None:
@@ -183,9 +168,18 @@ class SileroResourceResolver:
 
 
 class SileroResourceProvider:
-    def __init__(self, onnx_source: UrlFileSource, coreml_source: HuggingFaceSource) -> None:
+    def __init__(
+        self,
+        onnx_source: UrlFileSource,
+        coreml_source: HuggingFaceSource,
+        manifest: ModelManifest,
+        onnx_artifact: ModelArtifact,
+        coreml_artifact: ModelArtifact,
+    ) -> None:
         self._onnx_source = onnx_source
         self._coreml_source = coreml_source
+        self._manifest = manifest
+        self._onnx_artifact, self._coreml_artifact = onnx_artifact, coreml_artifact
 
     async def status(
         self, variant: str, options: Mapping[str, object] | None = None
@@ -231,4 +225,11 @@ class SileroResourceProvider:
         self, variant: str, options: Mapping[str, object] | None
     ) -> SileroResourceResolver:
         config = SileroInstanceConfig.model_validate(dict(options or {}) | {"variant": variant})
-        return SileroResourceResolver(self._onnx_source, self._coreml_source, config)
+        return SileroResourceResolver(
+            self._onnx_source,
+            self._coreml_source,
+            config,
+            manifest=self._manifest,
+            onnx_artifact=self._onnx_artifact,
+            coreml_artifact=self._coreml_artifact,
+        )

@@ -11,6 +11,7 @@ from typing import Protocol, cast
 from hugging_mac_sdk.capabilities import VoiceActivityDetection
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import InferenceError
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.voice_activity import (
     SpeechSegment,
     VoiceActivityRequest,
@@ -18,7 +19,7 @@ from hugging_mac_sdk.schemas.voice_activity import (
     VoiceActivityTimings,
 )
 
-from .config import SILERO_MODEL_ID, SILERO_REVISION, SileroInstanceConfig
+from .config import SileroInstanceConfig
 from .utils.audio import prepare_audio
 from .utils.postprocess import probabilities_to_segments
 from .utils.types import PreparedAudio, SileroInferenceOptions
@@ -125,15 +126,19 @@ class SileroStreamingDetector:
 
 
 class SileroInstance(BaseModelInstance):
-    def __init__(self, config: SileroInstanceConfig, engine: SileroEngine) -> None:
+    def __init__(
+        self, config: SileroInstanceConfig, engine: SileroEngine, manifest: ModelManifest
+    ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=SILERO_MODEL_ID,
-            revision=SILERO_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=config.device,
         )
         self._config = config
+        self._manifest_model_id = manifest.model_id
         self._engine = engine
         self._inference_lock = asyncio.Lock()
         self.register_capability(
@@ -208,7 +213,7 @@ class SileroInstance(BaseModelInstance):
         )
         postprocess_ms = (perf_counter() - started) * 1000
         return VoiceActivityResponse(
-            model_id=SILERO_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

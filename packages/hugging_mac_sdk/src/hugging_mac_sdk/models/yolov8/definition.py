@@ -20,19 +20,29 @@ from .utils.checkpoint import inspect_yolov8_checkpoint
 
 YOLOV8_CONFIG = load_model_config(Path(__file__).with_name("model.yaml"))
 YOLOV8_MANIFEST = YOLOV8_CONFIG.manifest
+YOLOV8_CONVERTER = YoloV8Converter(YOLOV8_CONFIG)
 
 
 def _variant_source(variant: str) -> HuggingFaceSource:
-    resources = YOLOV8_MANIFEST.get_variant(variant).resources
-    if len(resources) != 1 or not isinstance(resources[0], HuggingFaceSource):
+    source = YOLOV8_CONFIG.get_artifact("source", variant=variant, runtime="pytorch-mps").source
+    if not isinstance(source, HuggingFaceSource):
         raise TypeError(f"YOLOv8 variant {variant} needs one Hugging Face source")
-    return resources[0]
+    return source
 
 
 def _create_pytorch_mps(options: dict[str, object]) -> YoloV8Instance:
     config = YoloV8InstanceConfig.model_validate(options | {"runtime": "pytorch-mps"})
-    resources = YoloV8ResourceResolver(_variant_source(config.variant), config)
-    return YoloV8Instance(config, TorchYoloV8Engine(config, resources))
+    resources = YoloV8ResourceResolver(
+        _variant_source(config.variant),
+        config,
+        YOLOV8_MANIFEST,
+        {
+            artifact.artifact_id: artifact
+            for artifact in YOLOV8_CONFIG.get_artifacts(variant=config.variant)
+        },
+        converter=YOLOV8_CONVERTER,
+    )
+    return YoloV8Instance(config, TorchYoloV8Engine(config, resources), YOLOV8_MANIFEST)
 
 
 def _create_coreml(options: dict[str, object]) -> YoloV8Instance:
@@ -41,14 +51,32 @@ def _create_coreml(options: dict[str, object]) -> YoloV8Instance:
     if requested_device is not None:
         normalized["compute_units"] = requested_device
     config = YoloV8InstanceConfig.model_validate(normalized | {"runtime": "coreml"})
-    resources = YoloV8ResourceResolver(_variant_source(config.variant), config)
-    return YoloV8Instance(config, CoreMlYoloV8Engine(config, resources))
+    resources = YoloV8ResourceResolver(
+        _variant_source(config.variant),
+        config,
+        YOLOV8_MANIFEST,
+        {
+            artifact.artifact_id: artifact
+            for artifact in YOLOV8_CONFIG.get_artifacts(variant=config.variant)
+        },
+        converter=YOLOV8_CONVERTER,
+    )
+    return YoloV8Instance(config, CoreMlYoloV8Engine(config, resources), YOLOV8_MANIFEST)
 
 
 def _create_onnx(options: dict[str, object]) -> YoloV8Instance:
     config = YoloV8InstanceConfig.model_validate(options | {"runtime": "onnx"})
-    resources = YoloV8ResourceResolver(_variant_source(config.variant), config)
-    return YoloV8Instance(config, OnnxYoloV8Engine(config, resources))
+    resources = YoloV8ResourceResolver(
+        _variant_source(config.variant),
+        config,
+        YOLOV8_MANIFEST,
+        {
+            artifact.artifact_id: artifact
+            for artifact in YOLOV8_CONFIG.get_artifacts(variant=config.variant)
+        },
+        converter=YOLOV8_CONVERTER,
+    )
+    return YoloV8Instance(config, OnnxYoloV8Engine(config, resources), YOLOV8_MANIFEST)
 
 
 YOLOV8_DEFINITION = ModelDefinition(
@@ -63,7 +91,9 @@ YOLOV8_DEFINITION = ModelDefinition(
     converter_ids=("ultralytics.yolov8",),
     resource_provider=YoloV8ResourceProvider(
         {variant.name: _variant_source(variant.name) for variant in YOLOV8_MANIFEST.variants},
-        revision=YOLOV8_MANIFEST.revision,
+        YOLOV8_MANIFEST,
+        YOLOV8_CONFIG.artifacts,
+        YOLOV8_CONVERTER,
     ),
 )
 
@@ -74,8 +104,8 @@ def register_yolov8(
     *,
     replace: bool = False,
 ) -> ModelDefinition:
-    """Register the pinned source model and conversion implementation."""
+    """Register the source model and conversion implementation."""
 
-    converters.register(YoloV8Converter(), replace=replace)
+    converters.register(YOLOV8_CONVERTER, replace=replace)
     models.register(YOLOV8_DEFINITION, replace=replace)
     return YOLOV8_DEFINITION

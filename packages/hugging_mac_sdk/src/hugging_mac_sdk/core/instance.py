@@ -132,9 +132,7 @@ class BaseModelInstance(ABC):
             device=self._device,
             artifact_path=self._artifact_path,
             state=self._state,
-            capabilities=tuple(
-                sorted(capability.__name__ for capability in self._capabilities)
-            ),
+            capabilities=tuple(sorted(capability.__name__ for capability in self._capabilities)),
         )
 
     def _set_runtime_context(

@@ -1,100 +1,90 @@
 manifest:
-  schema_version: "1"
+  schema_version: '1'
   model_id: qwen/qwen3-tts-12hz
-  revision: 0d6bb6f
   display_name: Qwen3-TTS
   description: Qwen3-TTS Base 的 MLX 4-bit 与 aufklarer 预编译 Core ML 实现。
   tags: [audio, tts, voice-cloning, multilingual, qwen3-tts, mlx, coreml, 4bit]
   family: qwen3-tts
   capabilities: [speech-synthesis]
-  runtimes:
-    - name: mlx
-      devices: [gpu]
-      dtypes: [uint4, bfloat16]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [mlx, mlx_audio, numpy]
-    - name: coreml
-      devices: [ane, gpu, cpu]
-      dtypes: [int8, float16, float32]
-      platforms: [darwin]
-      architectures: [arm64]
-      required_modules: [coremltools, numpy]
-  variants:
-    - name: 0.6b-base
-      display_name: Qwen3-TTS 0.6B Base
-      description: 0.6B Base 的 MLX 4-bit 声音克隆与预编译 Core ML 默认音色实现。
-      metadata:
-        parameters_millions: 600
-        sample_rate: 24000
-        codec_rate_hz: 12.5
-        voice_cloning: true
-      resources:
-        - kind: huggingface
-          repo_id: mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
-          revision: 0d6bb6f
-          allow_patterns:
-            - config.json
-            - generation_config.json
-            - model.safetensors
-            - model.safetensors.index.json
-        - kind: huggingface
-          repo_id: aufklarer/Qwen3-TTS-CoreML
-          revision: 66ca03b95a684d45e020b1d2d5c3ab34a48356f9
-          allow_patterns:
-            - "*.mlmodelc/**"
-            - "*.npy"
-            - config.json
-  default_variant: 0.6b-base
-  license: Apache-2.0
   source_url: https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base
+  license: Apache-2.0
+
+  runtimes:
+  - name: mlx
+    devices: [gpu]
+    dtypes: [uint4, bfloat16]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [mlx, mlx_audio, numpy]
+  - name: coreml
+    devices: [ane, gpu, cpu]
+    dtypes: [int8, float16, float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coremltools, numpy]
   default_runtime: mlx
+  variants:
+  - name: 0.6b-base
+    display_name: Qwen3-TTS 0.6B Base
+    description: 0.6B Base 的 MLX 4-bit 声音克隆与预编译 Core ML 默认音色实现。
+    metadata:
+      parameters_millions: 600
+      sample_rate: 24000
+      codec_rate_hz: 12.5
+      voice_cloning: true
+  default_variant: 0.6b-base
 
 artifacts:
-  - artifact_id: mlx-4bit
-    variant: 0.6b-base
-    runtime: mlx
-    format: mlx
-    path: qwen/qwen3-tts-12hz/0d6bb6f/0.6b-base/mlx/model
-    kind: directory
-    source:
-      kind: huggingface
-      repo_id: mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
-      revision: 0d6bb6f
-      allow_patterns:
-        - config.json
-        - generation_config.json
-        - model.safetensors
-        - model.safetensors.index.json
-  - artifact_id: tokenizers
-    variant: 0.6b-base
-    runtime: mlx
-    format: tokenizer
-    path: qwen/qwen3-tts-12hz/shared/tokenizers/0d6bb6f
-    kind: directory
-    shared: true
-    source:
-      kind: huggingface
-      repo_id: mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
-      revision: 0d6bb6f
-      allow_patterns:
-        - merges.txt
-        - preprocessor_config.json
-        - tokenizer_config.json
-        - vocab.json
-        - "speech_tokenizer/*.json"
-        - "speech_tokenizer/*.safetensors"
-  - artifact_id: coreml-w8a16
-    variant: 0.6b-base
-    runtime: coreml
-    format: coreml
-    path: qwen/qwen3-tts-12hz/66ca03b95a684d45e020b1d2d5c3ab34a48356f9/0.6b-base/coreml/model
-    kind: directory
-    source:
-      kind: huggingface
-      repo_id: aufklarer/Qwen3-TTS-CoreML
-      revision: 66ca03b95a684d45e020b1d2d5c3ab34a48356f9
-      allow_patterns:
-        - "*.mlmodelc/**"
-        - "*.npy"
-        - config.json
+- artifact_id: mlx-4bit
+  variant: 0.6b-base
+  runtime: mlx
+  format: mlx
+  kind: directory
+  path: qwen/qwen3-tts-12hz/0.6b-base/mlx/mlx-4bit
+  required_files: [config.json, generation_config.json, model.safetensors, model.safetensors.index.json]
+  required_shares: [tokenizers]
+  source:
+    kind: huggingface
+    repo_id: mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
+    allow_patterns:
+    - config.json
+    - generation_config.json
+    - model.safetensors
+    - model.safetensors.index.json
+- artifact_id: coreml-w8a16
+  variant: 0.6b-base
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: qwen/qwen3-tts-12hz/0.6b-base/coreml/coreml-w8a16
+  source:
+    kind: huggingface
+    repo_id: aufklarer/Qwen3-TTS-CoreML
+    allow_patterns:
+    - '*.mlmodelc/**'
+    - '*.npy'
+    - config.json
+  required_files: [TextProjector.mlmodelc/model.mil, TextProjector.mlmodelc/coremldata.bin, TextProjector.mlmodelc/weights/weight.bin,
+    CodeEmbedder.mlmodelc/model.mil, CodeEmbedder.mlmodelc/coremldata.bin, CodeEmbedder.mlmodelc/weights/weight.bin, MultiCodeEmbedder.mlmodelc/model.mil,
+    MultiCodeEmbedder.mlmodelc/coremldata.bin, MultiCodeEmbedder.mlmodelc/weights/weight.bin, CodeDecoder.mlmodelc/model.mil,
+    CodeDecoder.mlmodelc/coremldata.bin, CodeDecoder.mlmodelc/weights/weight.bin, MultiCodeDecoder.mlmodelc/model.mil, MultiCodeDecoder.mlmodelc/coremldata.bin,
+    MultiCodeDecoder.mlmodelc/weights/weight.bin, SpeechDecoder.mlmodelc/model.mil, SpeechDecoder.mlmodelc/coremldata.bin,
+    SpeechDecoder.mlmodelc/weights/weight.bin, config.json, speaker_embedding.npy, tts_pad_embed.npy, tts_bos_embed.npy, tts_eos_embed.npy]
+  required_shares: [tokenizers]
+- artifact_id: tokenizers
+  shared: true
+  format: tokenizer
+  kind: directory
+  path: qwen/qwen3-tts-12hz/_shared/tokenizers
+  required_files: [merges.txt, preprocessor_config.json, tokenizer_config.json, vocab.json, speech_tokenizer/config.json,
+    speech_tokenizer/configuration.json, speech_tokenizer/model.safetensors, speech_tokenizer/preprocessor_config.json]
+  source:
+    kind: huggingface
+    repo_id: mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit
+    allow_patterns:
+    - merges.txt
+    - preprocessor_config.json
+    - tokenizer_config.json
+    - vocab.json
+    - speech_tokenizer/*.json
+    - speech_tokenizer/*.safetensors

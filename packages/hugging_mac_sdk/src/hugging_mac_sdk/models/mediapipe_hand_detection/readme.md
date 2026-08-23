@@ -7,7 +7,7 @@ SDK package for `qualcomm/MediaPipe-Hand-Detection`. To callers it is one model 
 ## Canonical identity, runtime, and variant
 
 - Model ID: `qualcomm/mediapipe-hand-detection`
-- Pinned Hugging Face revision: `013e27b599e37c3b4c69439de15de53cc5b5708e`
+- Hugging Face source: follows the repository's `main` branch without content-hash validation
 - Upstream release: `0.60.0`
 - Variant: `float`
 - Input size for both graphs: `256x256`
@@ -47,7 +47,7 @@ Set `input_mirrored=True` when the caller horizontally flips a camera frame befo
 
 ## Core ML conversion verification
 
-The pinned two-graph archive was converted as one operation and compared with ONNX Runtime on the same random input. Maximum absolute differences were:
+The two-graph archive was converted as one operation and compared with ONNX Runtime on the same random input. Maximum absolute differences were:
 
 - detector box coordinates: `6.866e-5`
 - detector scores: `1.526e-4`
@@ -57,7 +57,7 @@ The pinned two-graph archive was converted as one operation and compared with ON
 
 ## Package structure
 
-- `model.yaml`: pinned identity, dual artifacts, runtime metadata, capability, and license.
+- `model.yaml`: identity, dual artifacts, download selections, runtime metadata, capability, and license.
 - `config.py`: frozen runtime and resource options.
 - `definition.py`: one public model definition across ONNX and Core ML.
 - `converter.py`: one atomic conversion workflow for both graphs.

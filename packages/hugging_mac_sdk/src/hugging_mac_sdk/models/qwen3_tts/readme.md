@@ -8,7 +8,7 @@ Canonical SDK package for `qwen/qwen3-tts-12hz`. Model scale, Base edition, MLX/
 
 - Variant: `0.6b-base`
 - Runtimes: `mlx` and `coreml`
-- Artifacts: pinned MLX 4-bit snapshot and aufklarer's pinned six-model W8A16 Core ML pipeline
+- Artifacts: MLX 4-bit snapshot and aufklarer's six-model W8A16 Core ML pipeline, both following `main`
 
 The Core ML runtime uses `TextProjector`, two code embedders, the cached talker/code-predictor decoders, and the fixed 125-frame `SpeechDecoder`. It reuses the model package's shared tokenizer artifact; the speaker and dedicated TTS BOS/EOS/PAD embeddings come from the aufklarer snapshot. The small embedding graphs stay on CPU for stable FP32 accumulation while the decoder chain defaults to CPU + Neural Engine.
 

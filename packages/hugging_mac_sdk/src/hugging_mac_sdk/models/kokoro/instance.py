@@ -10,13 +10,14 @@ from typing import Protocol, cast
 from hugging_mac_sdk.capabilities import SpeechSynthesis
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import InferenceError
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.speech_synthesis import (
     SpeechSynthesisRequest,
     SpeechSynthesisResponse,
     SpeechSynthesisTimings,
 )
 
-from .config import KOKORO_82M_MODEL_ID, KOKORO_82M_REVISION, Kokoro82mInstanceConfig
+from .config import Kokoro82mInstanceConfig
 from .utils.types import KokoroEngineOutput
 
 
@@ -42,15 +43,18 @@ class Kokoro82mInstance(BaseModelInstance):
         self,
         config: Kokoro82mInstanceConfig,
         engine: Kokoro82mEngine,
+        manifest: ModelManifest,
     ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=KOKORO_82M_MODEL_ID,
-            revision=KOKORO_82M_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=config.device or "mps",
         )
         self._engine = engine
+        self._manifest_model_id = manifest.model_id
         self._inference_lock = asyncio.Lock()
         self.register_capability(
             SpeechSynthesis,  # type: ignore[type-abstract]
@@ -80,7 +84,7 @@ class Kokoro82mInstance(BaseModelInstance):
             inference_ms = (perf_counter() - inference_started) * 1000
         postprocess_started = perf_counter()
         return SpeechSynthesisResponse(
-            model_id=KOKORO_82M_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

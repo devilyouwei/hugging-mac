@@ -17,12 +17,9 @@ from hugging_mac_sdk.schemas.hand import (
     HandLandmark,
     HandResult,
 )
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 
-from .config import (
-    MEDIAPIPE_HAND_DETECTION_MODEL_ID,
-    MEDIAPIPE_HAND_DETECTION_REVISION,
-    MediaPipeHandDetectionInstanceConfig,
-)
+from .config import MediaPipeHandDetectionInstanceConfig
 from .utils.postprocess import decode_landmarks, decode_palms
 from .utils.preprocess import prepare_image, prepare_landmark_crop
 from .utils.types import PreparedImage, PreparedLandmarkCrop
@@ -45,15 +42,18 @@ class MediaPipeHandDetectionInstance(BaseModelInstance):
         self,
         config: MediaPipeHandDetectionInstanceConfig,
         engine: MediaPipeHandDetectionEngine,
+        manifest: ModelManifest,
     ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=MEDIAPIPE_HAND_DETECTION_MODEL_ID,
-            revision=MEDIAPIPE_HAND_DETECTION_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=config.compute_units if config.runtime == "coreml" else config.device,
         )
         self._config = config
+        self._manifest_model_id = manifest.model_id
         self._engine = engine
         self._inference_lock = asyncio.Lock()
         self.register_capability(HandDetection, cast(HandDetection, self))  # type: ignore[type-abstract]
@@ -132,7 +132,7 @@ class MediaPipeHandDetectionInstance(BaseModelInstance):
                     )
                 )
         return HandDetectionResponse(
-            model_id=MEDIAPIPE_HAND_DETECTION_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

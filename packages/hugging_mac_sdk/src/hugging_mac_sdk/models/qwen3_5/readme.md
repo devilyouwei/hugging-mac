@@ -8,7 +8,7 @@ Canonical SDK package for the `qwen/qwen3.5` family. Parameter scale and OptiQ q
 
 - Variants: `9b`, `4b`, `2b`
 - Runtime: `mlx`
-- Current artifacts: pinned MLX OptiQ 4-bit snapshots
+- Current artifacts: MLX OptiQ 4-bit snapshots following the declared repositories' `main` branches
 
 ## Capability APIs
 
@@ -19,7 +19,7 @@ Canonical SDK package for the `qwen/qwen3.5` family. Parameter scale and OptiQ q
 ## Package structure
 
 - `__init__.py`: public definition, manifest, and registration exports.
-- `model.yaml`: variants, MLX runtime, pinned sources, and artifacts.
+- `model.yaml`: variants, MLX runtime, trusted sources, download selections, and artifacts.
 - `config.py`: typed variant and MLX options.
 - `definition.py`: variant-aware MLX factory and registration.
 - `instance.py`: lifecycle, chat capabilities, and engine protocol.

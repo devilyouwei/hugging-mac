@@ -14,8 +14,10 @@ from hugging_mac_sdk.errors import (
     UnsupportedRuntimeError,
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
-from hugging_mac_sdk.resources.hashing import directory_size, file_sha256
+from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
     ModelArtifactStatus,
@@ -23,15 +25,7 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
 )
 
-from .config import (
-    AUDIO8_ASR_MODEL_ID,
-    AUDIO8_ASR_REQUIRED_FILES,
-    AUDIO8_ASR_REVISION,
-    AUDIO8_ASR_TOKENIZER_REQUIRED_FILES,
-    AUDIO8_ASR_VARIANT,
-    AUDIO8_ASR_WEIGHT_SHA256,
-    Audio8AsrInstanceConfig,
-)
+from .config import Audio8AsrInstanceConfig
 from .converter import Audio8AsrConverter
 
 
@@ -41,15 +35,23 @@ class Audio8AsrResourceResolver:
         source: HuggingFaceSource,
         config: Audio8AsrInstanceConfig,
         *,
+        manifest: ModelManifest,
+        source_artifact: ModelArtifact,
+        coreml_artifact: ModelArtifact,
+        tokenizer_artifact: ModelArtifact,
         tokenizer_source: HuggingFaceSource | None = None,
         downloader: ResourceDownloader | None = None,
         converter: Audio8AsrConverter | None = None,
     ) -> None:
         self._source = source
+        self._manifest = manifest
+        self._source_artifact = source_artifact
+        self._coreml_artifact = coreml_artifact
+        self._tokenizer_artifact = tokenizer_artifact
         self._tokenizer_source = tokenizer_source or source
         self._config = config
         self._downloader = downloader or ResourceDownloader()
-        self._converter = converter or Audio8AsrConverter()
+        self._converter = converter or Audio8AsrConverter(manifest.model_id, config.variant)
 
     async def resolve_source(self) -> ResolvedResource:
         path = self._config.source_path or self._default_source_path()
@@ -63,26 +65,20 @@ class Audio8AsrResourceResolver:
 
     @property
     def tokenizer_path(self) -> Path:
-        return (
-            self._config.tokenizer_path
-            or self._config.model_home
-            / "audio8"
-            / "audio8-asr"
-            / "shared"
-            / "tokenizer"
-            / "778bac55980c1bfbaf79cf4d27ec9bb13682afb8"
+        return self._config.tokenizer_path or self._tokenizer_artifact.resolve(
+            self._config.model_home
         )
 
     async def resolve_tokenizer(self) -> ResolvedResource:
         missing = [
             name
-            for name in AUDIO8_ASR_TOKENIZER_REQUIRED_FILES
+            for name in self._tokenizer_artifact.required_files
             if not (self.tokenizer_path / name).is_file()
         ]
         if missing:
             raise ResourceNotFoundError(
                 "Audio8-ASR shared tokenizer is incomplete",
-                details={"model_id": AUDIO8_ASR_MODEL_ID, "missing": missing},
+                details={"model_id": self._manifest.model_id, "missing": missing},
             )
         return ResolvedResource(
             path=self.tokenizer_path,
@@ -127,8 +123,8 @@ class Audio8AsrResourceResolver:
         source = await self.resolve_source()
         await self._converter.convert(
             ConversionRequest(
-                model_id=AUDIO8_ASR_MODEL_ID,
-                model_revision=AUDIO8_ASR_REVISION,
+                model_id=self._manifest.model_id,
+                model_revision=self._manifest.revision,
                 variant=self._config.variant,
                 source=source,
                 source_format=ArtifactFormat.SAFETENSORS,
@@ -142,7 +138,7 @@ class Audio8AsrResourceResolver:
         if runtime not in {None, "pytorch-mps", "coreml"}:
             raise UnsupportedRuntimeError(
                 f"Audio8-ASR does not support runtime {runtime}",
-                details={"model_id": AUDIO8_ASR_MODEL_ID, "runtime": runtime},
+                details={"model_id": self._manifest.model_id, "runtime": runtime},
             )
         root = self._model_root().expanduser().resolve(strict=False)
         if runtime is None:
@@ -155,7 +151,7 @@ class Audio8AsrResourceResolver:
         if resolved != root and not resolved.is_relative_to(root):
             raise ResourceIntegrityError(
                 "Refusing to delete Audio8-ASR resources outside the model directory",
-                details={"model_id": AUDIO8_ASR_MODEL_ID},
+                details={"model_id": self._manifest.model_id},
             )
         await asyncio.to_thread(self._delete_path, resolved)
 
@@ -166,17 +162,18 @@ class Audio8AsrResourceResolver:
         coreml_available = self._coreml_files_exist(coreml_path)
         tokenizer_available = all(
             (self.tokenizer_path / name).is_file()
-            for name in AUDIO8_ASR_TOKENIZER_REQUIRED_FILES
+            for name in self._tokenizer_artifact.required_files
         )
         return ModelResourceStatus(
-            model_id=AUDIO8_ASR_MODEL_ID,
-            revision=AUDIO8_ASR_REVISION,
+            model_id=self._manifest.model_id,
+            revision=self._manifest.revision,
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
                     artifact_id="source",
                     format=ArtifactFormat.SAFETENSORS.value,
                     runtime="pytorch-mps",
+                    required_shares=self._source_artifact.required_shares,
                     available=available,
                     size_bytes=directory_size(path) if available else None,
                 ),
@@ -195,6 +192,7 @@ class Audio8AsrResourceResolver:
                     format=ArtifactFormat.COREML.value,
                     runtime="coreml",
                     provisioning="convert",
+                    required_shares=self._coreml_artifact.required_shares,
                     available=coreml_available,
                     size_bytes=directory_size(coreml_path) if coreml_available else None,
                 ),
@@ -202,42 +200,30 @@ class Audio8AsrResourceResolver:
         )
 
     def _default_source_path(self) -> Path:
-        return self._model_root() / "pytorch" / "model"
+        return self._source_artifact.resolve(self._config.model_home)
 
     def _default_coreml_path(self) -> Path:
-        return self._model_root() / "coreml" / "audio8-asr-coreml"
+        return self._coreml_artifact.resolve(self._config.model_home)
 
     def _model_root(self) -> Path:
-        return (
-            self._config.model_home
-            / "audio8"
-            / "audio8-asr"
-            / self._source.revision
-            / self._config.variant
+        return self._source_artifact.storage_path(self._config.model_home).parents[1]
+
+    def _snapshot_files_exist(self, path: Path) -> bool:
+        return path.is_dir() and all(
+            (path / name).is_file() for name in self._source_artifact.required_files
         )
 
-    @staticmethod
-    def _snapshot_files_exist(path: Path) -> bool:
-        return path.is_dir() and all((path / name).is_file() for name in AUDIO8_ASR_REQUIRED_FILES)
-
-    @staticmethod
-    def _coreml_files_exist(path: Path) -> bool:
-        required = (
-            "audio_tower.mlpackage",
-            "language_model.safetensors",
-            "projector.safetensors",
-            "config.json",
-            "preprocessor_config.json",
-            "conversion.json",
+    def _coreml_files_exist(self, path: Path) -> bool:
+        return path.is_dir() and all(
+            (path / name).exists() for name in self._coreml_artifact.required_files
         )
-        return path.is_dir() and all((path / name).exists() for name in required)
 
     def _validate_coreml_artifact(self, path: Path) -> None:
         if not self._coreml_files_exist(path):
             raise ResourceNotFoundError(
                 "Audio8-ASR Core ML artifact has not been converted",
                 details={
-                    "model_id": AUDIO8_ASR_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": self._config.variant,
                     "artifact_id": "coreml",
                 },
@@ -254,22 +240,18 @@ class Audio8AsrResourceResolver:
             raise ResourceNotFoundError(
                 "Audio8-ASR source model is not downloaded",
                 details={
-                    "model_id": AUDIO8_ASR_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": self._config.variant,
                     "artifact_id": "source",
                 },
             )
-        missing = [name for name in AUDIO8_ASR_REQUIRED_FILES if not (path / name).is_file()]
+        missing = [
+            name for name in self._source_artifact.required_files if not (path / name).is_file()
+        ]
         if missing:
             raise ResourceNotFoundError(
                 "Audio8-ASR snapshot is incomplete",
-                details={"model_id": AUDIO8_ASR_MODEL_ID, "missing": missing},
-            )
-        digest = file_sha256(path / "model.safetensors")
-        if digest != AUDIO8_ASR_WEIGHT_SHA256:
-            raise ResourceIntegrityError(
-                "Audio8-ASR weight SHA-256 mismatch",
-                details={"expected": AUDIO8_ASR_WEIGHT_SHA256, "actual": digest},
+                details={"model_id": self._manifest.model_id, "missing": missing},
             )
         config = json.loads((path / "config.json").read_text(encoding="utf-8"))
         if config.get("model_type") != "arkasr":
@@ -277,7 +259,7 @@ class Audio8AsrResourceResolver:
                 "Audio8-ASR config has an unexpected model_type",
                 details={"model_type": config.get("model_type")},
             )
-        return digest
+        return directory_sha256(path)
 
     @staticmethod
     def _delete_path(path: Path) -> None:
@@ -292,9 +274,18 @@ class Audio8AsrResourceProvider:
         self,
         source: HuggingFaceSource,
         tokenizer_source: HuggingFaceSource | None = None,
+        *,
+        manifest: ModelManifest,
+        source_artifact: ModelArtifact,
+        coreml_artifact: ModelArtifact,
+        tokenizer_artifact: ModelArtifact,
     ) -> None:
         self._source = source
         self._tokenizer_source = tokenizer_source or source
+        self._manifest = manifest
+        self._source_artifact = source_artifact
+        self._coreml_artifact = coreml_artifact
+        self._tokenizer_artifact = tokenizer_artifact
 
     async def status(
         self,
@@ -326,7 +317,7 @@ class Audio8AsrResourceProvider:
             raise UnsupportedRuntimeError(
                 f"Audio8-ASR conversion to {target_format} is not implemented",
                 details={
-                    "model_id": AUDIO8_ASR_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": variant,
                     "target_format": target_format,
                 },
@@ -351,13 +342,13 @@ class Audio8AsrResourceProvider:
         variant: str,
         options: Mapping[str, object] | None,
     ) -> Audio8AsrResourceResolver:
-        if variant != AUDIO8_ASR_VARIANT:
+        if variant != self._source_artifact.variant:
             raise ResourceNotFoundError(
                 f"Audio8-ASR variant is not registered: {variant}",
                 details={
-                    "model_id": AUDIO8_ASR_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": variant,
-                    "supported_variants": [AUDIO8_ASR_VARIANT],
+                    "supported_variants": [self._source_artifact.variant],
                 },
             )
         normalized = dict(options or {})
@@ -369,5 +360,11 @@ class Audio8AsrResourceProvider:
             )
         config = Audio8AsrInstanceConfig.model_validate(normalized | {"variant": variant})
         return Audio8AsrResourceResolver(
-            self._source, config, tokenizer_source=self._tokenizer_source
+            self._source,
+            config,
+            manifest=self._manifest,
+            source_artifact=self._source_artifact,
+            coreml_artifact=self._coreml_artifact,
+            tokenizer_artifact=self._tokenizer_artifact,
+            tokenizer_source=self._tokenizer_source,
         )

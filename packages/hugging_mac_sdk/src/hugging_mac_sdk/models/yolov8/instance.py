@@ -15,12 +15,9 @@ from hugging_mac_sdk.schemas.detection import (
     DetectionResponse,
     ImageSize,
 )
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 
-from .config import (
-    YOLOV8_MODEL_ID,
-    YOLOV8_MODEL_REVISION,
-    YoloV8InstanceConfig,
-)
+from .config import YoloV8InstanceConfig
 from .utils.postprocess import postprocess
 from .utils.preprocess import prepare_image
 from .utils.types import PreparedImage
@@ -50,15 +47,19 @@ class YoloV8Engine(Protocol):
 class YoloV8Instance(BaseModelInstance):
     """ObjectDetection capability composed with one selected runtime engine."""
 
-    def __init__(self, config: YoloV8InstanceConfig, engine: YoloV8Engine) -> None:
+    def __init__(
+        self, config: YoloV8InstanceConfig, engine: YoloV8Engine, manifest: ModelManifest
+    ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=YOLOV8_MODEL_ID,
-            revision=YOLOV8_MODEL_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=(config.compute_units if config.runtime == "coreml" else config.device),
         )
         self._config = config
+        self._manifest_model_id = manifest.model_id
         self._engine = engine
         self._inference_lock = asyncio.Lock()
         self.register_capability(
@@ -87,7 +88,7 @@ class YoloV8Instance(BaseModelInstance):
             inference_ms,
         )
         return DetectionResponse(
-            model_id=YOLOV8_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

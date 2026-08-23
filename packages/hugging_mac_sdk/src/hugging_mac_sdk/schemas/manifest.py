@@ -5,18 +5,16 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from hugging_mac_sdk.errors import ResourceNotFoundError
-from hugging_mac_sdk.schemas.resources import ResourceSource
 
 
 class ModelVariantSpec(BaseModel):
     """One interchangeable weight/configuration variant of a model architecture."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9._-]*$")]
     display_name: Annotated[str, Field(min_length=1)]
     description: str = ""
-    resources: tuple[ResourceSource, ...] = ()
     metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
 
@@ -33,7 +31,7 @@ class RuntimeSpec(BaseModel):
 
 
 class ModelManifest(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: str = "1"
     model_id: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9._/-]*$")]
@@ -44,7 +42,6 @@ class ModelManifest(BaseModel):
     family: Annotated[str, Field(min_length=1)]
     capabilities: frozenset[str]
     runtimes: tuple[RuntimeSpec, ...]
-    resources: tuple[ResourceSource, ...] = ()
     license: str | None = None
     source_url: str | None = None
     default_runtime: str | None = None

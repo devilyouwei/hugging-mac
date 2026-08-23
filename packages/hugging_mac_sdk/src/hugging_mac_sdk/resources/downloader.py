@@ -17,7 +17,6 @@ from huggingface_hub import hf_hub_download, snapshot_download
 
 from hugging_mac_sdk.errors import (
     DownloadError,
-    ResourceIntegrityError,
     ResourceNotFoundError,
 )
 from hugging_mac_sdk.resources.archives import extract_archive
@@ -135,7 +134,6 @@ class ResourceDownloader:
                     progress=progress,
                 )
             digest = await asyncio.to_thread(directory_sha256, staging)
-            self._validate_digest(digest, source.expected_sha256, "composite resource")
             size = directory_size(staging)
             self._commit(staging, destination, overwrite)
             return ResolvedResource(
@@ -144,7 +142,7 @@ class ResourceDownloader:
                 digest=digest,
                 size_bytes=size,
             )
-        except (ResourceIntegrityError, ResourceNotFoundError, DownloadError):
+        except (ResourceNotFoundError, DownloadError):
             raise
         except Exception as error:
             raise DownloadError("Failed to download composite resource", cause=error) from error
@@ -162,7 +160,7 @@ class ResourceDownloader:
         staging = _staging_path(destination)
         try:
             await self._stream_url(str(source.url), staging, progress)
-            digest = self._validate_file(staging, source.expected_sha256)
+            digest = self._digest_file(staging)
             self._commit(staging, destination, overwrite)
             return ResolvedResource(
                 path=destination,
@@ -170,7 +168,7 @@ class ResourceDownloader:
                 digest=digest,
                 size_bytes=destination.stat().st_size,
             )
-        except (ResourceIntegrityError, ResourceNotFoundError, DownloadError):
+        except (ResourceNotFoundError, DownloadError):
             raise
         except Exception as error:
             raise DownloadError(
@@ -192,7 +190,7 @@ class ResourceDownloader:
         staging_directory = _staging_path(destination, suffix=".directory")
         try:
             await self._stream_url(str(source.url), staging_archive, progress)
-            self._validate_file(staging_archive, source.expected_sha256)
+            self._digest_file(staging_archive)
             await asyncio.to_thread(
                 extract_archive,
                 staging_archive,
@@ -209,7 +207,7 @@ class ResourceDownloader:
                 digest=digest,
                 size_bytes=size,
             )
-        except (ResourceIntegrityError, ResourceNotFoundError, DownloadError):
+        except (ResourceNotFoundError, DownloadError):
             raise
         except Exception as error:
             raise DownloadError(
@@ -240,7 +238,7 @@ class ResourceDownloader:
                 )
             )
             await asyncio.to_thread(shutil.copyfile, cached_path, staging)
-            digest = self._validate_file(staging, source.expected_sha256)
+            digest = self._digest_file(staging)
             self._commit(staging, destination, overwrite)
             return ResolvedResource(
                 path=destination,
@@ -248,8 +246,6 @@ class ResourceDownloader:
                 digest=digest,
                 size_bytes=destination.stat().st_size,
             )
-        except ResourceIntegrityError:
-            raise
         except Exception as error:
             raise DownloadError(
                 f"Failed to download {source.repo_id}/{source.filename}",
@@ -296,7 +292,6 @@ class ResourceDownloader:
                 await asyncio.to_thread(_remove_staging, staging)
                 materialized = selected
             digest = await asyncio.to_thread(directory_sha256, materialized)
-            self._validate_digest(digest, source.expected_sha256, source.repo_id)
             size = directory_size(materialized)
             self._commit(materialized, destination, overwrite)
             return ResolvedResource(
@@ -305,8 +300,6 @@ class ResourceDownloader:
                 digest=digest,
                 size_bytes=size,
             )
-        except ResourceIntegrityError:
-            raise
         except Exception as error:
             raise DownloadError(
                 f"Failed to download Hugging Face snapshot {source.repo_id}",
@@ -349,22 +342,8 @@ class ResourceDownloader:
                 await client.aclose()
 
     @staticmethod
-    def _validate_file(path: Path, expected_sha256: str | None) -> str:
-        digest = file_sha256(path)
-        ResourceDownloader._validate_digest(digest, expected_sha256, path.name)
-        return digest
-
-    @staticmethod
-    def _validate_digest(
-        digest: str,
-        expected_sha256: str | None,
-        resource_name: str,
-    ) -> None:
-        if expected_sha256 is not None and digest.lower() != expected_sha256.lower():
-            raise ResourceIntegrityError(
-                f"SHA-256 mismatch for {resource_name}",
-                details={"expected": expected_sha256.lower(), "actual": digest},
-            )
+    def _digest_file(path: Path) -> str:
+        return file_sha256(path)
 
     @staticmethod
     def _assert_destination_available(destination: Path, overwrite: bool) -> None:

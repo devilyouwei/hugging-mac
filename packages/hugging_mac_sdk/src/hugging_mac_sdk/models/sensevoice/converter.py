@@ -16,13 +16,14 @@ from hugging_mac_sdk.errors import ResourceIntegrityError, UnsupportedRuntimeErr
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest, ConversionResult
 
-from .config import SENSEVOICE_SMALL_MODEL_ID
-
 FEATURE_BUCKETS = (100, 250, 500)
 _RUNTIME_FILES = ("am.mvn",)
 
 
 class SenseVoiceSmallConverter(ModelConverter):
+    def __init__(self, model_id: str, variant: str) -> None:
+        self._model_id, self._variant = model_id, variant
+
     @property
     def converter_id(self) -> str:
         return "funaudiollm.sensevoice-small"
@@ -33,8 +34,8 @@ class SenseVoiceSmallConverter(ModelConverter):
 
     def supports(self, request: ConversionRequest) -> bool:
         return (
-            request.model_id == SENSEVOICE_SMALL_MODEL_ID
-            and request.variant == "small"
+            request.model_id == self._model_id
+            and request.variant == self._variant
             and request.source_format is ArtifactFormat.PYTORCH
             and request.target_format is ArtifactFormat.COREML
             and request.source.path.is_dir()

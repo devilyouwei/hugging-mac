@@ -6,8 +6,8 @@ Canonical SDK package for `audio8/audio8-tts-preview`. PyTorch FP32 and MLX BF16
 
 ## Runtimes and variants
 
-- Variant: `0.6b-preview`
-- Runtimes: `pytorch`, `mlx`
+- Variants: `0.1b-preview`, `0.6b-preview` (default)
+- Runtimes: `0.1b-preview` supports `pytorch`; `0.6b-preview` supports `pytorch` and `mlx`.
 - Runtime-specific source snapshots and precision are represented by resources and artifacts in `model.yaml`.
 
 ## Capability API
@@ -28,4 +28,3 @@ The request may include reference audio/text or a managed voice profile when sup
 - `resources.py`: aggregate model resource provider and PyTorch resources.
 - `mlx_resources.py`: MLX artifact validation and lifecycle.
 - `utils/`: private output types and reference-voice storage.
-

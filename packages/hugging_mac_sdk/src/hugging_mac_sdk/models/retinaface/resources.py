@@ -14,8 +14,10 @@ from hugging_mac_sdk.errors import (
     UnsupportedRuntimeError,
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
-from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size, file_sha256
+from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
     ModelArtifactStatus,
@@ -23,13 +25,7 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
 )
 
-from .config import (
-    RETINAFACE_CONFIG_SHA256,
-    RETINAFACE_MODEL_ID,
-    RETINAFACE_REVISION,
-    RETINAFACE_WEIGHTS_SHA256,
-    RetinaFaceInstanceConfig,
-)
+from .config import RetinaFaceInstanceConfig
 from .converter import RetinaFaceConverter
 
 
@@ -38,45 +34,39 @@ class RetinaFaceResourceResolver:
         self,
         source: HuggingFaceSource,
         config: RetinaFaceInstanceConfig,
+        manifest: ModelManifest,
+        source_artifact: ModelArtifact,
+        coreml_artifact: ModelArtifact,
         *,
         downloader: ResourceDownloader | None = None,
         converter: ModelConverter | None = None,
     ) -> None:
         self._source, self._config = source, config
+        self._manifest = manifest
+        self._source_artifact = source_artifact
+        self._coreml_artifact = coreml_artifact
         self._downloader = downloader or ResourceDownloader()
-        self._converter = converter or RetinaFaceConverter()
+        self._converter = converter or RetinaFaceConverter(manifest.model_id)
 
     @property
     def model_root(self) -> Path:
-        return self._config.model_home.joinpath(
-            "py-feat", "retinaface", RETINAFACE_REVISION, self._config.variant
-        )
+        return self._source_artifact.storage_path(self._config.model_home).parents[1]
 
     @property
     def source_path(self) -> Path:
-        return self._config.source_path or self.model_root / "source" / "model"
+        return self._config.source_path or self._source_artifact.resolve(self._config.model_home)
 
     @property
     def coreml_path(self) -> Path:
-        return self._config.artifact_path or self.model_root / "coreml" / "retinaface.mlpackage"
+        return self._config.artifact_path or self._coreml_artifact.resolve(self._config.model_home)
 
     async def resolve_source(self) -> ResolvedResource:
-        required = {
-            "config.json": RETINAFACE_CONFIG_SHA256,
-            "mobilenet0.25_Final.pth": RETINAFACE_WEIGHTS_SHA256,
-        }
+        required = self._source_artifact.required_files
         missing = [name for name in required if not (self.source_path / name).is_file()]
         if missing:
             raise ResourceNotFoundError(
                 "RetinaFace source is not downloaded", details={"missing": missing}
             )
-        for name, expected in required.items():
-            actual = file_sha256(self.source_path / name)
-            if actual != expected:
-                raise ResourceIntegrityError(
-                    f"RetinaFace source SHA-256 mismatch: {name}",
-                    details={"expected": expected, "actual": actual},
-                )
         return ResolvedResource(
             path=self.source_path,
             source=self._source,
@@ -108,8 +98,8 @@ class RetinaFaceResourceResolver:
         source = await self.resolve_source()
         await self._converter.convert(
             ConversionRequest(
-                model_id=RETINAFACE_MODEL_ID,
-                model_revision=RETINAFACE_REVISION,
+                model_id=self._manifest.model_id,
+                model_revision=self._manifest.revision,
                 variant=self._config.variant,
                 source=source,
                 source_format=ArtifactFormat.PYTORCH,
@@ -122,13 +112,12 @@ class RetinaFaceResourceResolver:
 
     def status(self) -> ModelResourceStatus:
         source_ok = all(
-            (self.source_path / name).is_file()
-            for name in ("config.json", "mobilenet0.25_Final.pth")
+            (self.source_path / name).is_file() for name in self._source_artifact.required_files
         )
         coreml_ok = (self.coreml_path / "Manifest.json").is_file()
         return ModelResourceStatus(
-            model_id=RETINAFACE_MODEL_ID,
-            revision=RETINAFACE_REVISION,
+            model_id=self._manifest.model_id,
+            revision=self._manifest.revision,
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
@@ -157,7 +146,7 @@ class RetinaFaceResourceResolver:
         }
         if runtime not in targets:
             raise UnsupportedRuntimeError(f"Unsupported runtime: {runtime}")
-        model_root = self._config.model_home.joinpath("py-feat", "retinaface").resolve(strict=False)
+        model_root = self._source_artifact.storage_path(self._config.model_home).parents[2]
         for target in targets[runtime]:
             resolved = target.resolve(strict=False)
             if resolved == model_root or not resolved.is_relative_to(model_root):
@@ -168,8 +157,17 @@ class RetinaFaceResourceResolver:
 
 
 class RetinaFaceResourceProvider:
-    def __init__(self, source: HuggingFaceSource) -> None:
+    def __init__(
+        self,
+        source: HuggingFaceSource,
+        manifest: ModelManifest,
+        source_artifact: ModelArtifact,
+        coreml_artifact: ModelArtifact,
+    ) -> None:
         self._source = source
+        self._manifest = manifest
+        self._source_artifact = source_artifact
+        self._coreml_artifact = coreml_artifact
 
     def _resolver(
         self, variant: str, options: Mapping[str, object] | None
@@ -177,6 +175,9 @@ class RetinaFaceResourceProvider:
         return RetinaFaceResourceResolver(
             self._source,
             RetinaFaceInstanceConfig.model_validate(dict(options or {}) | {"variant": variant}),
+            self._manifest,
+            self._source_artifact,
+            self._coreml_artifact,
         )
 
     async def status(

@@ -8,6 +8,7 @@ from typing import Protocol, cast
 from hugging_mac_sdk.capabilities import SpeechEnhancement
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import InferenceError
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.speech_enhancement import (
     SpeechEnhancementRequest,
     SpeechEnhancementResponse,
@@ -15,7 +16,7 @@ from hugging_mac_sdk.schemas.speech_enhancement import (
 )
 
 from .audio import PreparedEnhancementAudio, encode_wav, prepare_audio
-from .config import DEEPFILTERNET3_MODEL_ID, DEEPFILTERNET3_REVISION, DeepFilterNet3InstanceConfig
+from .config import DeepFilterNet3InstanceConfig
 from .dsp import EnhancementOutput
 
 
@@ -31,24 +32,29 @@ class DeepFilterNet3Engine(Protocol):
 
 
 class DeepFilterNet3Instance(BaseModelInstance):
-    def __init__(self, config: DeepFilterNet3InstanceConfig, engine: DeepFilterNet3Engine) -> None:
+    def __init__(
+        self,
+        config: DeepFilterNet3InstanceConfig,
+        engine: DeepFilterNet3Engine,
+        manifest: ModelManifest,
+    ) -> None:
+        assert manifest.model_id is not None
         super().__init__(
-            model_id=DEEPFILTERNET3_MODEL_ID,
-            revision=DEEPFILTERNET3_REVISION,
+            model_id=manifest.model_id,
+            revision=manifest.revision,
             variant=config.variant,
             runtime=config.runtime,
             device=config.device,
         )
         self._config = config
         self._engine = engine
+        self._manifest_model_id = manifest.model_id
         self.register_capability(
             SpeechEnhancement,  # type: ignore[type-abstract]
             cast(SpeechEnhancement, self),
         )
 
-    async def enhance_speech(
-        self, request: SpeechEnhancementRequest
-    ) -> SpeechEnhancementResponse:
+    async def enhance_speech(self, request: SpeechEnhancementRequest) -> SpeechEnhancementResponse:
         if self.state is not ModelState.READY:
             raise InferenceError("DeepFilterNet3 instance must be READY before inference")
 
@@ -84,7 +90,7 @@ class DeepFilterNet3Instance(BaseModelInstance):
             ) from error
         postprocess_ms = (perf_counter() - started) * 1000
         return SpeechEnhancementResponse(
-            model_id=DEEPFILTERNET3_MODEL_ID,
+            model_id=self._manifest_model_id,
             instance_id=str(self.instance_id),
             runtime=self._engine.runtime_name,
             device=self._engine.device,

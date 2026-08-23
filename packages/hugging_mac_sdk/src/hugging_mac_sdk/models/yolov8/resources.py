@@ -16,7 +16,9 @@ from hugging_mac_sdk.errors import (
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size, file_sha256
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
     ModelArtifactStatus,
@@ -24,13 +26,7 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
 )
 
-from .config import (
-    YOLOV8_FILENAMES,
-    YOLOV8_MODEL_ID,
-    YOLOV8_SHA256,
-    YOLOV8_VARIANTS,
-    YoloV8InstanceConfig,
-)
+from .config import YoloV8InstanceConfig
 from .converter import YoloV8Converter
 
 
@@ -39,14 +35,18 @@ class YoloV8ResourceResolver:
         self,
         source: HuggingFaceSource,
         config: YoloV8InstanceConfig,
+        manifest: ModelManifest,
+        artifacts: Mapping[str, ModelArtifact],
         *,
         downloader: ResourceDownloader | None = None,
         converter: YoloV8Converter | None = None,
     ) -> None:
         self._source = source
         self._config = config
+        self._manifest = manifest
+        self._artifacts = dict(artifacts)
         self._downloader = downloader or ResourceDownloader()
-        self._converter = converter or YoloV8Converter()
+        self._converter = converter
 
     async def resolve_source(self) -> ResolvedResource:
         path = self._config.source_path or self._default_source_path()
@@ -54,7 +54,7 @@ class YoloV8ResourceResolver:
             raise ResourceNotFoundError(
                 "YOLOv8 source model is not downloaded",
                 details={
-                    "model_id": YOLOV8_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": self._config.variant,
                     "artifact_id": "source",
                 },
@@ -62,12 +62,6 @@ class YoloV8ResourceResolver:
         if not path.is_file():
             raise ResourceNotFoundError(f"YOLOv8 source is not a file: {path}")
         digest = file_sha256(path)
-        expected_sha256 = YOLOV8_SHA256[self._config.variant]
-        if digest != expected_sha256:
-            raise ResourceIntegrityError(
-                f"YOLOv8 source SHA-256 mismatch: {path}",
-                details={"expected": expected_sha256, "actual": digest},
-            )
         return ResolvedResource(
             path=path,
             source=self._source,
@@ -81,7 +75,7 @@ class YoloV8ResourceResolver:
             raise ResourceNotFoundError(
                 "YOLOv8 Core ML artifact has not been converted",
                 details={
-                    "model_id": YOLOV8_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": self._config.variant,
                     "artifact_id": "coreml",
                 },
@@ -101,7 +95,7 @@ class YoloV8ResourceResolver:
             raise ResourceNotFoundError(
                 "YOLOv8 ONNX artifact has not been converted",
                 details={
-                    "model_id": YOLOV8_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": self._config.variant,
                     "artifact_id": "onnx",
                 },
@@ -145,9 +139,11 @@ class YoloV8ResourceResolver:
             await resolver()
             return
         source = await self.resolve_source()
+        if self._converter is None:
+            raise ResourceIntegrityError("YOLOv8 converter is not configured")
         await self._converter.convert(
             ConversionRequest(
-                model_id=YOLOV8_MODEL_ID,
+                model_id=self._manifest.model_id,
                 model_revision=self._source.revision,
                 variant=self._config.variant,
                 source=source,
@@ -173,20 +169,20 @@ class YoloV8ResourceResolver:
             raise UnsupportedRuntimeError(
                 f"YOLOv8 does not support runtime {runtime}",
                 details={
-                    "model_id": YOLOV8_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": self._config.variant,
                     "runtime": runtime,
                 },
             )
         await asyncio.to_thread(self._delete_targets, targets)
 
-    def status(self, *, revision: str) -> ModelResourceStatus:
+    def status(self) -> ModelResourceStatus:
         source_path = self._config.source_path or self._default_source_path()
         coreml_path = self._config.artifact_path or self._default_coreml_path()
         onnx_path = self._config.artifact_path or self._default_onnx_path()
         return ModelResourceStatus(
-            model_id=YOLOV8_MODEL_ID,
-            revision=revision,
+            model_id=self._manifest.model_id,
+            revision=self._manifest.revision,
             variant=self._config.variant,
             artifacts=(
                 _artifact_status(
@@ -213,22 +209,16 @@ class YoloV8ResourceResolver:
         )
 
     def _default_source_path(self) -> Path:
-        return self._model_root() / "source" / YOLOV8_FILENAMES[self._config.variant]
+        return self._artifacts["source"].resolve(self._config.model_home)
 
     def _default_coreml_path(self) -> Path:
-        return self._model_root() / "coreml" / f"yolov8{self._config.variant}.mlpackage"
+        return self._artifacts["coreml"].resolve(self._config.model_home)
 
     def _default_onnx_path(self) -> Path:
-        return self._model_root() / "onnx" / f"yolov8{self._config.variant}.onnx"
+        return self._artifacts["onnx"].resolve(self._config.model_home)
 
     def _model_root(self) -> Path:
-        return (
-            self._config.model_home
-            / "ultralytics"
-            / "yolov8"
-            / self._source.revision
-            / self._config.variant
-        )
+        return self._artifacts["source"].storage_path(self._config.model_home).parents[1]
 
     def _delete_targets(self, targets: tuple[Path, ...]) -> None:
         root = self._model_root().expanduser().resolve(strict=False)
@@ -238,7 +228,7 @@ class YoloV8ResourceResolver:
                 raise ResourceIntegrityError(
                     "Refusing to delete a YOLOv8 artifact outside its model directory",
                     details={
-                        "model_id": YOLOV8_MODEL_ID,
+                        "model_id": self._manifest.model_id,
                         "variant": self._config.variant,
                     },
                 )
@@ -254,18 +244,21 @@ class YoloV8ResourceProvider:
     def __init__(
         self,
         sources: Mapping[str, HuggingFaceSource],
-        *,
-        revision: str,
+        manifest: ModelManifest,
+        artifacts: tuple[ModelArtifact, ...],
+        converter: YoloV8Converter,
     ) -> None:
         self._sources = dict(sources)
-        self._revision = revision
+        self._manifest = manifest
+        self._artifacts = artifacts
+        self._converter = converter
 
     async def status(
         self,
         variant: str,
         options: Mapping[str, object] | None = None,
     ) -> ModelResourceStatus:
-        return self._resolver(variant, options).status(revision=self._revision)
+        return self._resolver(variant, options).status()
 
     async def download_source(
         self,
@@ -276,7 +269,7 @@ class YoloV8ResourceProvider:
     ) -> ModelResourceStatus:
         resolver = self._resolver(variant, options)
         await resolver.download_source(overwrite=overwrite)
-        return resolver.status(revision=self._revision)
+        return resolver.status()
 
     async def convert(
         self,
@@ -290,14 +283,14 @@ class YoloV8ResourceProvider:
             raise UnsupportedRuntimeError(
                 f"YOLOv8 resource provider does not support {target_format} yet",
                 details={
-                    "model_id": YOLOV8_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": variant,
                     "target_format": target_format,
                 },
             )
         resolver = self._resolver(variant, options)
         await resolver.convert(target_format, overwrite=overwrite)
-        return resolver.status(revision=self._revision)
+        return resolver.status()
 
     async def delete(
         self,
@@ -308,7 +301,7 @@ class YoloV8ResourceProvider:
     ) -> ModelResourceStatus:
         resolver = self._resolver(variant, options)
         await resolver.delete(runtime=runtime)
-        return resolver.status(revision=self._revision)
+        return resolver.status()
 
     def _resolver(
         self,
@@ -316,7 +309,7 @@ class YoloV8ResourceProvider:
         options: Mapping[str, object] | None,
     ) -> YoloV8ResourceResolver:
         try:
-            if variant not in YOLOV8_VARIANTS:
+            if variant not in self._sources:
                 raise KeyError(variant)
             typed_variant = variant
             source = self._sources[variant]
@@ -324,7 +317,7 @@ class YoloV8ResourceProvider:
             raise ResourceNotFoundError(
                 f"YOLOv8 variant is not registered: {variant}",
                 details={
-                    "model_id": YOLOV8_MODEL_ID,
+                    "model_id": self._manifest.model_id,
                     "variant": variant,
                     "supported_variants": sorted(self._sources),
                 },
@@ -337,7 +330,14 @@ class YoloV8ResourceProvider:
                 details={"variant": variant, "options_variant": option_variant},
             )
         config = YoloV8InstanceConfig.model_validate(normalized | {"variant": typed_variant})
-        return YoloV8ResourceResolver(source, config)
+        artifacts = {
+            artifact.artifact_id: artifact
+            for artifact in self._artifacts
+            if artifact.variant == variant
+        }
+        return YoloV8ResourceResolver(
+            source, config, self._manifest, artifacts, converter=self._converter
+        )
 
 
 def _artifact_status(

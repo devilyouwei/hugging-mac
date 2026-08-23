@@ -5,8 +5,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
-Sha256 = Annotated[str, Field(pattern=r"^[a-fA-F0-9]{64}$")]
-
 
 class HuggingFaceSource(BaseModel):
     """A complete repository snapshot or one file from Hugging Face Hub."""
@@ -20,7 +18,6 @@ class HuggingFaceSource(BaseModel):
     allow_patterns: tuple[str, ...] = ()
     ignore_patterns: tuple[str, ...] = ()
     strip_prefix: Path | None = None
-    expected_sha256: Sha256 | None = None
 
     @model_validator(mode="after")
     def validate_snapshot_selection(self) -> HuggingFaceSource:
@@ -51,7 +48,6 @@ class UrlFileSource(BaseModel):
 
     kind: Literal["url_file"] = "url_file"
     url: HttpUrl
-    expected_sha256: Sha256 | None = None
 
 
 class UrlArchiveSource(BaseModel):
@@ -63,7 +59,6 @@ class UrlArchiveSource(BaseModel):
     url: HttpUrl
     format: Literal["auto", "zip", "tar"] = "auto"
     strip_components: int = Field(default=0, ge=0)
-    expected_sha256: Sha256 | None = None
 
 
 LeafResourceSource = Annotated[
@@ -96,7 +91,6 @@ class CompositeSource(BaseModel):
 
     kind: Literal["composite"] = "composite"
     resources: tuple[CompositeResource, ...] = Field(min_length=1)
-    expected_sha256: Sha256 | None = None
 
     @model_validator(mode="after")
     def validate_resource_paths(self) -> CompositeSource:
@@ -133,6 +127,7 @@ class ModelArtifactStatus(BaseModel):
     runtime: str | None = None
     provisioning: Literal["download", "convert"] = "download"
     shared: bool = Field(default=False, exclude=True)
+    required_shares: tuple[str, ...] = Field(default=(), exclude=True)
     available: bool
     size_bytes: int | None = Field(default=None, ge=0)
 
@@ -173,22 +168,36 @@ class ModelResourceStatus(BaseModel):
 
     @model_validator(mode="after")
     def aggregate_sizes(self) -> ModelResourceStatus:
-        shared = [artifact for artifact in self.artifacts if artifact.shared]
+        shared = {artifact.artifact_id: artifact for artifact in self.artifacts if artifact.shared}
         grouped: dict[str, list[ModelArtifactStatus]] = {}
         for artifact in self.artifacts:
             if not artifact.shared and artifact.runtime is not None:
                 grouped.setdefault(artifact.runtime, []).append(artifact)
-        runtimes = tuple(
-            RuntimeResourceStatus(
-                runtime=runtime,
-                available=all(artifact.available for artifact in (*artifacts, *shared)),
-                size_bytes=sum(artifact.size_bytes or 0 for artifact in (*artifacts, *shared)),
-                artifact_ids=tuple(
-                    artifact.artifact_id for artifact in (*artifacts, *shared)
-                ),
+        runtimes: list[RuntimeResourceStatus] = []
+        for runtime, artifacts in grouped.items():
+            required_share_ids = tuple(
+                dict.fromkeys(
+                    share_id for artifact in artifacts for share_id in artifact.required_shares
+                )
             )
-            for runtime, artifacts in grouped.items()
-        )
+            runtimes.append(
+                RuntimeResourceStatus(
+                    runtime=runtime,
+                    available=all(artifact.available for artifact in artifacts)
+                    and all(
+                        share_id in shared and shared[share_id].available
+                        for share_id in required_share_ids
+                    ),
+                    size_bytes=sum(artifact.size_bytes or 0 for artifact in artifacts)
+                    + sum(
+                        shared[share_id].size_bytes or 0
+                        for share_id in required_share_ids
+                        if share_id in shared
+                    ),
+                    artifact_ids=tuple(artifact.artifact_id for artifact in artifacts)
+                    + required_share_ids,
+                )
+            )
         conversion_targets = tuple(
             ConversionTargetStatus(
                 target_format=artifact.format,
@@ -200,7 +209,7 @@ class ModelResourceStatus(BaseModel):
             for artifact in self.artifacts
             if artifact.provisioning == "convert"
         )
-        object.__setattr__(self, "runtimes", runtimes)
+        object.__setattr__(self, "runtimes", tuple(runtimes))
         object.__setattr__(self, "conversion_targets", conversion_targets)
         object.__setattr__(
             self,

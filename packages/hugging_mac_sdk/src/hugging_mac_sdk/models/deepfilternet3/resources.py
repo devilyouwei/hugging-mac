@@ -14,7 +14,9 @@ from hugging_mac_sdk.errors import (
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
     ModelArtifactStatus,
@@ -22,14 +24,7 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
 )
 
-from .config import DEEPFILTERNET3_MODEL_ID, DEEPFILTERNET3_REVISION, DeepFilterNet3InstanceConfig
-
-_REQUIRED = (
-    "DeepFilterNet3.mlmodelc/model.mil",
-    "DeepFilterNet3.mlmodelc/weights/weight.bin",
-    "auxiliary.npz",
-    "config.json",
-)
+from .config import DeepFilterNet3InstanceConfig
 
 
 class DeepFilterNet3ResourceResolver:
@@ -38,27 +33,22 @@ class DeepFilterNet3ResourceResolver:
         source: HuggingFaceSource,
         config: DeepFilterNet3InstanceConfig,
         *,
+        manifest: ModelManifest,
+        artifact: ModelArtifact,
         downloader: ResourceDownloader | None = None,
     ) -> None:
         self._source, self._config = source, config
+        self._manifest, self._artifact = manifest, artifact
         self._downloader = downloader or ResourceDownloader()
 
     def root(self) -> Path:
         if self._config.artifact_path is not None:
             return self._config.artifact_path
-        return (
-            self._config.model_home
-            / "deepfilternet"
-            / "deepfilternet3"
-            / DEEPFILTERNET3_REVISION
-            / self._config.variant
-            / "coreml"
-            / "model"
-        )
+        return self._artifact.resolve(self._config.model_home)
 
     async def resolve(self) -> ResolvedResource:
         root = self.root()
-        missing = [name for name in _REQUIRED if not (root / name).is_file()]
+        missing = [name for name in self._artifact.required_files if not (root / name).is_file()]
         if missing:
             raise ResourceNotFoundError(
                 "DeepFilterNet3 Core ML artifact is not downloaded", details={"missing": missing}
@@ -77,10 +67,10 @@ class DeepFilterNet3ResourceResolver:
 
     def status(self) -> ModelResourceStatus:
         root = self.root()
-        available = all((root / name).is_file() for name in _REQUIRED)
+        available = all((root / name).is_file() for name in self._artifact.required_files)
         return ModelResourceStatus(
-            model_id=DEEPFILTERNET3_MODEL_ID,
-            revision=DEEPFILTERNET3_REVISION,
+            model_id=self._manifest.model_id,
+            revision=self._manifest.revision,
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
@@ -95,11 +85,7 @@ class DeepFilterNet3ResourceResolver:
 
     async def delete(self) -> None:
         root = self.root().expanduser().resolve(strict=False)
-        model_root = (
-            (self._config.model_home / "deepfilternet" / "deepfilternet3")
-            .expanduser()
-            .resolve(strict=False)
-        )
+        model_root = self._artifact.storage_path(self._config.model_home).parents[2]
         if root != model_root and not root.is_relative_to(model_root):
             raise ResourceIntegrityError(
                 "Refusing to delete DeepFilterNet3 resources outside model root"
@@ -108,8 +94,11 @@ class DeepFilterNet3ResourceResolver:
 
 
 class DeepFilterNet3ResourceProvider:
-    def __init__(self, source: HuggingFaceSource) -> None:
+    def __init__(
+        self, source: HuggingFaceSource, manifest: ModelManifest, artifact: ModelArtifact
+    ) -> None:
         self._source = source
+        self._manifest, self._artifact = manifest, artifact
 
     def _resolver(
         self, variant: str, options: Mapping[str, object] | None
@@ -117,6 +106,8 @@ class DeepFilterNet3ResourceProvider:
         return DeepFilterNet3ResourceResolver(
             self._source,
             DeepFilterNet3InstanceConfig.model_validate(dict(options or {}) | {"variant": variant}),
+            manifest=self._manifest,
+            artifact=self._artifact,
         )
 
     async def status(

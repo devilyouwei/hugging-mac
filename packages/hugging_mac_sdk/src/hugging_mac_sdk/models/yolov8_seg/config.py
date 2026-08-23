@@ -8,15 +8,11 @@ from typing import Literal
 from platformdirs import user_cache_path
 from pydantic import BaseModel, ConfigDict, Field
 
-YoloV8SegVariant = Literal["n", "s", "m"]
-YOLOV8_SEG_MODEL_ID = "ultralytics/yolov8-seg"
-YOLOV8_SEG_REVISION = "v8.2.0"
-
 
 class YoloV8SegCoreMlConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    variant: YoloV8SegVariant = "n"
+    variant: str = "n"
     imgsz: int = Field(default=640, gt=0)
     batch: int = Field(default=1, ge=1)
     dynamic: bool = False
@@ -33,7 +29,7 @@ class YoloV8SegInstanceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
 
     runtime: Literal["pytorch-mps", "coreml", "onnx"] = "coreml"
-    variant: YoloV8SegVariant = "n"
+    variant: str = "n"
     model_home: Path = Field(default_factory=lambda: user_cache_path("hugging-mac") / "models")
     source_path: Path | None = None
     artifact_path: Path | None = None

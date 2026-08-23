@@ -47,9 +47,7 @@ def prepare_audio(audio: AudioInput) -> PreparedEnhancementAudio:
     )
 
 
-def encode_wav(
-    samples: NDArray[np.float32], *, output_sample_rate: int
-) -> bytes:
+def encode_wav(samples: NDArray[np.float32], *, output_sample_rate: int) -> bytes:
     soundfile = importlib.import_module("soundfile")
     if output_sample_rate != NATIVE_SAMPLE_RATE:
         signal = importlib.import_module("scipy.signal")

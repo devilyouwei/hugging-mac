@@ -14,7 +14,9 @@ from hugging_mac_sdk.errors import (
 )
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_size
+from hugging_mac_sdk.schemas.artifact import ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat
+from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
     ModelArtifactStatus,
@@ -22,14 +24,7 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
 )
 
-from .config import (
-    AUDIO8_TTS_MLX_REQUIRED_FILES,
-    AUDIO8_TTS_MODEL_ID,
-    AUDIO8_TTS_REVISION,
-    AUDIO8_TTS_TOKENIZER_REQUIRED_FILES,
-    AUDIO8_TTS_VARIANT,
-    Audio8TtsMlxInstanceConfig,
-)
+from .config import Audio8TtsMlxInstanceConfig
 
 
 class Audio8TtsMlxResourceResolver:
@@ -38,28 +33,28 @@ class Audio8TtsMlxResourceResolver:
         source: HuggingFaceSource,
         config: Audio8TtsMlxInstanceConfig,
         *,
+        manifest: ModelManifest,
+        artifact: ModelArtifact,
+        tokenizer_artifact: ModelArtifact,
         tokenizer_source: HuggingFaceSource | None = None,
         downloader: ResourceDownloader | None = None,
     ) -> None:
         self._source = source
+        self._manifest = manifest
+        self._artifact = artifact
+        self._tokenizer_artifact = tokenizer_artifact
         self._tokenizer_source = tokenizer_source or source
         self._config = config
         self._downloader = downloader or ResourceDownloader(timeout=3600)
 
     @property
     def path(self) -> Path:
-        return self._config.source_path or self._model_root() / "mlx" / "model"
+        return self._config.source_path or self._artifact.resolve(self._config.model_home)
 
     @property
     def tokenizer_path(self) -> Path:
-        return (
-            self._config.tokenizer_path
-            or self._config.model_home
-            / "audio8"
-            / "audio8-tts-preview"
-            / "shared"
-            / "tokenizer"
-            / "afa762738efa064eb11720c934271b739b02cf97"
+        return self._config.tokenizer_path or self._tokenizer_artifact.resolve(
+            self._config.model_home
         )
 
     async def resolve_source(self) -> ResolvedResource:
@@ -71,7 +66,7 @@ class Audio8TtsMlxResourceResolver:
     async def resolve_tokenizer(self) -> ResolvedResource:
         missing = [
             name
-            for name in AUDIO8_TTS_TOKENIZER_REQUIRED_FILES
+            for name in self._tokenizer_artifact.required_files
             if not (self.tokenizer_path / name).is_file()
         ]
         if missing:
@@ -101,17 +96,18 @@ class Audio8TtsMlxResourceResolver:
 
     def status(self) -> ModelResourceStatus:
         available = self.path.is_dir() and all(
-            (self.path / name).is_file() for name in AUDIO8_TTS_MLX_REQUIRED_FILES
+            (self.path / name).is_file() for name in self._artifact.required_files
         )
         return ModelResourceStatus(
-            model_id=AUDIO8_TTS_MODEL_ID,
-            revision=AUDIO8_TTS_REVISION,
+            model_id=self._manifest.model_id,
+            revision=self._source.revision,
             variant=self._config.variant,
             artifacts=(
                 ModelArtifactStatus(
                     artifact_id="mlx-bf16",
                     format=ArtifactFormat.MLX.value,
                     runtime="mlx",
+                    required_shares=self._artifact.required_shares,
                     available=available,
                     size_bytes=directory_size(self.path) if available else None,
                 ),
@@ -130,19 +126,10 @@ class Audio8TtsMlxResourceResolver:
         await asyncio.to_thread(shutil.rmtree, target, True)
 
     def _model_root(self) -> Path:
-        return (
-            self._config.model_home
-            / "audio8"
-            / "audio8-tts-preview"
-            / AUDIO8_TTS_REVISION
-            / self._config.variant
-        )
+        return self._artifact.storage_path(self._config.model_home).parents[1]
 
-    @staticmethod
-    def _validate(path: Path) -> None:
-        missing = [
-            name for name in AUDIO8_TTS_MLX_REQUIRED_FILES if not (path / name).is_file()
-        ]
+    def _validate(self, path: Path) -> None:
+        missing = [name for name in self._artifact.required_files if not (path / name).is_file()]
         if missing:
             raise ResourceNotFoundError(
                 "Audio8-TTS MLX BF16 snapshot is incomplete", details={"missing": missing}
@@ -154,9 +141,16 @@ class Audio8TtsMlxResourceProvider:
         self,
         source: HuggingFaceSource,
         tokenizer_source: HuggingFaceSource | None = None,
+        *,
+        manifest: ModelManifest,
+        artifact: ModelArtifact,
+        tokenizer_artifact: ModelArtifact,
     ) -> None:
         self._source = source
         self._tokenizer_source = tokenizer_source or source
+        self._manifest = manifest
+        self._artifact = artifact
+        self._tokenizer_artifact = tokenizer_artifact
 
     async def status(
         self, variant: str, options: Mapping[str, object] | None = None
@@ -201,7 +195,7 @@ class Audio8TtsMlxResourceProvider:
     def _resolver(
         self, variant: str, options: Mapping[str, object] | None
     ) -> Audio8TtsMlxResourceResolver:
-        if variant != AUDIO8_TTS_VARIANT:
+        if variant != self._artifact.variant:
             raise ResourceNotFoundError(f"Audio8-TTS MLX variant is not registered: {variant}")
         normalized = dict(options or {})
         option_variant = normalized.get("variant")
@@ -210,5 +204,8 @@ class Audio8TtsMlxResourceProvider:
         return Audio8TtsMlxResourceResolver(
             self._source,
             Audio8TtsMlxInstanceConfig.model_validate(normalized | {"variant": variant}),
+            manifest=self._manifest,
+            artifact=self._artifact,
+            tokenizer_artifact=self._tokenizer_artifact,
             tokenizer_source=self._tokenizer_source,
         )
