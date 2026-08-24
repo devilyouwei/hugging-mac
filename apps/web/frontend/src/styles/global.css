@@ -1600,6 +1600,21 @@ button,select,a { touch-action:manipulation; }
   transform: none;
 }
 
+.models-directory-page .workflow-item.workflow-item--shared {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface-solid));
+}
+
+.models-directory-page .workflow-item.workflow-item--shared:hover {
+  background: color-mix(in srgb, var(--accent) 26%, var(--surface-solid));
+}
+
+.models-directory-page .shared-artifact-label {
+  color: color-mix(in srgb, var(--accent) 76%, var(--ink));
+  font-size: var(--models-font-micro);
+  font-weight: 600;
+  margin-left: 0.18rem;
+}
+
 .models-directory-page .workflow-item__icon {
   font-size: var(--models-font-small);
   height: 1.5rem;
@@ -1631,6 +1646,67 @@ button,select,a { touch-action:manipulation; }
 .models-directory-page .workflow-item__actions .text-action:disabled {
   cursor: default;
   opacity: 0.34;
+}
+
+.models-directory-page .workflow-item__progress {
+  display: grid;
+  gap: 0.34rem;
+  grid-column: 1 / -1;
+  padding: 0.2rem 0.08rem 0.04rem;
+}
+
+.models-directory-page .workflow-item__progress-copy {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: var(--models-font-micro);
+  justify-content: space-between;
+}
+
+.models-directory-page .workflow-item__progress-copy span:first-child {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.models-directory-page .artifact-progress-track {
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+  border-radius: 999px;
+  height: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.models-directory-page .artifact-progress-track > span {
+  background: var(--accent);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  transition: width 180ms ease-out;
+}
+
+.models-directory-page .artifact-progress-track--indeterminate > span {
+  animation: artifact-progress-slide 1.25s ease-in-out infinite;
+  left: 0;
+  min-width: 28%;
+  position: absolute;
+  width: 28%;
+}
+
+.models-directory-page .workflow-item__progress--error,
+.models-directory-page .workflow-item__progress--error small {
+  color: var(--danger);
+}
+
+.models-directory-page .workflow-item__progress--error .artifact-progress-track > span {
+  background: var(--danger);
+  width: 100%;
+}
+
+@keyframes artifact-progress-slide {
+  0% { transform: translateX(-110%); }
+  55% { transform: translateX(175%); }
+  100% { transform: translateX(360%); }
 }
 
 .models-directory-page .workflow-empty {

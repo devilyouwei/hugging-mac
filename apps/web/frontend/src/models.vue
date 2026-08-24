@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 
 import {
   convertModelResources,
+  createArtifactDownload,
   deleteModelArtifact,
-  downloadModelArtifact,
+  fetchActiveArtifactDownloads,
   fetchModelInventory,
   fetchModelStructure,
   fetchModels,
   loadModel,
   unloadModel,
+  streamArtifactDownload,
 } from "@/api/catalog"
 import type {
   ArtifactInventoryItem,
@@ -18,6 +20,8 @@ import type {
   ModelStructure,
   ModelSummary,
   RuntimeSummary,
+  ArtifactDownloadProgress,
+  DownloadOperation,
 } from "@/api/types"
 import StatusPill from "@/components/StatusPill.vue"
 import ModelStructureModal from "@/components/ModelStructureModal.vue"
@@ -39,6 +43,14 @@ const inspectedModelName = ref("")
 const inspectionLoading = ref(false)
 const inspectionError = ref("")
 const inspectionOpen = ref(false)
+interface ArtifactDownloadState extends ArtifactDownloadProgress {
+  operationId: string
+  state: DownloadOperation["state"]
+  error: string | null
+}
+const artifactDownloads = ref<Record<string, ArtifactDownloadState>>({})
+const followedDownloads = new Set<string>()
+const downloadControllers = new Map<string, AbortController>()
 
 const visibleModels = computed(() => {
   const term = query.value.trim().toLowerCase()
@@ -77,7 +89,43 @@ function operationKey(action: string, modelId: string, item = ""): string {
 }
 
 function artifactKey(artifact: ArtifactInventoryItem): string {
-  return `${artifact.variant}:${artifact.runtime}:${artifact.artifact_id}`
+  return artifact.shared
+    ? `shared:shared:${artifact.artifact_id}`
+    : `${artifact.variant}:${artifact.runtime}:${artifact.artifact_id}`
+}
+
+function downloadStateKey(modelId: string, key: string): string {
+  return `${modelId}:${key}`
+}
+
+function artifactDownload(
+  model: ModelSummary,
+  artifact: ArtifactInventoryItem,
+): ArtifactDownloadState | undefined {
+  return artifactDownloads.value[downloadStateKey(model.model_id, artifactKey(artifact))]
+}
+
+function artifactDownloading(model: ModelSummary, artifact: ArtifactInventoryItem): boolean {
+  const progress = artifactDownload(model, artifact)
+  return progress?.state === "queued" || progress?.state === "running"
+}
+
+function downloadPercent(progress: ArtifactDownloadState): number | null {
+  if (!progress.total_bytes) return null
+  return Math.min(100, Math.round(progress.downloaded_bytes / progress.total_bytes * 100))
+}
+
+function downloadPhaseLabel(progress: ArtifactDownloadState): string {
+  if (progress.state === "queued") return "Queued"
+  if (progress.state === "error") return "Download failed"
+  const labels: Record<string, string> = {
+    downloading: "Downloading",
+    extracting: "Extracting",
+    verifying: "Verifying",
+    installing: "Installing",
+    completed: "Downloaded",
+  }
+  return labels[progress.phase] ?? "Preparing download"
 }
 
 function isPending(key: string): boolean {
@@ -331,14 +379,82 @@ async function runOperation(
 }
 
 async function handleDownload(model: ModelSummary, artifact: ArtifactInventoryItem): Promise<void> {
-  const key = operationKey("download", model.model_id, artifactKey(artifact))
-  await runOperation(model, key, "Artifact downloaded.", async () => {
-    inventories.value[model.model_id] = await downloadModelArtifact(
-      model.model_id,
-      artifact,
-      true,
-    )
+  delete notices.value[model.model_id]
+  try {
+    const operation = await createArtifactDownload(model.model_id, artifact, true)
+    applyDownloadOperation(operation)
+    followDownloadOperation(operation)
+  } catch (caught) {
+    notices.value[model.model_id] = {
+      tone: "error",
+      text: caught instanceof Error ? caught.message : "The download could not be started.",
+    }
+  }
+}
+
+function applyDownloadOperation(operation: DownloadOperation): void {
+  const updates = { ...artifactDownloads.value }
+  const items = operation.artifacts.length
+    ? operation.artifacts
+    : [{
+        artifact_key: operation.requested_artifact_key,
+        variant: null,
+        runtime: null,
+        artifact_id: operation.requested_artifact_key.split(":").at(-1) ?? "artifact",
+        phase: "queued",
+        downloaded_bytes: 0,
+        total_bytes: null,
+      }]
+  for (const progress of items) {
+    updates[downloadStateKey(operation.model_id, progress.artifact_key)] = {
+      ...progress,
+      operationId: operation.operation_id,
+      state: operation.state,
+      error: operation.error,
+    }
+  }
+  artifactDownloads.value = updates
+}
+
+function followDownloadOperation(operation: DownloadOperation): void {
+  if (followedDownloads.has(operation.operation_id)) return
+  followedDownloads.add(operation.operation_id)
+  const controller = new AbortController()
+  downloadControllers.set(operation.operation_id, controller)
+  void streamArtifactDownload(
+    operation.operation_id,
+    applyDownloadOperation,
+    controller.signal,
+  ).then(async (finalOperation) => {
+    if (finalOperation.state === "completed") {
+      await refresh()
+      notices.value[finalOperation.model_id] = {
+        tone: "success",
+        text: "Artifact downloaded.",
+      }
+      window.setTimeout(() => clearDownloadOperation(finalOperation.operation_id), 1400)
+    } else if (finalOperation.state === "error") {
+      notices.value[finalOperation.model_id] = {
+        tone: "error",
+        text: finalOperation.error ?? "The download could not be completed.",
+      }
+    }
+  }).catch((caught) => {
+    if (controller.signal.aborted) return
+    notices.value[operation.model_id] = {
+      tone: "error",
+      text: caught instanceof Error ? caught.message : "The progress stream was interrupted.",
+    }
+  }).finally(() => {
+    followedDownloads.delete(operation.operation_id)
+    downloadControllers.delete(operation.operation_id)
   })
+}
+
+function clearDownloadOperation(operationId: string): void {
+  artifactDownloads.value = Object.fromEntries(
+    Object.entries(artifactDownloads.value).filter(([, item]) => item.operationId !== operationId),
+  )
 }
 
 async function handleConvert(model: ModelSummary, artifact: ArtifactInventoryItem): Promise<void> {
@@ -410,11 +526,22 @@ function closeInspection(): void {
 onMounted(async () => {
   try {
     await refresh()
+    const activeDownloads = await fetchActiveArtifactDownloads()
+    for (const operation of activeDownloads) {
+      applyDownloadOperation(operation)
+      followDownloadOperation(operation)
+    }
   } catch (caught) {
     pageError.value = caught instanceof Error ? caught.message : "The model catalog could not be loaded."
   } finally {
     loading.value = false
   }
+})
+
+onBeforeUnmount(() => {
+  for (const controller of downloadControllers.values()) controller.abort()
+  downloadControllers.clear()
+  followedDownloads.clear()
 })
 </script>
 
@@ -558,10 +685,18 @@ onMounted(async () => {
             <div><h3>Artifacts</h3><p>Download prebuilt files or convert supported artifacts in place.</p></div>
           </div>
           <div class="workflow-list">
-            <div v-for="artifact in visibleArtifacts(model)" :key="artifactKey(artifact)" class="workflow-item">
+            <div
+              v-for="artifact in visibleArtifacts(model)"
+              :key="artifactKey(artifact)"
+              class="workflow-item"
+              :class="{ 'workflow-item--shared': artifact.shared }"
+            >
               <div class="workflow-item__icon">{{ artifactIcon(artifact) }}</div>
               <div class="workflow-item__content">
-                <strong>{{ formatName(artifact.artifact_id) }}</strong>
+                <strong>
+                  {{ formatName(artifact.artifact_id) }}
+                  <span v-if="artifact.shared" class="shared-artifact-label">(Shared)</span>
+                </strong>
                 <small :title="artifactSourceLabel(artifact)">{{ artifactSourceLabel(artifact) }}</small>
               </div>
               <div class="workflow-item__meta">
@@ -575,12 +710,12 @@ onMounted(async () => {
                 <button
                   v-if="artifact.source"
                   class="button button--compact"
-                  :disabled="artifactHasInstances(model, artifact) || isPending(operationKey('download', model.model_id, artifactKey(artifact)))"
+                  :disabled="artifactHasInstances(model, artifact) || artifactDownloading(model, artifact)"
                   :title="artifactHasInstances(model, artifact) ? 'Unload the matching instance before replacing this artifact' : artifact.available ? 'Download again and overwrite the installed artifact' : 'Download this artifact'"
                   type="button"
                   @click="handleDownload(model, artifact)"
                 >
-                  {{ isPending(operationKey('download', model.model_id, artifactKey(artifact))) ? 'Downloading…' : 'Download' }}
+                  {{ artifactDownloading(model, artifact) ? 'Downloading…' : 'Download' }}
                 </button>
                 <button
                   v-if="artifact.convertible"
@@ -601,6 +736,37 @@ onMounted(async () => {
                 >
                   {{ isPending(operationKey('delete', model.model_id, artifactKey(artifact))) ? 'Removing…' : 'Remove' }}
                 </button>
+              </div>
+              <div
+                v-if="artifactDownload(model, artifact)"
+                class="workflow-item__progress"
+                :class="{ 'workflow-item__progress--error': artifactDownload(model, artifact)?.state === 'error' }"
+              >
+                <div class="workflow-item__progress-copy">
+                  <span>{{ downloadPhaseLabel(artifactDownload(model, artifact)!) }}</span>
+                  <span v-if="downloadPercent(artifactDownload(model, artifact)!) !== null">
+                    {{ formatBytes(artifactDownload(model, artifact)!.downloaded_bytes) }} / {{ formatBytes(artifactDownload(model, artifact)!.total_bytes) }} · {{ downloadPercent(artifactDownload(model, artifact)!) }}%
+                  </span>
+                  <span v-else-if="artifactDownload(model, artifact)!.downloaded_bytes">
+                    {{ formatBytes(artifactDownload(model, artifact)!.downloaded_bytes) }}
+                  </span>
+                </div>
+                <div
+                  class="artifact-progress-track"
+                  :class="{ 'artifact-progress-track--indeterminate': downloadPercent(artifactDownload(model, artifact)!) === null && artifactDownload(model, artifact)?.state !== 'error' }"
+                  role="progressbar"
+                  :aria-label="`${formatName(artifact.artifact_id)} download progress`"
+                  :aria-valuenow="downloadPercent(artifactDownload(model, artifact)!) ?? undefined"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                >
+                  <span
+                    :style="downloadPercent(artifactDownload(model, artifact)!) !== null ? { width: `${downloadPercent(artifactDownload(model, artifact)!)}%` } : undefined"
+                  ></span>
+                </div>
+                <small v-if="artifactDownload(model, artifact)?.state === 'error'">
+                  {{ artifactDownload(model, artifact)?.error }}
+                </small>
               </div>
             </div>
             <p v-if="!visibleArtifacts(model).length" class="workflow-empty">No artifacts are declared for this variant.</p>

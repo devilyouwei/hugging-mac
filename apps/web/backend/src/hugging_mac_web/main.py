@@ -105,7 +105,7 @@ def create_app(
         finally:
             with contextlib.suppress(Exception):
                 await context.models.instances.unload_all(force=True)
-            context.close()
+            await context.close()
 
     app = FastAPI(
         title="hugging-mac",

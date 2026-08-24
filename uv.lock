@@ -1445,6 +1445,7 @@ dependencies = [
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "tqdm" },
 ]
 
 [package.optional-dependencies]
@@ -1532,6 +1533,7 @@ requires-dist = [
     { name = "torch", marker = "extra == 'yolo'", specifier = "==2.7.0" },
     { name = "torchaudio", marker = "extra == 'asr'", specifier = "==2.7.0" },
     { name = "torchaudio", marker = "extra == 'tts'", specifier = "==2.7.0" },
+    { name = "tqdm", specifier = ">=4.42,<5" },
     { name = "transformers", marker = "extra == 'asr'", specifier = ">=4.57.3,<6" },
     { name = "transformers", marker = "extra == 'tts'", specifier = ">=4.57.3,<6" },
 ]

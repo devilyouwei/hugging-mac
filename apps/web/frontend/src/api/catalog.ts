@@ -1,4 +1,4 @@
-import { request } from "./client"
+import { API_BASE, ApiError, request } from "./client"
 import type {
   AppSummary,
   InstanceSummary,
@@ -9,6 +9,7 @@ import type {
   ArtifactInventoryItem,
   SystemInfo,
   UnloadResult,
+  DownloadOperation,
 } from "./types"
 
 export async function fetchCatalog(): Promise<{
@@ -69,6 +70,69 @@ export async function downloadModelArtifact(
       artifact_id: artifact.artifact_id,
     }),
   })).data
+}
+
+export async function createArtifactDownload(
+  modelId: string,
+  artifact: ArtifactInventoryItem,
+  overwrite = false,
+): Promise<DownloadOperation> {
+  const query = overwrite ? "?overwrite=true" : ""
+  return (await request<DownloadOperation>(
+    `/api/v1/catalog/models/${modelPath(modelId)}/download-operations${query}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        variant: artifact.variant,
+        runtime: artifact.runtime,
+        artifact_id: artifact.artifact_id,
+      }),
+    },
+  )).data
+}
+
+export async function fetchActiveArtifactDownloads(): Promise<DownloadOperation[]> {
+  return (await request<DownloadOperation[]>("/api/v1/catalog/download-operations?active=true")).data
+}
+
+export async function streamArtifactDownload(
+  operationId: string,
+  onEvent: (operation: DownloadOperation) => void,
+  signal?: AbortSignal,
+): Promise<DownloadOperation> {
+  const response = await fetch(
+    `${API_BASE}/api/v1/catalog/download-operations/${encodeURIComponent(operationId)}/events`,
+    { signal },
+  )
+  if (!response.ok || !response.body) {
+    throw new ApiError(`Download progress stream failed with status ${response.status}`, {
+      status: response.status,
+    })
+  }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+  let latest: DownloadOperation | null = null
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done })
+    const frames = buffer.split("\n\n")
+    buffer = frames.pop() ?? ""
+    for (const frame of frames) {
+      const data = frame
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trimStart())
+        .join("\n")
+      if (!data) continue
+      latest = JSON.parse(data) as DownloadOperation
+      onEvent(latest)
+    }
+    if (done) break
+  }
+  if (!latest) throw new Error("Download progress stream ended before receiving status")
+  return latest
 }
 
 export async function deleteModelArtifact(modelId: string, artifact: ArtifactInventoryItem): Promise<ModelInventory> {

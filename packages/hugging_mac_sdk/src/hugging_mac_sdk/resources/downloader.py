@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import os
 import shutil
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
@@ -14,6 +15,7 @@ from uuid import uuid4
 
 import httpx
 from huggingface_hub import hf_hub_download, snapshot_download
+from tqdm.auto import tqdm  # type: ignore[import-untyped]
 
 from hugging_mac_sdk.errors import (
     DownloadError,
@@ -39,9 +41,20 @@ from hugging_mac_sdk.schemas.resources import (
 class DownloadProgress:
     downloaded_bytes: int
     total_bytes: int | None
+    phase: str = "downloading"
 
 
 type ProgressCallback = Callable[[DownloadProgress], None]
+
+
+def _report(
+    progress: ProgressCallback | None,
+    phase: str,
+    downloaded_bytes: int = 0,
+    total_bytes: int | None = None,
+) -> None:
+    if progress is not None:
+        progress(DownloadProgress(downloaded_bytes, total_bytes, phase))
 
 
 class ResourceDownloader:
@@ -83,12 +96,14 @@ class ResourceDownloader:
                     destination,
                     overwrite=overwrite,
                     token=token,
+                    progress=progress,
                 )
             return await self._download_huggingface_snapshot(
                 source,
                 destination,
                 overwrite=overwrite,
                 token=token,
+                progress=progress,
             )
         if isinstance(source, UrlFileSource):
             return await self._download_url_file(
@@ -126,16 +141,35 @@ class ResourceDownloader:
         staging = _staging_path(destination)
         try:
             staging.mkdir(parents=True)
+            completed = 0
+            known_total = 0
             for resource in source.resources:
-                await self.download(
+                child_total: int | None = None
+
+                def child_progress(event: DownloadProgress, base: int = completed) -> None:
+                    nonlocal child_total
+                    if event.phase != "downloading":
+                        return
+                    child_total = event.total_bytes
+                    total = base + event.total_bytes if event.total_bytes is not None else None
+                    _report(progress, "downloading", base + event.downloaded_bytes, total)
+
+                resolved = await self.download(
                     resource.source,
                     staging / resource.path,
                     token=token,
-                    progress=progress,
+                    progress=child_progress,
                 )
+                completed += resolved.size_bytes
+                if child_total is not None:
+                    known_total += child_total
+                _report(progress, "downloading", completed, known_total or None)
+            _report(progress, "verifying", completed, completed)
             digest = await asyncio.to_thread(directory_sha256, staging)
             size = directory_size(staging)
+            _report(progress, "installing", size, size)
             self._commit(staging, destination, overwrite)
+            _report(progress, "completed", size, size)
             return ResolvedResource(
                 path=destination,
                 source=source,
@@ -160,8 +194,12 @@ class ResourceDownloader:
         staging = _staging_path(destination)
         try:
             await self._stream_url(str(source.url), staging, progress)
+            size = staging.stat().st_size
+            _report(progress, "verifying", size, size)
             digest = self._digest_file(staging)
+            _report(progress, "installing", size, size)
             self._commit(staging, destination, overwrite)
+            _report(progress, "completed", size, size)
             return ResolvedResource(
                 path=destination,
                 source=source,
@@ -190,7 +228,10 @@ class ResourceDownloader:
         staging_directory = _staging_path(destination, suffix=".directory")
         try:
             await self._stream_url(str(source.url), staging_archive, progress)
+            archive_size = staging_archive.stat().st_size
+            _report(progress, "verifying", archive_size, archive_size)
             self._digest_file(staging_archive)
+            _report(progress, "extracting", archive_size, archive_size)
             await asyncio.to_thread(
                 extract_archive,
                 staging_archive,
@@ -200,7 +241,9 @@ class ResourceDownloader:
             )
             digest = await asyncio.to_thread(directory_sha256, staging_directory)
             size = directory_size(staging_directory)
+            _report(progress, "installing", size, size)
             self._commit(staging_directory, destination, overwrite)
+            _report(progress, "completed", size, size)
             return ResolvedResource(
                 path=destination,
                 source=source,
@@ -225,9 +268,11 @@ class ResourceDownloader:
         *,
         overwrite: bool,
         token: str | None,
+        progress: ProgressCallback | None,
     ) -> ResolvedResource:
         staging = _staging_path(destination)
         try:
+            tracker = _HuggingFaceProgressTracker(progress)
             cached_path = await asyncio.to_thread(
                 partial(
                     hf_hub_download,
@@ -235,11 +280,16 @@ class ResourceDownloader:
                     filename=source.filename,
                     revision=source.revision,
                     token=token,
+                    tqdm_class=tracker.tqdm_class,
                 )
             )
+            cached_size = Path(cached_path).stat().st_size
+            _report(progress, "installing", cached_size, cached_size)
             await asyncio.to_thread(shutil.copyfile, cached_path, staging)
+            _report(progress, "verifying", cached_size, cached_size)
             digest = self._digest_file(staging)
             self._commit(staging, destination, overwrite)
+            _report(progress, "completed", cached_size, cached_size)
             return ResolvedResource(
                 path=destination,
                 source=source,
@@ -261,10 +311,12 @@ class ResourceDownloader:
         *,
         overwrite: bool,
         token: str | None,
+        progress: ProgressCallback | None,
     ) -> ResolvedResource:
         staging = _staging_path(destination)
         selected = _staging_path(destination, suffix=".selected")
         try:
+            tracker = _HuggingFaceProgressTracker(progress)
             await asyncio.to_thread(
                 partial(
                     snapshot_download,
@@ -275,8 +327,10 @@ class ResourceDownloader:
                     ignore_patterns=list(source.ignore_patterns) or None,
                     token=token,
                     max_workers=self._max_workers,
+                    tqdm_class=tracker.tqdm_class,
                 )
             )
+            _report(progress, "verifying", tracker.downloaded, tracker.total)
             # ``local_dir`` snapshots contain Hub bookkeeping under ``.cache``.
             # The atomic destination is a model artifact, not another cache, so
             # keep only files selected by the source declaration.
@@ -293,7 +347,9 @@ class ResourceDownloader:
                 materialized = selected
             digest = await asyncio.to_thread(directory_sha256, materialized)
             size = directory_size(materialized)
+            _report(progress, "installing", size, size)
             self._commit(materialized, destination, overwrite)
+            _report(progress, "completed", size, size)
             return ResolvedResource(
                 path=destination,
                 source=source,
@@ -332,7 +388,7 @@ class ResourceDownloader:
                         output.write(chunk)
                         downloaded += len(chunk)
                         if progress is not None:
-                            progress(DownloadProgress(downloaded, total))
+                            _report(progress, "downloading", downloaded, total)
         except ResourceNotFoundError:
             raise
         except httpx.HTTPError as error:
@@ -361,6 +417,59 @@ class ResourceDownloader:
                 destination.unlink()
         os.replace(staging, destination)
 
+
+class _HuggingFaceProgressTracker:
+    """Aggregate concurrent Hugging Face byte progress bars into one callback."""
+
+    def __init__(self, progress: ProgressCallback | None) -> None:
+        self._progress = progress
+        self._lock = threading.Lock()
+        self._bars: dict[int, tuple[int, int | None]] = {}
+
+        tracker = self
+
+        class CallbackTqdm(tqdm):  # type: ignore[misc]
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                super().__init__(*args, **kwargs)
+                tracker._update(self)
+
+            def update(self, n: float | None = 1) -> bool | None:
+                changed = super().update(n)
+                tracker._update(self)
+                return bool(changed) if changed is not None else None
+
+            def close(self) -> None:
+                tracker._update(self)
+                super().close()
+
+        self.tqdm_class = CallbackTqdm
+
+    @property
+    def downloaded(self) -> int:
+        with self._lock:
+            return sum(item[0] for item in self._bars.values())
+
+    @property
+    def total(self) -> int | None:
+        with self._lock:
+            totals = [item[1] for item in self._bars.values()]
+            return sum(total for total in totals if total is not None) if totals and all(
+                total is not None for total in totals
+            ) else None
+
+    def _update(self, bar: tqdm) -> None:
+        if self._progress is None or getattr(bar, "unit", None) != "B":
+            return
+        with self._lock:
+            self._bars[id(bar)] = (int(bar.n), int(bar.total) if bar.total is not None else None)
+            downloaded = sum(item[0] for item in self._bars.values())
+            totals = [item[1] for item in self._bars.values()]
+            total = (
+                sum(value for value in totals if value is not None)
+                if totals and all(value is not None for value in totals)
+                else None
+            )
+        _report(self._progress, "downloading", downloaded, total)
 
 def _staging_path(destination: Path, *, suffix: str = "") -> Path:
     return destination.parent / f".{destination.name}.partial-{uuid4().hex}{suffix}"

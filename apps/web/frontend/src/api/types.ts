@@ -107,6 +107,27 @@ export interface ModelInventory {
   artifacts: ArtifactInventoryItem[]
 }
 
+export interface ArtifactDownloadProgress {
+  artifact_key: string
+  variant: string | null
+  runtime: string | null
+  artifact_id: string
+  phase: string
+  downloaded_bytes: number
+  total_bytes: number | null
+}
+
+export interface DownloadOperation {
+  operation_id: string
+  model_id: string
+  requested_artifact_key: string
+  state: "queued" | "running" | "completed" | "error"
+  artifacts: ArtifactDownloadProgress[]
+  error: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface TensorStructure {
   name: string
   dtype: string | null

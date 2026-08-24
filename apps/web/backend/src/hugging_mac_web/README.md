@@ -158,6 +158,9 @@ database changefeed.
 | GET | `/api/v1/catalog/models/{model_id:path}/inventory` | Every declared artifact and local availability |
 | GET | `/api/v1/catalog/models/{model_id:path}/structure` | Read-only artifact structure inspection |
 | POST | `/api/v1/catalog/models/{model_id:path}/resources/download-one` | Download or overwrite one declared artifact |
+| POST | `/api/v1/catalog/models/{model_id:path}/download-operations` | Start or reuse a background artifact download |
+| GET | `/api/v1/catalog/download-operations` | List active or recent background downloads |
+| GET | `/api/v1/catalog/download-operations/{operation_id}/events` | Stream the latest download state and subsequent progress over SSE |
 | DELETE | `/api/v1/catalog/models/{model_id:path}/artifacts` | Delete one declared artifact directory/file |
 | POST | `/api/v1/catalog/models/{model_id:path}/resources/download` | Prepare all required source resources |
 | DELETE | `/api/v1/catalog/models/{model_id:path}/resources` | Delete model resources through the provider |
@@ -169,6 +172,12 @@ Catalog reads do not download, convert, or load. Per-artifact download uses the
 artifact's injected source; conversion is allowed only for a non-shared artifact
 with `convert: true`. Required shared artifacts are prepared before their owner.
 Overwrite is explicit for downloads and conversions.
+
+Background downloads belong to the platform process rather than an SSE client.
+Disconnecting or refreshing a page removes only that subscription; a later
+subscriber receives the operation's latest snapshot before live updates. Progress
+is tracked independently for the requested artifact and any shared artifacts it
+installs first. Stopping the backend process still stops in-flight downloads.
 
 Resource mutation is rejected while an affected runtime/variant has managed
 instances. A shared artifact also checks every owner in its many-to-many

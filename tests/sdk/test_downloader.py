@@ -9,7 +9,7 @@ import httpx
 import pytest
 from hugging_mac_sdk.errors import DownloadError
 from hugging_mac_sdk.resources import downloader as downloader_module
-from hugging_mac_sdk.resources.downloader import ResourceDownloader
+from hugging_mac_sdk.resources.downloader import DownloadProgress, ResourceDownloader
 from hugging_mac_sdk.schemas.resources import (
     CompositeResource,
     CompositeSource,
@@ -45,6 +45,34 @@ async def test_downloads_url_file_atomically(tmp_path: Path) -> None:
     assert result.digest == digest
     assert result.size_bytes == len(content)
     assert not tuple(tmp_path.glob("*.partial-*"))
+
+
+async def test_url_download_reports_bytes_and_installation_phases(tmp_path: Path) -> None:
+    content = b"model weights"
+    events: list[DownloadProgress] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=content,
+            headers={"content-length": str(len(content))},
+            request=request,
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await ResourceDownloader(client=client).download(
+            UrlFileSource(url="https://models.example/model.bin"),
+            tmp_path / "model.bin",
+            progress=events.append,
+        )
+
+    assert any(
+        event.phase == "downloading"
+        and event.downloaded_bytes == len(content)
+        and event.total_bytes == len(content)
+        for event in events
+    )
+    assert [event.phase for event in events[-3:]] == ["verifying", "installing", "completed"]
 
 
 async def test_downloads_composite_resource_as_one_atomic_directory(tmp_path: Path) -> None:

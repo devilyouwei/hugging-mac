@@ -13,7 +13,7 @@ from typing import Protocol, cast
 
 from hugging_mac_sdk.core.registry import ModelDefinition, ModelRegistry
 from hugging_mac_sdk.errors import ResourceNotFoundError, UnsupportedCapabilityError
-from hugging_mac_sdk.resources.downloader import ResourceDownloader
+from hugging_mac_sdk.resources.downloader import ProgressCallback, ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_size
 from hugging_mac_sdk.schemas.artifact import ArtifactKind, ModelArtifact
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat
@@ -158,6 +158,7 @@ class ModelResourceService:
         target_format: str | None = None,
         options: Mapping[str, object] | None = None,
         overwrite: bool = False,
+        progress: ProgressCallback | None = None,
     ) -> None:
         """Install shares required by matching artifacts of the selected variant."""
 
@@ -181,6 +182,7 @@ class ModelResourceService:
                 path,
                 overwrite=overwrite,
                 token=token,
+                progress=progress,
             )
 
     async def download_shared_artifact(
@@ -191,6 +193,7 @@ class ModelResourceService:
         revision: str | None = None,
         options: Mapping[str, object] | None = None,
         overwrite: bool = False,
+        progress: ProgressCallback | None = None,
     ) -> None:
         """Install one explicitly selected model-wide artifact."""
 
@@ -214,6 +217,7 @@ class ModelResourceService:
             path,
             overwrite=overwrite,
             token=str(token_value) if token_value is not None else None,
+            progress=progress,
         )
 
     def _with_shared_status(

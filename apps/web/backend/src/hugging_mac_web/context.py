@@ -28,6 +28,7 @@ from hugging_mac_sdk.models.yolov8_seg import register_yolov8_seg
 
 from hugging_mac_web.app_registry import AppRegistry
 from hugging_mac_web.config import WebSettings
+from hugging_mac_web.download_operations import DownloadOperationManager
 from hugging_mac_web.shared.cache import LocalCache
 from hugging_mac_web.shared.storage import TinyDocumentStore
 
@@ -40,8 +41,10 @@ class PlatformContext:
     apps: AppRegistry
     documents: TinyDocumentStore
     cache: LocalCache
+    downloads: DownloadOperationManager
 
-    def close(self) -> None:
+    async def close(self) -> None:
+        await self.downloads.close()
         self.documents.close()
 
 
@@ -77,4 +80,5 @@ def create_context(settings: WebSettings) -> PlatformContext:
         apps=AppRegistry(),
         documents=documents,
         cache=LocalCache(settings.cache_dir, documents),
+        downloads=DownloadOperationManager(),
     )

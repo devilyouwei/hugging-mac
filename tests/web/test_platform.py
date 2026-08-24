@@ -19,7 +19,7 @@ from hugging_mac_sdk import (
 from hugging_mac_sdk.errors import InferenceError
 from hugging_mac_sdk.models.yolov8.converter import YoloV8Converter
 from hugging_mac_sdk.models.yolov8.instance import YoloV8Instance
-from hugging_mac_sdk.resources.downloader import ResourceDownloader
+from hugging_mac_sdk.resources.downloader import DownloadProgress, ResourceDownloader
 from hugging_mac_sdk.schemas.detection import (
     BoundingBox,
     Detection,
@@ -599,6 +599,73 @@ def test_models_catalog_downloads_one_shared_artifact_independently(
     artifacts = {item["artifact_id"]: item for item in response.json()["data"]["artifacts"]}
     assert artifacts["tokenizer"]["available"]
     assert not artifacts["coreml-int8"]["available"]
+
+
+def test_models_catalog_streams_background_artifact_download(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_download(
+        _: ResourceDownloader,
+        source: Any,
+        destination: Path,
+        **options: object,
+    ) -> ResolvedResource:
+        progress = options.get("progress")
+        assert callable(progress)
+        progress(DownloadProgress(4, 8))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"weights!")
+        progress(DownloadProgress(8, 8, "completed"))
+        return ResolvedResource(
+            path=destination,
+            source=source,
+            digest="0" * 64,
+            size_bytes=8,
+        )
+
+    monkeypatch.setattr(ResourceDownloader, "download", fake_download)
+    app = create_app(_settings(tmp_path))
+    command = {
+        "variant": "n",
+        "runtime": "pytorch-mps",
+        "artifact_id": "source",
+    }
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/v1/catalog/models/ultralytics/yolov8/download-operations?overwrite=true",
+            json=command,
+        )
+        assert created.status_code == 202
+        operation_id = created.json()["data"]["operation_id"]
+
+        events: list[str] = []
+        with client.stream(
+            "GET", f"/api/v1/catalog/download-operations/{operation_id}/events"
+        ) as response:
+            assert response.status_code == 200
+            for line in response.iter_lines():
+                if line.startswith("event:"):
+                    events.append(line)
+                if line == "event: completed":
+                    break
+
+        active = client.get("/api/v1/catalog/download-operations?active=true")
+
+    assert "event: completed" in events
+    assert active.json()["data"] == []
+    downloaded = (
+        tmp_path
+        / "models"
+        / "ultralytics"
+        / "yolov8"
+        / "n"
+        / "pytorch-mps"
+        / "source"
+        / "yolov8n.pt"
+    )
+    assert downloaded.read_bytes() == b"weights!"
 
 
 def test_chat_streams_nemotron_over_websocket(

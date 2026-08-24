@@ -1003,7 +1003,7 @@ onBeforeUnmount(() => {
           <label>VARIANT
             <select :value="ttsModel?.variant" disabled><option>{{ ttsModel?.variant ?? "—" }}</option></select>
           </label>
-          <div v-if="ttsEnabled && ttsAvailable" class="chat-tts-options">
+          <div v-if="ttsEnabled && ttsAvailable && (ttsLanguages.length || ttsVoices.length)" class="chat-tts-options">
             <label v-if="ttsLanguages.length"><span>LANGUAGE</span><select v-model="language" aria-label="TTS language" @change="changeTtsLanguage"><option v-for="item in ttsLanguages" :key="item" :value="item">{{ LANGUAGE_LABELS[item] ?? item }}</option></select></label>
             <label v-if="ttsVoices.length"><span>VOICE</span><select v-model="voice" aria-label="TTS voice"><option v-for="item in ttsVoices" :key="item" :value="item">{{ voiceLabel(item) }}</option></select></label>
           </div>
