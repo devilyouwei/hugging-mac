@@ -65,7 +65,7 @@ sequenceDiagram
     S-->>C: polygons and inference metadata
 ```
 
-JPEG, PNG, and WebP are accepted. The upload route fully verifies the encoded image; the frame route uses the reduced verification mode and always sets `cache_input=False`. Both enforce `max_upload_bytes` and `max_image_pixels`. `runtime=auto` becomes `None`, leaving default resolution to the SDK.
+JPEG, PNG, and WebP are accepted. The upload route fully verifies the encoded image; the frame route uses the reduced verification mode and always sets `cache_input=False`. Both enforce `max_image_upload_bytes` and `max_image_pixels`. `runtime=auto` becomes `None`, leaving default resolution to the SDK.
 
 ## Concurrency, lifecycle, and memory
 

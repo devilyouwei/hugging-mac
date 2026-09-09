@@ -24,6 +24,8 @@ TTS_MODEL_PACKAGES = (
     "qwen3_tts",
 )
 LLM_MODEL_PACKAGES = ("qwen3_5",)
+OCR_MODEL_PACKAGES = ("glm_ocr", "got_ocr2", "unlimited_ocr")
+DOCUMENT_LAYOUT_MODEL_PACKAGES = ("pp_doclayout_v3",)
 VAD_MODEL_PACKAGES = ("silero",)
 SPEECH_ENHANCEMENT_MODEL_PACKAGES = ("deepfilternet3",)
 REQUIRED_INTEGRATION_FILES = {
@@ -94,6 +96,8 @@ def test_model_packs_do_not_import_other_model_packs() -> None:
         + ASR_MODEL_PACKAGES
         + TTS_MODEL_PACKAGES
         + LLM_MODEL_PACKAGES
+        + OCR_MODEL_PACKAGES
+        + DOCUMENT_LAYOUT_MODEL_PACKAGES
         + VAD_MODEL_PACKAGES
         + SPEECH_ENHANCEMENT_MODEL_PACKAGES
     )
@@ -421,6 +425,28 @@ def test_qwen3_5_follows_the_integration_layout() -> None:
     root_files = {path.name for path in package.iterdir() if path.is_file()}
 
     assert root_files >= REQUIRED_INTEGRATION_FILES | {"resources.py", "mlx.py"}
+    assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
+    assert (package / "utils" / "__init__.py").is_file()
+
+
+def test_unlimited_ocr_follows_the_integration_layout() -> None:
+    package = MODEL_ROOT / "unlimited_ocr"
+    root_files = {path.name for path in package.iterdir() if path.is_file()}
+
+    assert root_files >= REQUIRED_INTEGRATION_FILES | {"resources.py", "mlx.py"}
+    assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
+
+
+def test_pp_doclayout_v3_follows_the_integration_layout() -> None:
+    package = MODEL_ROOT / "pp_doclayout_v3"
+    root_files = {path.name for path in package.iterdir() if path.is_file()}
+
+    assert root_files >= REQUIRED_INTEGRATION_FILES | {
+        "converter.py",
+        "coreml.py",
+        "resources.py",
+        "torch.py",
+    }
     assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
     assert (package / "utils" / "__init__.py").is_file()
 

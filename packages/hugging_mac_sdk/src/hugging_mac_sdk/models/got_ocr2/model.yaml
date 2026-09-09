@@ -1,0 +1,55 @@
+manifest:
+  schema_version: '1'
+  model_id: stepfun-ai/got-ocr2.0
+  display_name: GOT-OCR2.0
+  description: Compact document OCR with eight-bit MLX weights for Apple Silicon.
+  tags: [ocr, document-parsing, vision-language, multilingual, mlx, 8bit]
+  family: got-ocr2
+  capabilities: [document-parsing]
+  source_url: https://huggingface.co/mlx-community/GOT-OCR2_0-8bit
+  license: Apache-2.0
+
+  runtimes:
+  - name: mlx
+    devices: [gpu]
+    dtypes: [uint8, bfloat16]
+    quantizations: [8bit]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [mlx, mlx_vlm]
+  default_runtime: mlx
+  variants:
+  - name: 8bit
+    display_name: GOT-OCR2.0 8-bit
+    description: MLX affine eight-bit conversion for high-fidelity document OCR.
+    metadata:
+      parameter_count_billions: 0.56
+      disk_size_bytes: 722468864
+      multilingual: true
+      max_context_tokens: 32768
+      quantization_bits: 8
+      quantization_group_size: 64
+      quantization_method: affine
+  default_variant: 8bit
+
+artifacts:
+- artifact_id: mlx-8bit
+  variant: 8bit
+  runtime: mlx
+  format: mlx
+  kind: directory
+  path: stepfun-ai/got-ocr2.0/8bit/mlx/mlx-8bit
+  required_files: [config.json, generation_config.json, model.safetensors, model.safetensors.index.json,
+    qwen.tiktoken, special_tokens_map.json, tokenization_qwen.py, tokenizer_config.json]
+  source:
+    kind: huggingface
+    repo_id: mlx-community/GOT-OCR2_0-8bit
+    allow_patterns:
+    - config.json
+    - generation_config.json
+    - model.safetensors
+    - model.safetensors.index.json
+    - qwen.tiktoken
+    - special_tokens_map.json
+    - tokenization_qwen.py
+    - tokenizer_config.json

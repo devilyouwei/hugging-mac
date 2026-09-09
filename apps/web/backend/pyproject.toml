@@ -6,7 +6,8 @@ requires-python = ">=3.12"
 license = "MIT"
 dependencies = [
   "fastapi>=0.116,<1",
-  "hugging-mac-sdk[asr,llm,tts,yolo]",
+  "hugging-mac-sdk[asr,layout,llm,ocr,tts,yolo]",
+  "pymupdf>=1.26,<2",
   "pillow>=11,<13",
   "platformdirs>=4.3,<5",
   "psutil>=7,<8",

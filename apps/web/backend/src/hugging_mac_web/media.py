@@ -42,7 +42,7 @@ def create_media_router() -> APIRouter:
         file: Annotated[UploadFile, File()],
         context: ContextDependency,
     ) -> ApiResponse[MediaUploadResult]:
-        data = await read_upload_limited(file, context.settings.max_upload_bytes)
+        data = await read_upload_limited(file, context.settings.max_image_upload_bytes)
         filename = file.filename or "upload.bin"
         media_type = classify_media(filename, file.content_type)
         if media_type == "unknown":

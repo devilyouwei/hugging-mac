@@ -74,12 +74,24 @@ vision = [
   "torchvision==0.22.0",
   "transformers>=4.53,<6",
 ]
+layout = [
+  "coremltools>=8,<10; sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "numpy>=2.0,<2.4",
+  "opencv-python>=4.11,<5",
+  "safetensors>=0.5,<1",
+  "torch==2.7.0",
+  "transformers>=5.0,<6",
+]
 llm = [
   "accelerate>=1.8,<2",
   "sentencepiece>=0.2,<1",
   "tokenizers>=0.21,<1",
   "torch==2.7.0",
   "transformers>=4.53,<6",
+]
+ocr = [
+  "mlx-vlm>=0.6.14,<0.7; sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "tiktoken>=0.9,<1; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 api = [
   "fastapi>=0.116,<1",
@@ -145,13 +157,16 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra --strict-config --strict-markers"
+addopts = "-ra --strict-config --strict-markers -m 'not smoke'"
 testpaths = ["tests"]
 pythonpath = [
   "apps/web/backend/src",
   "packages/hugging_mac_sdk/src",
 ]
 asyncio_mode = "auto"
+markers = [
+  "smoke: tests that use real models, runtime frameworks, or network access",
+]
 
 [tool.mypy]
 python_version = "3.12"

@@ -23,7 +23,8 @@ Core patterns:
 
 ```mermaid
 flowchart TB
-    MAIN[main.py<br/>factory and lifespan]
+    MAIN[main.py<br/>FastAPI factory]
+    LIFE[lifecycle.py<br/>startup and shutdown]
     CTX[context.py<br/>PlatformContext]
     SDK[ModelSdk and ConverterRegistry]
     APPS[AppRegistry and blueprints]
@@ -31,7 +32,8 @@ flowchart TB
     MEDIA[media.py and system.py]
     SHARED[shared cache/storage/utils]
 
-    MAIN --> CTX
+    MAIN --> LIFE
+    LIFE --> CTX
     CTX --> SDK
     CTX --> APPS
     MAIN --> CATALOG
@@ -45,8 +47,9 @@ flowchart TB
 
 | File | Responsibility |
 |---|---|
-| `main.py` | FastAPI factory, middleware/router composition, process diagnostics, lifespan cleanup |
-| `context.py` | Process-scoped SDK, converters, App registry, document store, and cache |
+| `main.py` | FastAPI factory plus middleware and router composition |
+| `lifecycle.py` | The single owner of logging, diagnostics, service startup, and ordered shutdown |
+| `context.py` | Process dependency construction and storage composition |
 | `app_blueprint.py` | Structural contract for manifest plus router construction |
 | `app_registry.py` | App identity/route uniqueness and required model capability validation |
 | `models.py` | Model catalog, artifact operations, structure inspection, instance load/unload |
@@ -67,7 +70,7 @@ infrastructure belongs in [`shared`](shared/README.md), not in an arbitrary App.
 sequenceDiagram
     participant P as Process
     participant F as create_app
-    participant L as Lifespan
+    participant L as lifecycle.py
     participant C as PlatformContext
     participant R as AppRegistry
     participant M as InstanceManager
@@ -78,16 +81,20 @@ sequenceDiagram
     L->>C: create_context(settings)
     C->>C: register model definitions/converters
     L->>R: validate and register App manifests
+    L->>C: start background services
     L-->>P: accept requests
     P->>L: shutdown
+    L->>C: stop background services
     L->>M: unload_all(force=True)
-    L->>C: close document store
+    L->>C: close stores
 ```
 
 Blueprint construction is side-effect free. The document database and cache
 directories are created only by `create_context()` during lifespan startup.
-Shutdown force-unloads managed instances before closing TinyDB. Cleanup errors
-are suppressed so one failed model release cannot prevent process termination.
+`lifecycle.py` is the only file that starts or stops process services. Shutdown
+first stops producers such as the Document Parser worker, then closes download
+tasks, force-unloads managed model instances, and finally closes TinyDB. Every
+step is attempted even when an earlier cleanup reports an error.
 
 `faulthandler` and a process-level asyncio exception handler expose native fatal
 signals and otherwise-unhandled task failures in the terminal log.
@@ -197,10 +204,12 @@ process-level diagnostics, not exclusive model or GPU/ANE allocations.
 
 ## Media, storage, and trust boundaries
 
-Uploads are bounded by `max_upload_bytes`. Media type is inferred from the safe
-extension and declared content type; images are decoded for pixel-count and
-dimension validation. Accepted bytes are stored in the content-addressed cache,
-and API responses expose cache IDs and metadata rather than absolute paths.
+Image uploads are bounded by `max_image_upload_bytes` and `max_image_pixels`.
+Document uploads use the independent `max_document_upload_bytes` and
+`max_document_pages` limits. Media type is inferred from the safe extension and
+declared content type; images are decoded for pixel-count and dimension
+validation. Accepted bytes are stored in the content-addressed cache, and API
+responses expose cache IDs and metadata rather than absolute paths.
 
 Model remote code is trusted only inside model integrations that explicitly opt
 into it. The Web layer never accepts an arbitrary model path or repository from

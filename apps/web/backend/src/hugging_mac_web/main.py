@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
-import faulthandler
-import logging
-from collections.abc import AsyncIterator, Iterable
-from contextlib import asynccontextmanager
+from collections.abc import Iterable
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,12 +10,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from hugging_mac_web.app_blueprint import AppBlueprint
 from hugging_mac_web.chat import create_blueprint as create_chat_blueprint
 from hugging_mac_web.config import WebSettings
-from hugging_mac_web.context import create_context
+from hugging_mac_web.document_parser import create_blueprint as create_document_parser_blueprint
 from hugging_mac_web.error_handlers import install_error_handlers
 from hugging_mac_web.index import create_index_router
 from hugging_mac_web.instance_segmentation import (
     create_blueprint as create_segmentation_blueprint,
 )
+from hugging_mac_web.lifecycle import create_lifespan
 from hugging_mac_web.live_transcription import (
     create_blueprint as create_live_transcription_blueprint,
 )
@@ -31,35 +27,12 @@ from hugging_mac_web.object_detection import create_blueprint as create_detectio
 from hugging_mac_web.palm_thunder import create_blueprint as create_palm_thunder_blueprint
 from hugging_mac_web.palm_trace import create_blueprint as create_palm_trace_blueprint
 from hugging_mac_web.pose_estimation import create_blueprint as create_pose_blueprint
-from hugging_mac_web.shared.utils.log_util import configure_logging
 from hugging_mac_web.system import create_system_router
 from hugging_mac_web.text_to_speech import (
     create_blueprint as create_text_to_speech_blueprint,
 )
 from hugging_mac_web.yolo_fruit_slice import create_blueprint as create_fruit_slice_blueprint
 from hugging_mac_web.yolo_pose_follow import create_blueprint as create_pose_follow_blueprint
-
-logger = logging.getLogger(__name__)
-
-
-def _install_process_diagnostics() -> None:
-    """Expose Python exceptions and native fatal signals in the server log."""
-    if not faulthandler.is_enabled():
-        faulthandler.enable(all_threads=True)
-
-    loop = asyncio.get_running_loop()
-
-    def report_asyncio_error(_loop: asyncio.AbstractEventLoop, context: dict[str, object]) -> None:
-        exception = context.get("exception")
-        logger.error(
-            "Unhandled asyncio error: %s",
-            context.get("message", "no message"),
-            exc_info=(type(exception), exception, exception.__traceback__)
-            if isinstance(exception, BaseException)
-            else None,
-        )
-
-    loop.set_exception_handler(report_asyncio_error)
 
 
 def create_app(
@@ -78,6 +51,7 @@ def create_app(
             create_live_transcription_blueprint(),
             create_text_to_speech_blueprint(),
             create_chat_blueprint(),
+            create_document_parser_blueprint(),
             create_pose_follow_blueprint(),
             create_fruit_slice_blueprint(),
             create_palm_thunder_blueprint(),
@@ -87,30 +61,10 @@ def create_app(
     registered_blueprints = tuple(
         (blueprint, blueprint.create_router()) for blueprint in selected_blueprints
     )
-    configure_logging(resolved.log_level)
-
-    @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # Development servers may install their logging configuration after the
-        # app module is imported. Re-apply ours at the actual process lifecycle boundary.
-        configure_logging(resolved.log_level)
-        logger.info("Backend logging ready renderer=compact-v2 precision=milliseconds")
-        _install_process_diagnostics()
-        context = create_context(resolved)
-        app.state.context = context
-        try:
-            for blueprint, _ in registered_blueprints:
-                context.apps.register_manifest(blueprint.manifest, context.models.registry)
-            yield
-        finally:
-            with contextlib.suppress(Exception):
-                await context.models.instances.unload_all(force=True)
-            await context.close()
-
     app = FastAPI(
         title="hugging-mac",
         version="0.1.0",
-        lifespan=lifespan,
+        lifespan=create_lifespan(resolved, selected_blueprints),
     )
     app.add_middleware(TraceIdMiddleware)
     app.add_middleware(

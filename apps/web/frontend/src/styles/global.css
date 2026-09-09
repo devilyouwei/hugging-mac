@@ -534,7 +534,7 @@ body {
   -webkit-line-clamp: 1;
 }
 .home-catalog-stack .app-card .eyebrow { font-size: 0.5rem; }
-.home-catalog-stack .app-number { display: none; }
+.home-catalog-stack .app-capabilities { display:none; }
 .home-catalog-stack .app-card__action {
   font-size: 0.6rem;
   min-width: 3.7rem;
@@ -638,6 +638,7 @@ body {
 .app-card--instance-segmentation .app-icon { background:linear-gradient(145deg,#ff9dd0,#b05bed); }
 .app-card--live-transcription .app-icon { background:linear-gradient(145deg,#65e0c1,#21986f); }
 .app-card--text-to-speech .app-icon { background:linear-gradient(145deg,#ffd76a,#ef8a2f); }
+.app-card--document-parser .app-icon { background:linear-gradient(145deg,#64d2ff,#0a84ff 52%,#5e5ce6); }
 .app-card--yolo-fruit-slice .app-icon { background:linear-gradient(145deg,#7be890,#29a84b); }
 .app-card--palm-thunder .app-icon { background:linear-gradient(145deg,#55e7ff,#7657f4 56%,#ff62c8); }
 .app-card[class*="app-card--"] .app-icon { color:white;text-shadow:0 2px 8px rgb(0 0 0 / 18%); }
@@ -657,7 +658,18 @@ body {
 .app-card h3 { font-size:1.02rem;margin:.22rem 0 .22rem; }
 .app-card p { display:-webkit-box;font-size:.72rem;line-height:1.4;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2; }
 .app-card .eyebrow { color:var(--muted);font-size:.56rem;letter-spacing:.03em;text-transform:none; }
-.app-number { color:var(--muted);font-family:var(--font-display);font-size:.52rem;margin-top:.4rem; }
+.app-capabilities { display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.48rem; }
+.app-capability-badge {
+  background:rgb(10 132 255 / 9%);
+  border:1px solid rgb(10 132 255 / 18%);
+  border-radius:999px;
+  color:var(--accent);
+  font-family:var(--font-display);
+  font-size:.5rem;
+  line-height:1;
+  padding:.24rem .42rem;
+  white-space:nowrap;
+}
 .app-card__trailing { align-items:center;display:flex;flex-direction:column;gap:.25rem;justify-content:center; }
 .app-card__trailing small { color:var(--muted);font-size:.5rem;white-space:nowrap; }
 .app-card__action {

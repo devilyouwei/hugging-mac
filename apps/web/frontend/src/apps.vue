@@ -9,7 +9,6 @@ const apps = ref<AppSummary[]>([])
 const loading = ref(true)
 const error = ref("")
 const featured = computed(() => apps.value[0] ?? null)
-const categories = computed(() => [...new Set(apps.value.flatMap((app) => app.manifest.tags))].slice(0, 6))
 
 onMounted(async () => {
   try {
@@ -53,14 +52,9 @@ onMounted(async () => {
       <section class="store-section">
         <header><h2>Essential local apps</h2><span>{{ apps.length }} apps</span></header>
         <div class="store-list-grid">
-          <AppCard v-for="(app, appIndex) in apps" :key="app.manifest.app_id" :app="app" :index="appIndex" />
+          <AppCard v-for="app in apps" :key="app.manifest.app_id" :app="app" />
         </div>
         <div v-if="!apps.length" class="empty-state">No neural applications are registered.</div>
-      </section>
-
-      <section v-if="categories.length" class="store-section store-categories">
-        <header><h2>Browse by capability</h2></header>
-        <div><span v-for="category in categories" :key="category">{{ category }}</span></div>
       </section>
     </template>
   </div>

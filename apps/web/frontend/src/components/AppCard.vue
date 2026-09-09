@@ -4,7 +4,7 @@ import { computed } from "vue"
 import type { AppSummary } from "@/api/types"
 import StatusPill from "./StatusPill.vue"
 
-const props = defineProps<{ app: AppSummary; index: number }>()
+const props = defineProps<{ app: AppSummary }>()
 
 const icon = computed(() => {
   const icons: Record<string, string> = {
@@ -17,6 +17,7 @@ const icon = computed(() => {
     "palm-trace": "🧽",
     "live-transcription": "🎙️",
     "text-to-speech": "🔊",
+    "document-parser": "📄",
     chat: "💬",
   }
   return icons[props.app.manifest.app_id] ?? "🧩"
@@ -25,6 +26,14 @@ const icon = computed(() => {
 const category = computed(() =>
   props.app.manifest.tags.slice(0, 2).join(" · ") || "Local Intelligence",
 )
+
+const capabilities = computed(() => [
+  ...new Set(
+    props.app.manifest.required_models.flatMap(
+      (requirement) => requirement.capabilities,
+    ),
+  ),
+])
 </script>
 
 <template>
@@ -49,7 +58,19 @@ const category = computed(() =>
       </div>
       <h3>{{ app.manifest.name }}</h3>
       <p>{{ app.manifest.description }}</p>
-      <span class="app-number">No. {{ index + 1 }}</span>
+      <div
+        v-if="capabilities.length"
+        class="app-capabilities"
+        aria-label="Capabilities"
+      >
+        <span
+          v-for="capability in capabilities"
+          :key="capability"
+          class="app-capability-badge"
+        >
+          {{ capability }}
+        </span>
+      </div>
     </div>
     <div class="app-card__trailing">
       <span class="app-card__action">

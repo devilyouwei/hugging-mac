@@ -71,6 +71,18 @@ from hugging_mac_sdk.schemas.detection import (
     DetectionResponse,
     ImageInput,
 )
+from hugging_mac_sdk.schemas.document_layout import (
+    DocumentLayoutRegion,
+    DocumentLayoutRequest,
+    DocumentLayoutResponse,
+)
+from hugging_mac_sdk.schemas.document_parsing import (
+    DocumentImage,
+    DocumentParsingRequest,
+    DocumentParsingResponse,
+    DocumentParsingStreamEvent,
+    DocumentParsingTimings,
+)
 from hugging_mac_sdk.schemas.hand import (
     HandDetectionRequest,
     HandDetectionResponse,
@@ -163,6 +175,14 @@ __all__ = [
     "DetectionResponse",
     "DeviceInfo",
     "DeviceKind",
+    "DocumentImage",
+    "DocumentLayoutRegion",
+    "DocumentLayoutRequest",
+    "DocumentLayoutResponse",
+    "DocumentParsingRequest",
+    "DocumentParsingResponse",
+    "DocumentParsingStreamEvent",
+    "DocumentParsingTimings",
     "DownloadError",
     "DownloadProgress",
     "HandDetectionRequest",

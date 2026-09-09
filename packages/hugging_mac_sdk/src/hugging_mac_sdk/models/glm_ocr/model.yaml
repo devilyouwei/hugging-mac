@@ -1,0 +1,56 @@
+manifest:
+  schema_version: '1'
+  model_id: zai-org/glm-ocr
+  display_name: GLM-OCR
+  description: High-fidelity multilingual document OCR with eight-bit MLX weights.
+  tags: [ocr, document-parsing, vision-language, multilingual, mlx, 8bit]
+  family: glm-ocr
+  capabilities: [document-parsing]
+  source_url: https://huggingface.co/mlx-community/GLM-OCR-8bit
+  license: MIT
+
+  runtimes:
+  - name: mlx
+    devices: [gpu]
+    dtypes: [uint8, bfloat16]
+    quantizations: [8bit]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [mlx, mlx_vlm]
+  default_runtime: mlx
+  variants:
+  - name: 8bit
+    display_name: GLM-OCR 8-bit
+    description: MLX affine eight-bit conversion for complex document recognition.
+    metadata:
+      parameter_count_billions: 1
+      disk_size_bytes: 1590688749
+      multilingual: true
+      max_context_tokens: 32768
+      quantization_bits: 8
+      quantization_group_size: 64
+      quantization_method: affine
+  default_variant: 8bit
+
+artifacts:
+- artifact_id: mlx-8bit
+  variant: 8bit
+  runtime: mlx
+  format: mlx
+  kind: directory
+  path: zai-org/glm-ocr/8bit/mlx/mlx-8bit
+  required_files: [chat_template.jinja, config.json, generation_config.json, model.safetensors, model.safetensors.index.json,
+    preprocessor_config.json, processor_config.json, tokenizer.json, tokenizer_config.json]
+  source:
+    kind: huggingface
+    repo_id: mlx-community/GLM-OCR-8bit
+    allow_patterns:
+    - chat_template.jinja
+    - config.json
+    - generation_config.json
+    - model.safetensors
+    - model.safetensors.index.json
+    - preprocessor_config.json
+    - processor_config.json
+    - tokenizer.json
+    - tokenizer_config.json

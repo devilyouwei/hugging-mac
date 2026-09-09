@@ -1,0 +1,55 @@
+manifest:
+  schema_version: '1'
+  model_id: baidu/unlimited-ocr
+  display_name: Unlimited-OCR
+  description: Apple Silicon long-horizon document parsing with four-bit MLX weights.
+  tags: [ocr, document-parsing, vision-language, mlx, 4bit]
+  family: unlimited-ocr
+  capabilities: [document-parsing]
+  source_url: https://huggingface.co/mlx-community/Unlimited-OCR-4bit
+  license: MIT
+
+  runtimes:
+  - name: mlx
+    devices: [gpu]
+    dtypes: [uint4, bfloat16]
+    quantizations: [4bit]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [mlx, mlx_vlm]
+  default_runtime: mlx
+  variants:
+  - name: 4bit
+    display_name: Unlimited-OCR 4-bit
+    description: MLX affine four-bit conversion for Apple Silicon.
+    metadata:
+      parameter_count_billions: 3
+      disk_size_bytes: 2451215084
+      multilingual: true
+      max_context_tokens: 32768
+      quantization_bits: 4
+      quantization_group_size: 64
+      quantization_method: affine
+  default_variant: 4bit
+
+artifacts:
+- artifact_id: mlx-4bit
+  variant: 4bit
+  runtime: mlx
+  format: mlx
+  kind: directory
+  path: baidu/unlimited-ocr/4bit/mlx/mlx-4bit
+  required_files: [chat_template.jinja, config.json, model.safetensors, model.safetensors.index.json, processor_config.json,
+    special_tokens_map.json, tokenizer.json, tokenizer_config.json]
+  source:
+    kind: huggingface
+    repo_id: mlx-community/Unlimited-OCR-4bit
+    allow_patterns:
+    - chat_template.jinja
+    - config.json
+    - model.safetensors
+    - model.safetensors.index.json
+    - processor_config.json
+    - special_tokens_map.json
+    - tokenizer.json
+    - tokenizer_config.json

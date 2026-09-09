@@ -49,7 +49,7 @@ onMounted(async () => {
       <section class="store-section">
         <header><h2>Games we love</h2><span>All games</span></header>
         <div class="store-list-grid">
-          <AppCard v-for="(game, gameIndex) in games" :key="game.manifest.app_id" :app="game" :index="gameIndex" />
+          <AppCard v-for="game in games" :key="game.manifest.app_id" :app="game" />
         </div>
       </section>
     </template>

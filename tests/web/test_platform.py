@@ -106,6 +106,20 @@ def test_default_runtime_preference_is_env_configurable(monkeypatch: Any) -> Non
     assert settings.runtime_preferences == ("onnx", "mps", "mlx", "coreml")
 
 
+def test_general_upload_limits_are_env_configurable(monkeypatch: Any) -> None:
+    monkeypatch.setenv("WEB_MAX_IMAGE_UPLOAD_BYTES", "1024")
+    monkeypatch.setenv("WEB_MAX_IMAGE_PIXELS", "2048")
+    monkeypatch.setenv("WEB_MAX_DOCUMENT_UPLOAD_BYTES", "4096")
+    monkeypatch.setenv("WEB_MAX_DOCUMENT_PAGES", "32")
+
+    settings = WebSettings(_env_file=None)
+
+    assert settings.max_image_upload_bytes == 1024
+    assert settings.max_image_pixels == 2048
+    assert settings.max_document_upload_bytes == 4096
+    assert settings.max_document_pages == 32
+
+
 def _png() -> bytes:
     output = io.BytesIO()
     Image.new("RGB", (8, 6), color=(20, 40, 60)).save(output, format="PNG")
@@ -125,6 +139,12 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
         )
         qwen3_asr_resources = client.get("/api/v1/catalog/models/qwen/qwen3-asr/resources")
         qwen3_asr_inventory = client.get("/api/v1/catalog/models/qwen/qwen3-asr/inventory")
+        unlimited_ocr_resources = client.get(
+            "/api/v1/catalog/models/baidu/unlimited-ocr/resources"
+        )
+        unlimited_ocr_inventory = client.get(
+            "/api/v1/catalog/models/baidu/unlimited-ocr/inventory"
+        )
         apps = client.get("/api/v1/catalog/apps")
         games = client.get("/api/v1/catalog/games")
         palm_trace_status = client.get("/api/v1/games/palm-trace/status")
@@ -154,6 +174,7 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     app_summaries = {item["manifest"]["app_id"]: item for item in apps.json()["data"]}
     assert set(app_summaries) == {
         "chat",
+        "document-parser",
         "instance-segmentation",
         "live-transcription",
         "object-detection",
@@ -288,8 +309,12 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert {item["model_id"] for item in models.json()["data"]} >= {
         "audio8/audio8-asr",
         "audio8/audio8-tts-preview",
+        "baidu/unlimited-ocr",
+        "zai-org/glm-ocr",
+        "stepfun-ai/got-ocr2.0",
         "hexgrad/kokoro",
         "openmoss-team/moss-tts-nano-100m",
+        "paddlepaddle/pp-doclayout-v3",
         "deepfilternet/deepfilternet3",
         "funaudiollm/sensevoice",
         "py-feat/retinaface",
@@ -354,6 +379,49 @@ def test_platform_catalog_system_and_cors(tmp_path: Path) -> None:
     assert inventory_artifacts[1]["shared"]
     assert inventory_artifacts[1]["variant"] is None
     assert inventory_artifacts[1]["runtime"] is None
+    assert unlimited_ocr_resources.status_code == 200
+    assert unlimited_ocr_resources.json()["data"]["artifacts"] == [
+        {
+            "artifact_id": "mlx-4bit",
+            "format": "mlx",
+            "runtime": "mlx",
+            "available": False,
+            "size_bytes": None,
+            "provisioning": "download",
+        }
+    ]
+    assert unlimited_ocr_inventory.status_code == 200
+    assert unlimited_ocr_inventory.json()["data"]["artifacts"] == [
+        {
+            "variant": "4bit",
+            "runtime": "mlx",
+            "artifact_id": "mlx-4bit",
+            "format": "mlx",
+            "required_shares": [],
+            "convertible": False,
+            "source": {
+                "kind": "huggingface",
+                "repo_id": "mlx-community/Unlimited-OCR-4bit",
+                "revision": "main",
+                "filename": None,
+                "allow_patterns": [
+                    "chat_template.jinja",
+                    "config.json",
+                    "model.safetensors",
+                    "model.safetensors.index.json",
+                    "processor_config.json",
+                    "special_tokens_map.json",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                ],
+                "ignore_patterns": [],
+                "strip_prefix": None,
+            },
+            "shared": False,
+            "available": False,
+            "size_bytes": None,
+        }
+    ]
     assert preflight.status_code == 200
     assert preflight.headers["access-control-allow-origin"] == "http://localhost:5173"
 
@@ -560,6 +628,59 @@ def test_models_catalog_exposes_all_nemotron_download_variants(tmp_path: Path) -
     }
     assert all(item["runtime"] == "coreml" for item in artifacts)
     assert all(item["source"]["kind"] == "huggingface" for item in artifacts)
+
+
+def test_models_catalog_manages_unlimited_ocr_mlx_artifact(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_download(
+        _: ResourceDownloader,
+        source: Any,
+        destination: Path,
+        **__: object,
+    ) -> ResolvedResource:
+        destination.mkdir(parents=True, exist_ok=True)
+        for filename in (
+            "chat_template.jinja",
+            "config.json",
+            "model.safetensors",
+            "model.safetensors.index.json",
+            "processor_config.json",
+            "special_tokens_map.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+        ):
+            (destination / filename).write_bytes(b"mlx")
+        return ResolvedResource(path=destination, source=source, size_bytes=24)
+
+    monkeypatch.setattr(ResourceDownloader, "download", fake_download)
+    app = create_app(_settings(tmp_path))
+    command = {
+        "variant": "4bit",
+        "runtime": "mlx",
+        "artifact_id": "mlx-4bit",
+    }
+
+    with TestClient(app) as client:
+        initial = client.get("/api/v1/catalog/models/baidu/unlimited-ocr/inventory")
+        downloaded = client.post(
+            "/api/v1/catalog/models/baidu/unlimited-ocr/resources/download-one",
+            json=command,
+        )
+        deleted = client.request(
+            "DELETE",
+            "/api/v1/catalog/models/baidu/unlimited-ocr/artifacts",
+            json=command,
+        )
+
+    assert initial.status_code == 200
+    assert not initial.json()["data"]["artifacts"][0]["available"]
+    assert downloaded.status_code == 200
+    assert downloaded.json()["data"]["artifacts"][0]["available"]
+    assert downloaded.json()["data"]["artifacts"][0]["size_bytes"] == 24
+    assert deleted.status_code == 200
+    assert not deleted.json()["data"]["artifacts"][0]["available"]
 
 
 def test_models_catalog_downloads_one_shared_artifact_independently(

@@ -29,7 +29,11 @@ files, load a handle, require a capability, and submit a typed request.
 
 | Model | Capability | Guide |
 |---|---|---|
+| Unlimited-OCR | Document parsing | [Unlimited-OCR](unlimited-ocr.md) |
+| GOT-OCR2.0 | Document parsing | [GOT-OCR2.0](got-ocr2.md) |
+| GLM-OCR | Document parsing | [GLM-OCR](glm-ocr.md) |
 | MediaPipe Hand Detection | Hand detection | [MediaPipe Hand Detection](mediapipe-hand-detection.md) |
+| PP-DocLayoutV3 | Document layout analysis | [PP-DocLayoutV3](pp-doclayout-v3.md) |
 | RetinaFace | Face detection | [RetinaFace](retinaface.md) |
 | YOLOv8 | Object detection | [YOLOv8](yolov8.md) |
 | YOLOv8 Pose | Pose estimation | [YOLOv8 Pose](yolov8-pose.md) |

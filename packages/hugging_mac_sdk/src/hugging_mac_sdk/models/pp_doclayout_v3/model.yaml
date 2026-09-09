@@ -1,0 +1,88 @@
+manifest:
+  schema_version: '1'
+  model_id: paddlepaddle/pp-doclayout-v3
+  display_name: PP-DocLayoutV3
+  description: PaddleOCR document layout detection with region polygons and reading order.
+  tags: [vision, document-layout, reading-order, safetensors, coreml]
+  family: pp-doclayout
+  capabilities: [document-layout-analysis]
+  source_url: https://huggingface.co/PaddlePaddle/PP-DocLayoutV3_safetensors
+  license: Apache-2.0
+
+  runtimes:
+  - name: pytorch-mps
+    devices: [mps, cpu]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [torch, transformers, numpy, PIL, cv2]
+  - name: coreml
+    devices: [all, cpu-and-gpu, cpu-and-neural-engine, cpu-only]
+    dtypes: [float16, float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coremltools, numpy, PIL, cv2]
+  default_runtime: coreml
+  variants:
+  - name: base
+    display_name: Base
+    description: 33.3M parameter PP-DocLayoutV3 at its native 800×800 input resolution.
+    metadata:
+      parameters_millions: 33.3
+      input_size: 800
+      max_regions: 300
+  default_variant: base
+
+artifacts:
+- artifact_id: source
+  variant: base
+  runtime: pytorch-mps
+  format: safetensors
+  kind: directory
+  path: paddlepaddle/pp-doclayout-v3/base/pytorch-mps/source
+  required_files: [config.json, model.safetensors, preprocessor_config.json]
+  source:
+    kind: huggingface
+    repo_id: PaddlePaddle/PP-DocLayoutV3_safetensors
+    allow_patterns:
+    - config.json
+    - model.safetensors
+    - preprocessor_config.json
+- artifact_id: coreml-fp16
+  convert: true
+  variant: base
+  runtime: coreml
+  format: coreml
+  kind: directory
+  path: paddlepaddle/pp-doclayout-v3/base/coreml/coreml-fp16
+  required_files: [model.mlpackage/Manifest.json, metadata.json]
+extensions:
+  pp_doclayout_v3:
+    input_size: 800
+    max_regions: 300
+    labels:
+    - abstract
+    - algorithm
+    - aside_text
+    - chart
+    - content
+    - formula
+    - doc_title
+    - figure_title
+    - footer
+    - footer
+    - footnote
+    - formula_number
+    - header
+    - header
+    - image
+    - formula
+    - number
+    - paragraph_title
+    - reference
+    - reference_content
+    - seal
+    - table
+    - text
+    - text
+    - vision_footnote

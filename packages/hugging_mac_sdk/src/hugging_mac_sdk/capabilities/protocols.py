@@ -15,6 +15,12 @@ from hugging_mac_sdk.schemas.detection import (
     DetectionResponse,
     FaceDetectionResponse,
 )
+from hugging_mac_sdk.schemas.document_layout import DocumentLayoutRequest, DocumentLayoutResponse
+from hugging_mac_sdk.schemas.document_parsing import (
+    DocumentParsingRequest,
+    DocumentParsingResponse,
+    DocumentParsingStreamEvent,
+)
 from hugging_mac_sdk.schemas.hand import HandDetectionRequest, HandDetectionResponse
 from hugging_mac_sdk.schemas.pose import PoseEstimationResponse, PoseRequest
 from hugging_mac_sdk.schemas.segmentation import SegmentationRequest, SegmentationResponse
@@ -81,6 +87,22 @@ class Chat(Protocol):
     async def chat(self, request: ChatRequest) -> ChatResponse: ...
 
     def stream_chat(self, request: ChatRequest) -> AsyncIterator[ChatStreamEvent]: ...
+
+
+class DocumentParsing(Protocol):
+    """Parse one or more document images, optionally as a text stream."""
+
+    async def parse_document(self, request: DocumentParsingRequest) -> DocumentParsingResponse: ...
+
+    def stream_document(
+        self, request: DocumentParsingRequest
+    ) -> AsyncIterator[DocumentParsingStreamEvent]: ...
+
+
+class DocumentLayoutAnalysis(Protocol):
+    """Locate semantic document regions and return them in reading order."""
+
+    async def analyze_layout(self, request: DocumentLayoutRequest) -> DocumentLayoutResponse: ...
 
 
 class SpeechTranscription(Protocol):

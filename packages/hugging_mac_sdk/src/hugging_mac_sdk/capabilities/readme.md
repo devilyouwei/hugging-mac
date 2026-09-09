@@ -23,6 +23,8 @@ schemas. The module contains no lifecycle, resource, runtime, or transport logic
 | `PoseEstimation` | `estimate_pose(PoseRequest) -> PoseEstimationResponse` |
 | `InstanceSegmentation` | `segment(SegmentationRequest) -> SegmentationResponse` |
 | `Chat` | `chat(ChatRequest) -> ChatResponse` and `stream_chat(...) -> AsyncIterator[ChatStreamEvent]` |
+| `DocumentParsing` | `parse_document(DocumentParsingRequest) -> DocumentParsingResponse` and `stream_document(...) -> AsyncIterator[DocumentParsingStreamEvent]` |
+| `DocumentLayoutAnalysis` | `analyze_layout(DocumentLayoutRequest) -> DocumentLayoutResponse` |
 | `SpeechTranscription` | `transcribe(TranscriptionRequest) -> TranscriptionResponse` |
 | `StreamingSpeechTranscription` | Start, append, finish, and cancel a stateful transcription session. |
 | `SpeechEnhancement` | `enhance_speech(SpeechEnhancementRequest) -> SpeechEnhancementResponse` |

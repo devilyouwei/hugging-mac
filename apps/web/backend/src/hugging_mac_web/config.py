@@ -27,8 +27,10 @@ class WebSettings(BaseSettings):
     cache_dir: Path = Field(default_factory=lambda: user_cache_path("hugging-mac") / "web")
     model_home: Path = Field(default_factory=lambda: user_cache_path("hugging-mac") / "models")
     database_path: Path | None = None
-    max_upload_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
+    max_image_upload_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
     max_image_pixels: int = Field(default=40_000_000, gt=0)
+    max_document_upload_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
+    max_document_pages: int = Field(default=2000, gt=0)
     sse_heartbeat_seconds: float = Field(default=15.0, gt=0)
 
     @field_validator("log_level", mode="before")

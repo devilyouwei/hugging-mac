@@ -49,6 +49,11 @@ const router = createRouter({
       component: () => import("./chat/index.vue"),
     },
     {
+      path: "/apps/document-parser",
+      name: "document-parser",
+      component: () => import("./document_parser/index.vue"),
+    },
+    {
       path: "/apps/object-detection",
       name: "object-detection",
       component: () => import("./object_detection/index.vue"),

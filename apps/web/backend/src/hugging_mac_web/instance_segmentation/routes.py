@@ -57,7 +57,7 @@ def create_router() -> APIRouter:
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail="Instance Segmentation supports JPEG, PNG and WebP images",
             )
-        image = await read_upload_limited(file, context.settings.max_upload_bytes)
+        image = await read_upload_limited(file, context.settings.max_image_upload_bytes)
         try:
             image_metadata = inspect_image(image, max_pixels=context.settings.max_image_pixels)
         except ValueError as error:
@@ -99,10 +99,10 @@ def create_router() -> APIRouter:
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail="Live segmentation supports JPEG, PNG and WebP frames",
             )
-        if len(image) > context.settings.max_upload_bytes:
+        if len(image) > context.settings.max_image_upload_bytes:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"Frame exceeds {context.settings.max_upload_bytes} bytes",
+                detail=f"Frame exceeds {context.settings.max_image_upload_bytes} bytes",
             )
         try:
             image_metadata = inspect_image(

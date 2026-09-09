@@ -192,10 +192,9 @@ onMounted(loadHome)
         </p>
         <div class="app-list">
           <AppCard
-            v-for="(app, appIndex) in featuredApps"
+            v-for="app in featuredApps"
             :key="app.manifest.app_id"
             :app="app"
-            :index="appIndex"
           />
           <div v-if="!loading && !apps.length" class="empty-state">
             No applications are registered.
@@ -220,10 +219,9 @@ onMounted(loadHome)
         </p>
         <div v-if="featuredGames.length" class="app-list home-games-list">
           <AppCard
-            v-for="(game, gameIndex) in featuredGames"
+            v-for="game in featuredGames"
             :key="game.manifest.app_id"
             :app="game"
-            :index="gameIndex"
           />
         </div>
         <div v-else class="game-empty-card">

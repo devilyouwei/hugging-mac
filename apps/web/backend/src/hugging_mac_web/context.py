@@ -10,10 +10,13 @@ from hugging_mac_sdk.models.audio8_asr import register_audio8_asr
 from hugging_mac_sdk.models.audio8_tts import register_audio8_tts
 from hugging_mac_sdk.models.deepfilternet3 import register_deepfilternet3
 from hugging_mac_sdk.models.gemma_4 import register_gemma_4
+from hugging_mac_sdk.models.glm_ocr import register_glm_ocr
+from hugging_mac_sdk.models.got_ocr2 import register_got_ocr2
 from hugging_mac_sdk.models.kokoro import register_kokoro
 from hugging_mac_sdk.models.mediapipe_hand_detection import register_mediapipe_hand_detection
 from hugging_mac_sdk.models.moss_tts_nano import register_moss_tts_nano
 from hugging_mac_sdk.models.nemotron_3_5_asr import register_nemotron_3_5_asr
+from hugging_mac_sdk.models.pp_doclayout_v3 import register_pp_doclayout_v3
 from hugging_mac_sdk.models.qwen3_5 import register_qwen3_5
 from hugging_mac_sdk.models.qwen3_asr import register_qwen3_asr
 from hugging_mac_sdk.models.qwen3_tts import (
@@ -22,12 +25,14 @@ from hugging_mac_sdk.models.qwen3_tts import (
 from hugging_mac_sdk.models.retinaface import register_retinaface
 from hugging_mac_sdk.models.sensevoice import register_sensevoice
 from hugging_mac_sdk.models.silero import register_silero
+from hugging_mac_sdk.models.unlimited_ocr import register_unlimited_ocr
 from hugging_mac_sdk.models.yolov8 import register_yolov8
 from hugging_mac_sdk.models.yolov8_pose import register_yolov8_pose
 from hugging_mac_sdk.models.yolov8_seg import register_yolov8_seg
 
 from hugging_mac_web.app_registry import AppRegistry
 from hugging_mac_web.config import WebSettings
+from hugging_mac_web.document_parser.manager import DocumentParserManager
 from hugging_mac_web.download_operations import DownloadOperationManager
 from hugging_mac_web.shared.cache import LocalCache
 from hugging_mac_web.shared.storage import TinyDocumentStore
@@ -42,10 +47,7 @@ class PlatformContext:
     documents: TinyDocumentStore
     cache: LocalCache
     downloads: DownloadOperationManager
-
-    async def close(self) -> None:
-        await self.downloads.close()
-        self.documents.close()
+    document_parser: DocumentParserManager
 
 
 def create_context(settings: WebSettings) -> PlatformContext:
@@ -59,6 +61,8 @@ def create_context(settings: WebSettings) -> PlatformContext:
     register_audio8_tts(models.registry)
     register_deepfilternet3(models.registry)
     register_gemma_4(models.registry)
+    register_glm_ocr(models.registry)
+    register_got_ocr2(models.registry)
     register_kokoro(models.registry)
     register_mediapipe_hand_detection(models.registry, converters)
     register_moss_tts_nano(models.registry)
@@ -66,13 +70,16 @@ def create_context(settings: WebSettings) -> PlatformContext:
     register_qwen3_asr(models.registry)
     register_qwen3_tts(models.registry)
     register_qwen3_5(models.registry)
+    register_pp_doclayout_v3(models.registry, converters)
     register_retinaface(models.registry, converters)
     register_sensevoice(models.registry, converters)
     register_silero(models.registry)
+    register_unlimited_ocr(models.registry)
     register_yolov8(models.registry, converters)
     register_yolov8_pose(models.registry, converters)
     register_yolov8_seg(models.registry, converters)
     documents = TinyDocumentStore(settings.resolved_database_path)
+    document_parser = DocumentParserManager(settings, models)
     return PlatformContext(
         settings=settings,
         models=models,
@@ -81,4 +88,5 @@ def create_context(settings: WebSettings) -> PlatformContext:
         documents=documents,
         cache=LocalCache(settings.cache_dir, documents),
         downloads=DownloadOperationManager(),
+        document_parser=document_parser,
     )

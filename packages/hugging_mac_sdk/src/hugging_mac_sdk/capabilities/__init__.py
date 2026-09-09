@@ -2,6 +2,8 @@
 
 from hugging_mac_sdk.capabilities.protocols import (
     Chat,
+    DocumentLayoutAnalysis,
+    DocumentParsing,
     FaceDetection,
     HandDetection,
     ImageEmbedding,
@@ -20,6 +22,8 @@ from hugging_mac_sdk.capabilities.protocols import (
 
 __all__ = [
     "Chat",
+    "DocumentLayoutAnalysis",
+    "DocumentParsing",
     "FaceDetection",
     "HandDetection",
     "ImageEmbedding",

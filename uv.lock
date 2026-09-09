@@ -31,8 +31,7 @@ name = "accelerate"
 version = "1.14.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "huggingface-hub", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "huggingface-hub" },
     { name = "numpy" },
     { name = "packaging" },
     { name = "psutil" },
@@ -776,8 +775,7 @@ dependencies = [
     { name = "filelock" },
     { name = "fsspec", extra = ["http"] },
     { name = "httpx" },
-    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "huggingface-hub", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "huggingface-hub" },
     { name = "multiprocess" },
     { name = "numpy" },
     { name = "packaging" },
@@ -856,8 +854,7 @@ dependencies = [
     { name = "datasets" },
     { name = "dill" },
     { name = "fsspec", extra = ["http"] },
-    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "huggingface-hub", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "huggingface-hub" },
     { name = "multiprocess" },
     { name = "numpy" },
     { name = "packaging" },
@@ -1233,8 +1230,7 @@ version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "httpx" },
-    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "huggingface-hub", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "huggingface-hub" },
     { name = "numpy" },
     { name = "pillow" },
     { name = "platformdirs" },
@@ -1268,8 +1264,7 @@ asr = [
     { name = "soundfile" },
     { name = "torch" },
     { name = "torchaudio" },
-    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "transformers", version = "5.14.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "transformers" },
 ]
 evaluation = [
     { name = "evaluate" },
@@ -1279,13 +1274,24 @@ evaluation = [
     { name = "seaborn" },
     { name = "torchmetrics" },
 ]
+layout = [
+    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "numpy" },
+    { name = "opencv-python" },
+    { name = "safetensors" },
+    { name = "torch" },
+    { name = "transformers" },
+]
 llm = [
     { name = "accelerate" },
     { name = "sentencepiece" },
     { name = "tokenizers" },
     { name = "torch" },
-    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "transformers", version = "5.14.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "transformers" },
+]
+ocr = [
+    { name = "mlx-vlm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "tiktoken", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
 training = [
     { name = "datasets" },
@@ -1304,8 +1310,7 @@ tts = [
     { name = "soundfile" },
     { name = "torch" },
     { name = "torchaudio" },
-    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "transformers", version = "5.14.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "transformers" },
 ]
 vad = [
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
@@ -1323,8 +1328,7 @@ vision = [
     { name = "timm" },
     { name = "torch" },
     { name = "torchvision" },
-    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "transformers", version = "5.14.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "transformers" },
 ]
 
 [package.dev-dependencies]
@@ -1348,6 +1352,7 @@ requires-dist = [
     { name = "accelerate", marker = "extra == 'llm'", specifier = ">=1.8,<2" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'apple'", specifier = ">=8,<10" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'asr'", specifier = ">=8,<10" },
+    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'layout'", specifier = ">=8,<10" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'tts'", specifier = ">=8,<10" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'vad'", specifier = ">=8,<10" },
     { name = "datasets", marker = "extra == 'training'", specifier = ">=4,<5" },
@@ -1363,14 +1368,17 @@ requires-dist = [
     { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'apple'", specifier = ">=0.27,<1" },
     { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'tts'", git = "https://github.com/Blaizzy/mlx-audio.git?rev=223afd602c6d583455bdb9f181b91fc090f4aff9" },
     { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'apple'", specifier = ">=0.26,<1" },
+    { name = "mlx-vlm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'ocr'", specifier = ">=0.6.14,<0.7" },
     { name = "numpy", specifier = ">=2.0,<3" },
     { name = "numpy", marker = "extra == 'asr'", specifier = ">=2.0,<2.4" },
+    { name = "numpy", marker = "extra == 'layout'", specifier = ">=2.0,<2.4" },
     { name = "numpy", marker = "extra == 'tts'", specifier = ">=2.0,<2.4" },
     { name = "numpy", marker = "extra == 'vad'", specifier = ">=2,<2.4" },
     { name = "onnx", marker = "extra == 'vision'", specifier = ">=1.18,<2" },
     { name = "onnx2torch", marker = "extra == 'vision'", specifier = ">=1.5,<2" },
     { name = "onnxruntime", marker = "extra == 'vad'", specifier = ">=1.22,<2" },
     { name = "onnxruntime", marker = "extra == 'vision'", specifier = ">=1.22,<2" },
+    { name = "opencv-python", marker = "extra == 'layout'", specifier = ">=4.11,<5" },
     { name = "opencv-python", marker = "extra == 'vision'", specifier = ">=4.11,<5" },
     { name = "pandas", marker = "extra == 'evaluation'", specifier = ">=2.3,<3" },
     { name = "pillow", specifier = ">=11,<13" },
@@ -1383,6 +1391,7 @@ requires-dist = [
     { name = "rich", specifier = ">=14,<15" },
     { name = "safetensors", specifier = ">=0.5,<1" },
     { name = "safetensors", marker = "extra == 'asr'", specifier = ">=0.5,<1" },
+    { name = "safetensors", marker = "extra == 'layout'", specifier = ">=0.5,<1" },
     { name = "safetensors", marker = "extra == 'tts'", specifier = ">=0.5,<1" },
     { name = "scikit-learn", marker = "extra == 'evaluation'", specifier = ">=1.7,<2" },
     { name = "scipy", marker = "extra == 'asr'", specifier = ">=1.15,<2" },
@@ -1395,9 +1404,11 @@ requires-dist = [
     { name = "soundfile", marker = "extra == 'vad'", specifier = ">=0.13,<1" },
     { name = "structlog", specifier = ">=25,<26" },
     { name = "tensorboard", marker = "extra == 'training'", specifier = ">=2.19,<3" },
+    { name = "tiktoken", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'ocr'", specifier = ">=0.9,<1" },
     { name = "timm", marker = "extra == 'vision'", specifier = ">=1,<2" },
     { name = "tokenizers", marker = "extra == 'llm'", specifier = ">=0.21,<1" },
     { name = "torch", marker = "extra == 'asr'", specifier = "==2.7.0" },
+    { name = "torch", marker = "extra == 'layout'", specifier = "==2.7.0" },
     { name = "torch", marker = "extra == 'llm'", specifier = "==2.7.0" },
     { name = "torch", marker = "extra == 'training'", specifier = "==2.7.0" },
     { name = "torch", marker = "extra == 'tts'", specifier = "==2.7.0" },
@@ -1408,13 +1419,14 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'training'", specifier = "==0.22.0" },
     { name = "torchvision", marker = "extra == 'vision'", specifier = "==0.22.0" },
     { name = "transformers", marker = "extra == 'asr'", specifier = ">=4.57.3,<6" },
+    { name = "transformers", marker = "extra == 'layout'", specifier = ">=5.0,<6" },
     { name = "transformers", marker = "extra == 'llm'", specifier = ">=4.53,<6" },
     { name = "transformers", marker = "extra == 'tts'", specifier = ">=4.57.3,<6" },
     { name = "transformers", marker = "extra == 'vision'", specifier = ">=4.53,<6" },
     { name = "typer", specifier = ">=0.16,<1" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'api'", specifier = ">=0.35,<1" },
 ]
-provides-extras = ["apple", "asr", "vad", "tts", "vision", "llm", "api", "training", "evaluation"]
+provides-extras = ["apple", "asr", "vad", "tts", "vision", "layout", "llm", "ocr", "api", "training", "evaluation"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1438,8 +1450,7 @@ version = "0.1.0"
 source = { editable = "packages/hugging_mac_sdk" }
 dependencies = [
     { name = "httpx" },
-    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "huggingface-hub", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "huggingface-hub" },
     { name = "pillow" },
     { name = "platformdirs" },
     { name = "psutil" },
@@ -1458,11 +1469,22 @@ asr = [
     { name = "soundfile" },
     { name = "torch" },
     { name = "torchaudio" },
-    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "transformers", version = "5.14.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "transformers" },
+]
+layout = [
+    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "numpy" },
+    { name = "opencv-python" },
+    { name = "safetensors" },
+    { name = "torch" },
+    { name = "transformers" },
 ]
 llm = [
     { name = "mlx-vlm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+]
+ocr = [
+    { name = "mlx-vlm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "tiktoken", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
 tts = [
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
@@ -1475,8 +1497,7 @@ tts = [
     { name = "soundfile" },
     { name = "torch" },
     { name = "torchaudio" },
-    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "transformers", version = "5.14.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "transformers" },
 ]
 vad = [
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
@@ -1497,6 +1518,7 @@ yolo = [
 [package.metadata]
 requires-dist = [
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'asr'", specifier = ">=8,<10" },
+    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'layout'", specifier = ">=8,<10" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'tts'", specifier = ">=8,<10" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'vad'", specifier = ">=8,<10" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'yolo'", specifier = ">=8,<10" },
@@ -1505,14 +1527,17 @@ requires-dist = [
     { name = "kokoro", marker = "extra == 'tts'", specifier = "==0.9.4" },
     { name = "misaki", extras = ["en", "ja", "zh"], marker = "extra == 'tts'", specifier = ">=0.9.4,<1" },
     { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'tts'", git = "https://github.com/Blaizzy/mlx-audio.git?rev=223afd602c6d583455bdb9f181b91fc090f4aff9" },
-    { name = "mlx-vlm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'llm'", specifier = ">=0.6.3,<0.7" },
+    { name = "mlx-vlm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'llm'", specifier = ">=0.6.14,<0.7" },
+    { name = "mlx-vlm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'ocr'", specifier = ">=0.6.14,<0.7" },
     { name = "numpy", marker = "extra == 'asr'", specifier = ">=2,<2.4" },
+    { name = "numpy", marker = "extra == 'layout'", specifier = ">=2,<2.4" },
     { name = "numpy", marker = "extra == 'tts'", specifier = ">=2,<2.4" },
     { name = "numpy", marker = "extra == 'vad'", specifier = ">=2,<2.4" },
     { name = "numpy", marker = "extra == 'yolo'", specifier = ">=2,<2.4" },
     { name = "onnx", marker = "extra == 'yolo'", specifier = ">=1.18,<2" },
     { name = "onnxruntime", marker = "extra == 'vad'", specifier = ">=1.22,<2" },
     { name = "onnxruntime", marker = "extra == 'yolo'", specifier = ">=1.22,<2" },
+    { name = "opencv-python", marker = "extra == 'layout'", specifier = ">=4.11,<5" },
     { name = "opencv-python", marker = "extra == 'yolo'", specifier = ">=4.11,<5" },
     { name = "pillow", specifier = ">=11,<13" },
     { name = "platformdirs", specifier = ">=4.3,<5" },
@@ -1520,6 +1545,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11,<3" },
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "safetensors", marker = "extra == 'asr'", specifier = ">=0.5,<1" },
+    { name = "safetensors", marker = "extra == 'layout'", specifier = ">=0.5,<1" },
     { name = "safetensors", marker = "extra == 'tts'", specifier = ">=0.5,<1" },
     { name = "scipy", marker = "extra == 'asr'", specifier = ">=1.15,<2" },
     { name = "scipy", marker = "extra == 'tts'", specifier = ">=1.15,<2" },
@@ -1528,16 +1554,19 @@ requires-dist = [
     { name = "soundfile", marker = "extra == 'asr'", specifier = ">=0.13,<1" },
     { name = "soundfile", marker = "extra == 'tts'", specifier = ">=0.13,<1" },
     { name = "soundfile", marker = "extra == 'vad'", specifier = ">=0.13,<1" },
+    { name = "tiktoken", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'ocr'", specifier = ">=0.9,<1" },
     { name = "torch", marker = "extra == 'asr'", specifier = "==2.7.0" },
+    { name = "torch", marker = "extra == 'layout'", specifier = "==2.7.0" },
     { name = "torch", marker = "extra == 'tts'", specifier = "==2.7.0" },
     { name = "torch", marker = "extra == 'yolo'", specifier = "==2.7.0" },
     { name = "torchaudio", marker = "extra == 'asr'", specifier = "==2.7.0" },
     { name = "torchaudio", marker = "extra == 'tts'", specifier = "==2.7.0" },
     { name = "tqdm", specifier = ">=4.42,<5" },
     { name = "transformers", marker = "extra == 'asr'", specifier = ">=4.57.3,<6" },
+    { name = "transformers", marker = "extra == 'layout'", specifier = ">=5.0,<6" },
     { name = "transformers", marker = "extra == 'tts'", specifier = ">=4.57.3,<6" },
 ]
-provides-extras = ["llm", "asr", "vad", "yolo", "tts"]
+provides-extras = ["llm", "ocr", "layout", "asr", "vad", "yolo", "tts"]
 
 [[package]]
 name = "hugging-mac-web"
@@ -1545,12 +1574,13 @@ version = "0.1.0"
 source = { editable = "apps/web/backend" }
 dependencies = [
     { name = "fastapi" },
-    { name = "hugging-mac-sdk", extra = ["asr", "llm", "tts", "yolo"] },
+    { name = "hugging-mac-sdk", extra = ["asr", "layout", "llm", "ocr", "tts", "yolo"] },
     { name = "pillow" },
     { name = "platformdirs" },
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pymupdf" },
     { name = "python-multipart" },
     { name = "structlog" },
     { name = "tinydb" },
@@ -1560,12 +1590,13 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.116,<1" },
-    { name = "hugging-mac-sdk", extras = ["asr", "llm", "tts", "yolo"], editable = "packages/hugging_mac_sdk" },
+    { name = "hugging-mac-sdk", extras = ["asr", "layout", "llm", "ocr", "tts", "yolo"], editable = "packages/hugging_mac_sdk" },
     { name = "pillow", specifier = ">=11,<13" },
     { name = "platformdirs", specifier = ">=4.3,<5" },
     { name = "psutil", specifier = ">=7,<8" },
     { name = "pydantic", specifier = ">=2.11,<3" },
     { name = "pydantic-settings", specifier = ">=2.10,<3" },
+    { name = "pymupdf", specifier = ">=1.26,<2" },
     { name = "python-multipart", specifier = ">=0.0.20,<1" },
     { name = "structlog", specifier = ">=25,<26" },
     { name = "tinydb", specifier = ">=4.8,<5" },
@@ -1574,37 +1605,8 @@ requires-dist = [
 
 [[package]]
 name = "huggingface-hub"
-version = "0.36.2"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version >= '3.13' and python_full_version < '3.15' and sys_platform == 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'win32'",
-]
-dependencies = [
-    { name = "filelock" },
-    { name = "fsspec" },
-    { name = "hf-xet", marker = "platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'" },
-    { name = "packaging" },
-    { name = "pyyaml" },
-    { name = "requests" },
-    { name = "tqdm" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7c/b7/8cb61d2eece5fb05a83271da168186721c450eb74e3c31f7ef3169fa475b/huggingface_hub-0.36.2.tar.gz", hash = "sha256:1934304d2fb224f8afa3b87007d58501acfda9215b334eed53072dd5e815ff7a", size = 649782, upload-time = "2026-02-06T09:24:13.098Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a8/af/48ac8483240de756d2438c380746e7130d1c6f75802ef22f3c6d49982787/huggingface_hub-0.36.2-py3-none-any.whl", hash = "sha256:48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270", size = 566395, upload-time = "2026-02-06T09:24:11.133Z" },
-]
-
-[[package]]
-name = "huggingface-hub"
 version = "1.26.0"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.15' and sys_platform != 'win32'",
-    "python_full_version >= '3.13' and python_full_version < '3.15' and sys_platform != 'win32'",
-    "python_full_version < '3.13' and sys_platform != 'win32'",
-]
 dependencies = [
     { name = "click" },
     { name = "filelock" },
@@ -1811,14 +1813,12 @@ name = "kokoro"
 version = "0.9.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "huggingface-hub", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "huggingface-hub" },
     { name = "loguru" },
     { name = "misaki", extra = ["en"] },
     { name = "numpy" },
     { name = "torch" },
-    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "transformers", version = "5.14.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "transformers" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e8/48/88b8cdf28b068d070195c2817175549dee48e7682e3ab8994bee5f69217e/kokoro-0.9.4.tar.gz", hash = "sha256:fbf633262797f8cf46fdac3315cf9cade67dc8b762c0feccf334892772fb9ac4", size = 26215928, upload-time = "2025-04-05T22:01:35.294Z" }
 wheels = [
@@ -2287,7 +2287,7 @@ name = "mlx-audio"
 version = "0.4.7"
 source = { git = "https://github.com/Blaizzy/mlx-audio.git?rev=223afd602c6d583455bdb9f181b91fc090f4aff9#223afd602c6d583455bdb9f181b91fc090f4aff9" }
 dependencies = [
-    { name = "huggingface-hub", version = "1.26.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "huggingface-hub" },
     { name = "miniaudio" },
     { name = "mlx" },
     { name = "mlx-lm" },
@@ -2295,7 +2295,7 @@ dependencies = [
     { name = "scipy" },
     { name = "sounddevice" },
     { name = "tqdm" },
-    { name = "transformers", version = "5.14.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "transformers" },
 ]
 
 [[package]]
@@ -2309,7 +2309,7 @@ dependencies = [
     { name = "protobuf" },
     { name = "pyyaml" },
     { name = "sentencepiece" },
-    { name = "transformers", version = "5.14.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "transformers" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/84/94/9a38d6b0c6fcca995b9136c94eb7da1e9c5165652edf228b96b29960fa7a/mlx_lm-0.31.3.tar.gz", hash = "sha256:61eb0e3ba09444f77f874aff295401d7ccd20b39495cbbce0c782a15474ce733", size = 304318, upload-time = "2026-04-22T07:37:27.922Z" }
 wheels = [
@@ -2328,7 +2328,7 @@ wheels = [
 
 [[package]]
 name = "mlx-vlm"
-version = "0.6.8"
+version = "0.6.17"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
@@ -2336,20 +2336,21 @@ dependencies = [
     { name = "miniaudio" },
     { name = "mlx" },
     { name = "mlx-audio" },
-    { name = "mlx-lm" },
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "pillow" },
     { name = "python-multipart" },
     { name = "requests" },
+    { name = "sentencepiece" },
     { name = "starlette" },
     { name = "tqdm" },
-    { name = "transformers", version = "5.14.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "transformers" },
     { name = "uvicorn" },
+    { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6b/a3/8ee5bbc0c32a061bda3fe17873f81d7b85c7fe2ceb39daacccb1caad7671/mlx_vlm-0.6.8.tar.gz", hash = "sha256:acbd4f2652a61e71c0942177b9570331d3ed2d654c4f60f4e356680721bc09c2", size = 1654754, upload-time = "2026-07-27T19:33:51.704Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c5/a1/4b21ea85918e5223144bbe80cb649f5953c105ea440f0eba45dd00a5b863/mlx_vlm-0.6.17.tar.gz", hash = "sha256:5e4ff5426af093b3cf41b4e5e33c272db82fa33000cb3c36a1aab9e218ad7ee7", size = 2043597, upload-time = "2026-08-26T17:08:38.01Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/63/6d/8ce3e2874e98e2e9b1a1d0331d5766a916bf63031ef9857ba76ed630d22a/mlx_vlm-0.6.8-py3-none-any.whl", hash = "sha256:5250c8245076e576274009b3c6c9ecd6672c686aeede5ed03e9b61ee836dac4f", size = 2090215, upload-time = "2026-07-27T19:33:50.196Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/42/f275566dba66b54c21e039344c4fb90fd3a3749fc251754545249b45dc8d/mlx_vlm-0.6.17-py3-none-any.whl", hash = "sha256:d24723244ef89b2a6140bec45e38c078689ea89450edfc0e348ad149f5af3b1c", size = 2590205, upload-time = "2026-08-26T17:08:36.148Z" },
 ]
 
 [[package]]
@@ -3504,6 +3505,24 @@ wheels = [
 ]
 
 [[package]]
+name = "pymupdf"
+version = "1.28.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a3/fb/b6761fa2d5266f2cdb24c3b91f4023070ab7848381417678e7a289a1d52a/pymupdf-1.28.2.tar.gz", hash = "sha256:5e0be7908a715aa20333caddd73f1d6f01e4cd0c26e869fa2dd0b7f344da2249", size = 87903557, upload-time = "2026-08-06T21:43:23.321Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b4/51/550c9a75c4ff3245cb4ecb7bb95cbe2ab7374230b8e2b7a1f7259444150b/pymupdf-1.28.2-cp310-abi3-macosx_10_15_x86_64.whl", hash = "sha256:5fc315b425ff1f7afdd1ea2f348205cb19b806767daae7ce4d64115799c2bae1", size = 24645079, upload-time = "2026-08-06T21:37:25.001Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/01/3591f781b417b382a8487a2356e927acfe858b1043bab0ec47f6805bb109/pymupdf-1.28.2-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:7113846b35dbf0a033f088e4f4fb543dabeb4b0b12c112966a1ca1ee2d5eacae", size = 23875605, upload-time = "2026-08-06T21:37:40.369Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/86/4a68f080b71b46802178346af46486e1697508e760855ff5f3b218a6dff7/pymupdf-1.28.2-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:3050a233dde1211efe89ada74e2add6238436434159f46097a1423aad2842545", size = 25095554, upload-time = "2026-08-06T21:37:58.485Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/06/dace3e27af26690cb20bead80dbac42941b0841eb689b8aabbd67dde16f0/pymupdf-1.28.2-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:397d6715c1f0df7548a92d0afd8ce370fc48fa47aeefac16be2bc04a16a8227f", size = 25762500, upload-time = "2026-08-06T21:38:17.438Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/61/4146dfa1d8172a1ce8d59f0eed94896ddefb8deb2274534d0522fbb8abf5/pymupdf-1.28.2-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:f89fb2d86d07d643a269f17a093105057e20c79c1d06c103b53600067b6d2b01", size = 25986309, upload-time = "2026-08-06T21:38:35.472Z" },
+    { url = "https://files.pythonhosted.org/packages/52/60/1fb6e64676f7500ebe89054b9e5bbbe14d3101c92d5f1a40ac9a35227673/pymupdf-1.28.2-cp310-abi3-win32.whl", hash = "sha256:530ef543a3885b3b81cb72a854e7c5a625a9233201221132bb6c31698c6a2bdb", size = 18525353, upload-time = "2026-08-06T21:38:47.697Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/61/d563bbccba262f9dd6d2d35ccb72593648184d886188efb12d9ce8f34dd6/pymupdf-1.28.2-cp310-abi3-win_amd64.whl", hash = "sha256:ebd244918798502d7b4504c90410d1711a4d7675a32584ca30f1bab419ecbffe", size = 19826532, upload-time = "2026-08-06T21:39:00.213Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/93/08f404a1f0155fe24137cf2d3aabd3e2b4b08c62053ed89c60f2611be3e9/pymupdf-1.28.2-cp310-abi3-win_arm64.whl", hash = "sha256:ffe91a24edc75c80da2a4b62f50fc0f54632d34fc8fe4cbc48e5c7ff07cf8fb4", size = 19759252, upload-time = "2026-08-06T21:39:12.937Z" },
+    { url = "https://files.pythonhosted.org/packages/58/8c/d897dcd32a25b58186c968b15ce4324ca029e9d96460de12325314e390be/pymupdf-1.28.2-cp313-abi3-pyemscripten_2025_0_wasm32.whl", hash = "sha256:2e1b574c0fd2cb238021033fd3c0f9c4388816638df064e4bfb56d9d81736dc8", size = 18399403, upload-time = "2026-08-06T21:39:25.008Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/f1/de34a1c53fe2bf8c6e71db84b0ced782d408970c9810d2b456a2ae96814c/pymupdf-1.28.2-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:fd481ed48bef56305c41fb7e05a055c03345c899c7b101dad086258b438f8168", size = 25802333, upload-time = "2026-08-06T21:39:41.426Z" },
+]
+
+[[package]]
 name = "pyopenjtalk"
 version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -4491,12 +4510,29 @@ wheels = [
 ]
 
 [[package]]
+name = "tiktoken"
+version = "0.14.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "regex" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/66/62/167a842aa0429d45f5e797354fd4343a96f6043d67d0513c675c7b8d36e6/tiktoken-0.14.0.tar.gz", hash = "sha256:231dec90efcdccf1b565a1416107736f1e09b1a08fe736ef9d6363e626d03874", size = 38898, upload-time = "2026-08-17T19:49:49.514Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/9f/fe6b1aca23331aa5271df5a4bd07bf68a7059254d47faee1b8272592a777/tiktoken-0.14.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:d6cebe67765569df3dafac8474e4eccf5c19d24140492567a5e58a11445732a4", size = 1038499, upload-time = "2026-08-17T19:48:50.666Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/5f/6448cfe278c3664ba9ec5b5ac08344341f7dc3d42888476e215a14eda2be/tiktoken-0.14.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:cbe2cc3bba939bcdaf103e03df9d5039d33887080b315624be28ec69059e5f94", size = 1038820, upload-time = "2026-08-17T19:48:59.015Z" },
+    { url = "https://files.pythonhosted.org/packages/62/85/2ae74575e321148484147e10b53c3b1717c59ebaa9edb4fe18b1f5c055f8/tiktoken-0.14.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:f2af4a336ea56d6c14f27741a0e1d8294a35dd0b038bcf990d232ebb54eb994b", size = 1040269, upload-time = "2026-08-17T19:49:06.943Z" },
+    { url = "https://files.pythonhosted.org/packages/79/29/46ad8061f57bd9f8b2ea0aa82bf574e0f2aa040b0857a1582adba9957899/tiktoken-0.14.0-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:86951a971c53979ec857bd8c4a32dc227ab0fd33f6c12a3bd62d3fbf5f0bfcaa", size = 1040183, upload-time = "2026-08-17T19:49:15.707Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/6b/09999a9bf1d559670d1680e8f8e419ac0e2c5f6aac82e9bfdf70f260b30a/tiktoken-0.14.0-cp315-cp315-macosx_11_0_arm64.whl", hash = "sha256:19d643d701fdaa70e5b9c7f8f96abcaffe77ca5e482a3a1a7dde46feb4284695", size = 1040433, upload-time = "2026-08-17T19:49:23.998Z" },
+    { url = "https://files.pythonhosted.org/packages/65/97/a5a7bfccf25b1bb65e82bae8edff11ac3c9c041c374b7b4a823d60c38133/tiktoken-0.14.0-cp315-cp315t-macosx_11_0_arm64.whl", hash = "sha256:d0781223705199b289faa59601bb9c2441712d4c600dd13c43d8fd6a33d22cd5", size = 1039947, upload-time = "2026-08-17T19:49:32.848Z" },
+]
+
+[[package]]
 name = "timm"
 version = "1.0.28"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "huggingface-hub", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "huggingface-hub" },
     { name = "pyyaml" },
     { name = "safetensors" },
     { name = "torch" },
@@ -4521,8 +4557,7 @@ name = "tokenizers"
 version = "0.22.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
-    { name = "huggingface-hub", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+    { name = "huggingface-hub" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/73/6f/f80cfef4a312e1fb34baf7d85c72d4411afde10978d4657f8cdd811d3ccc/tokenizers-0.22.2.tar.gz", hash = "sha256:473b83b915e547aa366d1eee11806deaf419e17be16310ac0a14077f1e28f917", size = 372115, upload-time = "2026-01-05T10:45:15.988Z" }
 wheels = [
@@ -4661,41 +4696,10 @@ wheels = [
 
 [[package]]
 name = "transformers"
-version = "4.57.6"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version >= '3.13' and python_full_version < '3.15' and sys_platform == 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'win32'",
-]
-dependencies = [
-    { name = "filelock" },
-    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" } },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "pyyaml" },
-    { name = "regex" },
-    { name = "requests" },
-    { name = "safetensors" },
-    { name = "tokenizers" },
-    { name = "tqdm" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c4/35/67252acc1b929dc88b6602e8c4a982e64f31e733b804c14bc24b47da35e6/transformers-4.57.6.tar.gz", hash = "sha256:55e44126ece9dc0a291521b7e5492b572e6ef2766338a610b9ab5afbb70689d3", size = 10134912, upload-time = "2026-01-16T10:38:39.284Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/03/b8/e484ef633af3887baeeb4b6ad12743363af7cce68ae51e938e00aaa0529d/transformers-4.57.6-py3-none-any.whl", hash = "sha256:4c9e9de11333ddfe5114bc872c9f370509198acf0b87a832a0ab9458e2bd0550", size = 11993498, upload-time = "2026-01-16T10:38:31.289Z" },
-]
-
-[[package]]
-name = "transformers"
 version = "5.14.1"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.15' and sys_platform != 'win32'",
-    "python_full_version >= '3.13' and python_full_version < '3.15' and sys_platform != 'win32'",
-    "python_full_version < '3.13' and sys_platform != 'win32'",
-]
 dependencies = [
-    { name = "huggingface-hub", version = "1.26.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "huggingface-hub" },
     { name = "numpy" },
     { name = "packaging" },
     { name = "pyyaml" },
