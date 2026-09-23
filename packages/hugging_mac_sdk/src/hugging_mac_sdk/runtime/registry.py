@@ -48,12 +48,14 @@ class RuntimeRegistry:
 def create_default_runtime_registry() -> RuntimeRegistry:
     """Build the standard provider registry without importing heavy frameworks."""
 
+    from hugging_mac_sdk.runtime.coreai import CoreAIProvider
     from hugging_mac_sdk.runtime.coreml import CoreMLProvider
     from hugging_mac_sdk.runtime.mlx import MlxProvider
     from hugging_mac_sdk.runtime.onnx import OnnxRuntimeProvider
     from hugging_mac_sdk.runtime.torch import TorchProvider
 
     registry = RuntimeRegistry()
+    registry.register(CoreAIProvider())
     registry.register(CoreMLProvider())
     registry.register(MlxProvider())
     registry.register(OnnxRuntimeProvider())

@@ -94,7 +94,7 @@ def _restore_falcon_h1_buffers(transformers: Any, model: Any) -> None:
         return
     slow = getattr(model, "slow", None)
     layers = getattr(slow, "layers", None)
-    if layers is None:
+    if slow is None or layers is None:
         return
     falcon_h1 = importlib.import_module("transformers.models.falcon_h1.modeling_falcon_h1")
     compute_mup_vector = getattr(falcon_h1, "compute_mup_vector", None)

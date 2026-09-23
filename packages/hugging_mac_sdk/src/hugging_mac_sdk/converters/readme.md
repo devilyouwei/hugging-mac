@@ -109,3 +109,32 @@ are reported as `UnsupportedRuntimeError` with the original cause.
 - Architecture-sensitive checkpoint loading belongs to the model package.
 - Converter selection is not performed by application code.
 - Conversion never runs implicitly during `ModelSdk.load()`.
+
+## Core AI export
+
+`convert_pytorch_to_coreai` accepts an eval-mode `nn.Module` with example inputs
+(and optional kwargs/dynamic shapes) or an existing `ExportedProgram`. It uses
+Apple's decomposition table, `TorchConverter`, optimization, and `save_asset`.
+Named inputs, outputs, states, and entrypoints pass through the public API.
+Assets are written in a sibling staging directory, then published; a failed
+publish restores the previous output when overwriting. Source and output must
+be distinct in file conversion. Caller modules are not put into eval mode or
+moved between devices implicitly.
+
+`PyTorchCoreAIConverter` (`pytorch.coreai`) integrates saved `.pt2` programs with
+`ConverterRegistry` and `ConversionService`, reporting directory hash/size and
+provenance. Register it explicitly, like the existing model converters. It does
+not load arbitrary `.pt`/`.pth` checkpoints: callers reconstruct the architecture
+and weights and use the module helper, or save a `torch.export` program first.
+All file export and hashing work runs off the caller's event loop.
+
+Apple's `coreai-torch` 0.4.2 requires PyTorch >=2.8, while existing model extras
+pin 2.7. Use a separate conversion environment; do not install both into the
+application environment or upgrade all model dependencies for this feature.
+`coreai-torch` is BSD-3-Clause; its native dependencies and source models retain
+their own licenses. PyTorch and compiler wheels add substantial disk usage only
+to the conversion environment. Conversion memory scales with graph and weights.
+
+API references verified for this implementation:
+- https://apple.github.io/coreai-torch/main/api/TorchConverter.html
+- https://apple.github.io/coreai-torch/main/coreai-core/api/coreai.html

@@ -6,8 +6,8 @@ manifest:
   tags: [audio, tts, voice-cloning, zero-shot, multilingual, arktts]
   family: audio8-tts
   capabilities: [speech-synthesis]
-  source_url: https://huggingface.co/Audio8/Audio8-TTS-Preview-0.1b
-  license: Apache-2.0
+  source_url: https://huggingface.co/Edge0/Audio8-TTS-Preview-0.1b
+  license: audio8-community-license-v1.0
 
   runtimes:
   - name: pytorch
@@ -22,6 +22,12 @@ manifest:
     platforms: [darwin]
     architectures: [arm64]
     required_modules: [mlx, mlx_audio, numpy]
+  - name: coreai
+    devices: [auto, cpu]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coreai, torch, torchaudio, transformers, safetensors, numpy, soundfile]
   default_runtime: pytorch
   variants:
   - name: 0.1b-preview
@@ -46,6 +52,7 @@ manifest:
       sample_rate: 44100
       context_positions: 2048
       recommended_languages: 11
+      license: Apache-2.0
   default_variant: 0.1b-preview
 
 artifacts:
@@ -60,7 +67,7 @@ artifacts:
   required_shares: [tokenizer-0.1b]
   source:
     kind: huggingface
-    repo_id: Audio8/Audio8-TTS-Preview-0.1b
+    repo_id: Edge0/Audio8-TTS-Preview-0.1b
     allow_patterns:
     - config.json
     - generation_config.json
@@ -105,6 +112,27 @@ artifacts:
     - generation_config.json
     - codec.safetensors
     - model.safetensors
+- artifact_id: coreai-hybrid
+  convert: true
+  variant: 0.1b-preview
+  runtime: coreai
+  format: coreai
+  kind: directory
+  path: audio8/audio8-tts-preview/0.1b-preview/coreai/coreai-hybrid
+  required_files: [fast.aimodel/metadata.json, fast.aimodel/main.mlirb, fast.aimodel/main.hash,
+    codec.aimodel/metadata.json, codec.aimodel/main.mlirb, codec.aimodel/main.hash,
+    pytorch/codec.pth, pytorch/config.json, pytorch/configuration_arktts.py, pytorch/generation_config.json,
+    pytorch/model.safetensors, pytorch/modeling_arktts.py, pytorch/modeling_arktts_codec.py,
+    pytorch/preprocessor_config.json, pytorch/processing_arktts.py, pytorch/processor_config.json]
+  required_shares: [tokenizer-0.1b]
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/audio8-tts-0.1b-coreai
+    allow_patterns:
+    - 0.1b-preview/coreai/coreai-hybrid/fast.aimodel/**
+    - 0.1b-preview/coreai/coreai-hybrid/codec.aimodel/**
+    - 0.1b-preview/coreai/coreai-hybrid/pytorch/**
+    strip_prefix: 0.1b-preview/coreai/coreai-hybrid
 - artifact_id: tokenizer-0.1b
   shared: true
   format: tokenizer
@@ -113,11 +141,12 @@ artifacts:
   required_files: [special_tokens_map.json, tokenizer.json, tokenizer_config.json]
   source:
     kind: huggingface
-    repo_id: Audio8/Audio8-TTS-Preview-0.1b
+    repo_id: hugging-mac/audio8-tts-0.1b-coreai
     allow_patterns:
-    - special_tokens_map.json
-    - tokenizer.json
-    - tokenizer_config.json
+    - _shared/tokenizer-0.1b/special_tokens_map.json
+    - _shared/tokenizer-0.1b/tokenizer.json
+    - _shared/tokenizer-0.1b/tokenizer_config.json
+    strip_prefix: _shared/tokenizer-0.1b
 - artifact_id: tokenizer-0.6b
   shared: true
   format: tokenizer
@@ -131,3 +160,16 @@ artifacts:
     - special_tokens_map.json
     - tokenizer.json
     - tokenizer_config.json
+extensions:
+  audio8_tts_coreai:
+    source_artifact: source
+    target_artifact: coreai-hybrid
+    fast_graph: fast.aimodel
+    codec_graph: codec.aimodel
+    pytorch_directory: pytorch
+    codec_max_frames: 2048
+    stages:
+      fast_ar: coreai
+      codec_decode: coreai
+      slow_ar: pytorch-cpu
+      reference_encode: pytorch-cpu

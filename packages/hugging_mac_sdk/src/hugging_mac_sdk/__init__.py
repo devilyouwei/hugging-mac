@@ -1,6 +1,12 @@
 """Public API for the hugging-mac model SDK."""
 
-from hugging_mac_sdk.converters import ConversionService, ConverterRegistry, ModelConverter
+from hugging_mac_sdk.converters import (
+    ConversionService,
+    ConverterRegistry,
+    ModelConverter,
+    PyTorchCoreAIConverter,
+    convert_pytorch_to_coreai,
+)
 from hugging_mac_sdk.core.config import ModelPackageConfig, load_model_config
 from hugging_mac_sdk.core.facade import ModelHandle, ModelSdk
 from hugging_mac_sdk.core.inspection import ModelInspectionService
@@ -24,6 +30,8 @@ from hugging_mac_sdk.errors import (
 )
 from hugging_mac_sdk.resources import DownloadProgress, ResourceDownloader
 from hugging_mac_sdk.runtime import (
+    CoreAIProvider,
+    CoreAISession,
     CoreMLProvider,
     CoreMLSession,
     DeviceInfo,
@@ -168,6 +176,8 @@ __all__ = [
     "ConversionService",
     "ConversionTargetStatus",
     "ConverterRegistry",
+    "CoreAIProvider",
+    "CoreAISession",
     "CoreMLProvider",
     "CoreMLSession",
     "Detection",
@@ -232,6 +242,7 @@ __all__ = [
     "Pose",
     "PoseEstimationResponse",
     "PoseRequest",
+    "PyTorchCoreAIConverter",
     "RegistrationConflictError",
     "ResolvedResource",
     "ResourceDownloader",
@@ -277,6 +288,7 @@ __all__ = [
     "VoiceActivityRequest",
     "VoiceActivityResponse",
     "VoiceActivityTimings",
+    "convert_pytorch_to_coreai",
     "create_default_runtime_registry",
     "load_model_config",
 ]

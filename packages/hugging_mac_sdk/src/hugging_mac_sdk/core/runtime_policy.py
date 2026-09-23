@@ -109,6 +109,13 @@ class RuntimePolicy:
                 False,
                 f"{name} requires architecture: {', '.join(runtime.architectures)}",
             )
+        if name == "coreai":
+            from hugging_mac_sdk.runtime.coreai import coreai_available
+
+            if not coreai_available():
+                return RuntimeAvailability(
+                    False, "Core AI requires Apple Silicon macOS and coreai-core"
+                )
         required_modules = runtime.required_modules or _known_runtime_modules(name)
         for module in required_modules:
             availability = _module_availability(module)
@@ -129,6 +136,7 @@ def _module_availability(module: str) -> RuntimeAvailability:
 
 def _known_runtime_modules(runtime: str) -> tuple[str, ...]:
     return {
+        "coreai": ("coreai",),
         "coreml": ("coremltools",),
         "mlx": ("mlx",),
         "onnx": ("onnxruntime",),

@@ -58,7 +58,7 @@ def create_context(settings: WebSettings) -> PlatformContext:
     )
     converters = ConverterRegistry()
     register_audio8_asr(models.registry, converters)
-    register_audio8_tts(models.registry)
+    register_audio8_tts(models.registry, converters)
     register_deepfilternet3(models.registry)
     register_gemma_4(models.registry)
     register_glm_ocr(models.registry)

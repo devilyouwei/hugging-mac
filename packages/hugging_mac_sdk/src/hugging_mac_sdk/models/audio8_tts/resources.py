@@ -8,6 +8,7 @@ import shutil
 from collections.abc import Mapping
 from pathlib import Path
 
+from hugging_mac_sdk.core.resources import artifact_available
 from hugging_mac_sdk.errors import (
     ResourceIntegrityError,
     ResourceNotFoundError,
@@ -16,7 +17,7 @@ from hugging_mac_sdk.errors import (
 from hugging_mac_sdk.resources.downloader import ResourceDownloader
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size
 from hugging_mac_sdk.schemas.artifact import ModelArtifact
-from hugging_mac_sdk.schemas.conversion import ArtifactFormat
+from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest
 from hugging_mac_sdk.schemas.manifest import ModelManifest
 from hugging_mac_sdk.schemas.resources import (
     HuggingFaceSource,
@@ -26,6 +27,7 @@ from hugging_mac_sdk.schemas.resources import (
 )
 
 from .config import Audio8TtsInstanceConfig
+from .converter import Audio8TtsCoreAIConverter
 from .mlx_resources import Audio8TtsMlxResourceProvider
 
 
@@ -288,7 +290,13 @@ class Audio8TtsCombinedResourceProvider:
         tokenizer_artifacts: Mapping[str, ModelArtifact],
         mlx_source: HuggingFaceSource,
         mlx_artifact: ModelArtifact,
+        *,
+        coreai_artifacts: Mapping[str, ModelArtifact],
+        coreai_converter: Audio8TtsCoreAIConverter,
     ) -> None:
+        self._coreai_artifacts = dict(coreai_artifacts)
+        self._coreai_converter = coreai_converter
+        self._manifest = manifest
         self._pytorch = Audio8TtsResourceProvider(manifest, pytorch_artifacts, tokenizer_artifacts)
         assert mlx_artifact.variant is not None
         self._mlx_variant = mlx_artifact.variant
@@ -307,11 +315,29 @@ class Audio8TtsCombinedResourceProvider:
     async def status(
         self, variant: str, options: Mapping[str, object] | None = None
     ) -> ModelResourceStatus:
-        pytorch = await self._pytorch.status(variant, options)
+        normalized = dict(options or {})
+        normalized.pop("runtime", None)
+        pytorch = await self._pytorch.status(variant, normalized)
         artifacts = pytorch.artifacts
         if variant == self._mlx_variant:
-            mlx = await self._mlx.status(variant, options)
+            mlx = await self._mlx.status(variant, normalized)
             artifacts += mlx.artifacts
+        target = self._coreai_artifacts.get(variant)
+        if target is not None:
+            config = Audio8TtsInstanceConfig.model_validate(normalized | {"variant": variant})
+            path = target.resolve(config.model_home)
+            available = artifact_available(target, path)
+            artifacts += (
+                ModelArtifactStatus(
+                    artifact_id=target.artifact_id,
+                    format=target.format.value,
+                    runtime=target.runtime,
+                    provisioning="convert",
+                    required_shares=target.required_shares,
+                    available=available,
+                    size_bytes=directory_size(path) if available else None,
+                ),
+            )
         # Reconstruct the status so ModelResourceStatus recomputes its derived
         # runtime aggregates for both backends. model_copy(update=...) skips
         # validation and would leave only the PyTorch runtime visible.
@@ -329,7 +355,31 @@ class Audio8TtsCombinedResourceProvider:
         *,
         overwrite: bool = False,
     ) -> ModelResourceStatus:
-        await self._pytorch.download_source(variant, options, overwrite=overwrite)
+        normalized = dict(options or {})
+        runtime = normalized.pop("runtime", None)
+        if runtime == "coreai":
+            target = self._coreai_artifacts.get(variant)
+            if target is None or target.source is None:
+                raise UnsupportedRuntimeError(f"Audio8-TTS {variant} has no Core AI download")
+            config = Audio8TtsInstanceConfig.model_validate(normalized | {"variant": variant})
+            tokenizer = self._pytorch._tokenizer_artifacts[variant]
+            downloader = ResourceDownloader(timeout=3600)
+            for artifact, path in (
+                (target, target.resolve(config.model_home)),
+                (tokenizer, config.tokenizer_path or tokenizer.resolve(config.model_home)),
+            ):
+                if overwrite or not artifact_available(artifact, path):
+                    assert artifact.source is not None
+                    await downloader.download(
+                        artifact.source, path, overwrite=overwrite, token=config.hf_token
+                    )
+                if not artifact_available(artifact, path):
+                    raise ResourceIntegrityError(
+                        "Downloaded Audio8-TTS artifact is incomplete",
+                        details={"artifact_id": artifact.artifact_id},
+                    )
+            return await self.status(variant, normalized)
+        await self._pytorch.download_source(variant, normalized, overwrite=overwrite)
         if variant == self._mlx_variant:
             await self._mlx.download_source(variant, options, overwrite=overwrite)
         return await self.status(variant, options)
@@ -342,10 +392,28 @@ class Audio8TtsCombinedResourceProvider:
         *,
         overwrite: bool = False,
     ) -> ModelResourceStatus:
-        del variant, options, overwrite
-        raise UnsupportedRuntimeError(
-            f"Audio8-TTS conversion to {target_format} is not implemented"
+        target = self._coreai_artifacts.get(variant)
+        if target_format is not ArtifactFormat.COREAI or target is None:
+            raise UnsupportedRuntimeError(f"Audio8-TTS {variant} cannot convert to {target_format}")
+        normalized = dict(options or {})
+        normalized.pop("runtime", None)
+        config = Audio8TtsInstanceConfig.model_validate(normalized | {"variant": variant})
+        resolver = self._pytorch._resolver(variant, normalized)
+        source = await resolver.resolve_source()
+        await resolver.resolve_tokenizer()
+        await self._coreai_converter.convert(
+            ConversionRequest(
+                source=source,
+                source_format=ArtifactFormat.SAFETENSORS,
+                target_format=target_format,
+                output_path=target.resolve(config.model_home),
+                model_id=self._manifest.model_id,
+                model_revision=self._manifest.revision,
+                variant=variant,
+                overwrite=overwrite,
+            )
         )
+        return await self.status(variant, normalized)
 
     async def delete(
         self,
@@ -354,14 +422,26 @@ class Audio8TtsCombinedResourceProvider:
         *,
         runtime: str | None = None,
     ) -> ModelResourceStatus:
+        normalized = dict(options or {})
+        normalized.pop("runtime", None)
+        if runtime == "coreai":
+            target = self._coreai_artifacts.get(variant)
+            if target is None:
+                raise UnsupportedRuntimeError(f"Audio8-TTS {variant} has no Core AI artifact")
+            config = Audio8TtsInstanceConfig.model_validate(normalized | {"variant": variant})
+            root = config.model_home.expanduser().resolve()
+            path = target.resolve(root)
+            if path == root or not path.is_relative_to(root):
+                raise ResourceIntegrityError("Refusing to delete outside model storage")
+            await asyncio.to_thread(Audio8TtsResourceResolver._delete_path, path)
         if runtime in {None, "pytorch"}:
-            await self._pytorch.delete(variant, options, runtime=runtime)
+            await self._pytorch.delete(variant, normalized, runtime=runtime)
         if variant == self._mlx_variant and runtime in {None, "mlx"}:
-            await self._mlx.delete(variant, options, runtime=runtime)
+            await self._mlx.delete(variant, normalized, runtime=runtime)
         if variant != self._mlx_variant and runtime == "mlx":
             raise UnsupportedRuntimeError(
                 f"Audio8-TTS variant {variant} does not provide an MLX artifact"
             )
-        if runtime not in {None, "pytorch", "mlx"}:
+        if runtime not in {None, "pytorch", "mlx", "coreai"}:
             raise UnsupportedRuntimeError(f"Audio8-TTS does not support runtime {runtime}")
         return await self.status(variant, options)

@@ -1,6 +1,7 @@
 """Runtime backend contracts and registry."""
 
 from hugging_mac_sdk.runtime.base import RuntimeAdapter, RuntimeBackend, RuntimeSession
+from hugging_mac_sdk.runtime.coreai import CoreAIProvider, CoreAISession
 from hugging_mac_sdk.runtime.coreml import CoreMLProvider, CoreMLSession
 from hugging_mac_sdk.runtime.device import DeviceInfo, DeviceKind
 from hugging_mac_sdk.runtime.mlx import MlxProvider, MlxSession
@@ -9,6 +10,8 @@ from hugging_mac_sdk.runtime.registry import RuntimeRegistry, create_default_run
 from hugging_mac_sdk.runtime.torch import TorchProvider, TorchSession
 
 __all__ = [
+    "CoreAIProvider",
+    "CoreAISession",
     "CoreMLProvider",
     "CoreMLSession",
     "DeviceInfo",

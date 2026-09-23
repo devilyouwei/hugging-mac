@@ -307,6 +307,8 @@ def artifact_available(artifact: ModelArtifact, path: Path) -> bool:
         return path.is_file()
     if not path.is_dir():
         return False
+    if any(not (path / name).is_file() for name in artifact.required_files):
+        return False
     source = artifact.source
     if not isinstance(source, HuggingFaceSource):
         return True

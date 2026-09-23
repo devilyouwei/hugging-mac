@@ -573,6 +573,22 @@ wheels = [
 ]
 
 [[package]]
+name = "coreai-core"
+version = "1.0.0b2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "ml-dtypes" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "typing-extensions" },
+    { name = "yuvio" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/db/6f/13884f1546862f2eebb4a532a0fb967f570f826a038659c0ce8979813e5b/coreai_core-1.0.0b2-cp312-cp312-macosx_26_0_arm64.whl", hash = "sha256:abea920426c142ffbb6d916b463c77dc88b61439070d4d644fac1adc5bafbbfd", size = 21349085, upload-time = "2026-07-01T21:15:13.296Z" },
+    { url = "https://files.pythonhosted.org/packages/68/f4/484ed1ec7131d9ef55c184510be021cd12684d31e2fddf139091998d01d9/coreai_core-1.0.0b2-cp313-cp313-macosx_26_0_arm64.whl", hash = "sha256:6b9a92d3d6ee0447cd5265d7b52dabdb57215aa8701f7a941ef83de2ecd474ea", size = 21349442, upload-time = "2026-07-01T21:15:39.434Z" },
+]
+
+[[package]]
 name = "coremltools"
 version = "9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1471,6 +1487,9 @@ asr = [
     { name = "torchaudio" },
     { name = "transformers" },
 ]
+coreai = [
+    { name = "coreai-core", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+]
 layout = [
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "numpy" },
@@ -1517,6 +1536,7 @@ yolo = [
 
 [package.metadata]
 requires-dist = [
+    { name = "coreai-core", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'coreai'", specifier = "==1.0.0b2" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'asr'", specifier = ">=8,<10" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'layout'", specifier = ">=8,<10" },
     { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'tts'", specifier = ">=8,<10" },
@@ -1566,7 +1586,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'layout'", specifier = ">=5.0,<6" },
     { name = "transformers", marker = "extra == 'tts'", specifier = ">=4.57.3,<6" },
 ]
-provides-extras = ["llm", "ocr", "layout", "asr", "vad", "yolo", "tts"]
+provides-extras = ["coreai", "llm", "ocr", "layout", "asr", "vad", "yolo", "tts"]
 
 [[package]]
 name = "hugging-mac-web"
@@ -1574,7 +1594,7 @@ version = "0.1.0"
 source = { editable = "apps/web/backend" }
 dependencies = [
     { name = "fastapi" },
-    { name = "hugging-mac-sdk", extra = ["asr", "layout", "llm", "ocr", "tts", "yolo"] },
+    { name = "hugging-mac-sdk", extra = ["asr", "coreai", "layout", "llm", "ocr", "tts", "yolo"] },
     { name = "pillow" },
     { name = "platformdirs" },
     { name = "psutil" },
@@ -1590,7 +1610,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.116,<1" },
-    { name = "hugging-mac-sdk", extras = ["asr", "layout", "llm", "ocr", "tts", "yolo"], editable = "packages/hugging_mac_sdk" },
+    { name = "hugging-mac-sdk", extras = ["asr", "coreai", "layout", "llm", "ocr", "tts", "yolo"], editable = "packages/hugging_mac_sdk" },
     { name = "pillow", specifier = ">=11,<13" },
     { name = "platformdirs", specifier = ">=4.3,<5" },
     { name = "psutil", specifier = ">=7,<8" },
@@ -5384,4 +5404,17 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/dd/37/91eb2e5ca883a529c1b390348a74cd9fc0512171727f547ce70bfe02be5c/yarl-1.24.5-cp314-cp314t-win_amd64.whl", hash = "sha256:5c88e5815a49d289e599f3513aa7fde0bc2092ff188f99c940f007f90f53d104", size = 102450, upload-time = "2026-07-20T02:07:39.578Z" },
     { url = "https://files.pythonhosted.org/packages/bf/f4/ed5c402ac8fde4403ed3366c2716bfddc8a6677ebd59f3d62772cc7fe468/yarl-1.24.5-cp314-cp314t-win_arm64.whl", hash = "sha256:cf139c02f5f23ef6532040a30ff662c00a318c952334f211046b8e60b7f17688", size = 97222, upload-time = "2026-07-20T02:07:41.55Z" },
     { url = "https://files.pythonhosted.org/packages/61/02/962c1cbfc401a30c1d034dc67ff395f64b52302c6d62de556c1fca99acc0/yarl-1.24.5-py3-none-any.whl", hash = "sha256:a33700d13d9b7d84fd10947b09ff69fb9a792e519c8cb9764a3ca70baa6c23a7", size = 58612, upload-time = "2026-07-20T02:07:43.461Z" },
+]
+
+[[package]]
+name = "yuvio"
+version = "1.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "psutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f9/c3/fd8710dd5c08db9e2780cebd3956a2bcc40a994521333d9a8bdf1db666ea/yuvio-1.6.tar.gz", hash = "sha256:2ca1c7e79b551a76ded33c836bb8dabd34088080405d9560fb455b4a00523e68", size = 15473, upload-time = "2025-06-25T11:37:39.65Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/65/20/4738e1bae06f61833499b6119a0d779acd50131b847ab6dd98a5e324d282/yuvio-1.6-py3-none-any.whl", hash = "sha256:ed31718a24ef3f4510fd0721262ccd7154d9e075302a001bc671ab64edb7bf55", size = 19508, upload-time = "2025-06-25T11:37:38.346Z" },
 ]

@@ -60,7 +60,7 @@ def test_audio8_tts_artifact_declares_its_source() -> None:
     assert AUDIO8_TTS_MANIFEST.default_variant == "0.1b-preview"
     assert Audio8TtsInstanceConfig().variant == "0.1b-preview"
     assert AUDIO8_TTS_MANIFEST.capabilities == {"speech-synthesis"}
-    assert AUDIO8_TTS_MANIFEST.license == "Apache-2.0"
+    assert AUDIO8_TTS_MANIFEST.license == "audio8-community-license-v1.0"
     runtime = AUDIO8_TTS_MANIFEST.runtimes[0]
     assert runtime.name == "pytorch"
     assert runtime.devices == ("cpu", "mps")
@@ -80,10 +80,11 @@ def test_audio8_tts_artifact_declares_its_source() -> None:
     shared = {artifact.artifact_id: artifact for artifact in AUDIO8_TTS_DEFINITION.shared_artifacts}
     assert set(shared) == {"tokenizer-0.1b", "tokenizer-0.6b"}
     for tokenizer in shared.values():
+        prefix = "_shared/tokenizer-0.1b/" if tokenizer.artifact_id == "tokenizer-0.1b" else ""
         assert tokenizer.source.allow_patterns == (  # type: ignore[union-attr]
-            "special_tokens_map.json",
-            "tokenizer.json",
-            "tokenizer_config.json",
+            prefix + "special_tokens_map.json",
+            prefix + "tokenizer.json",
+            prefix + "tokenizer_config.json",
         )
 
 
@@ -103,7 +104,7 @@ def test_audio8_tts_manifest_contains_0_1b_variant() -> None:
 
     assert variant.metadata["parameters"] == 169779904
     assert variant.metadata["license"] == "audio8-community-license-v1.0"
-    assert source.repo_id == "Audio8/Audio8-TTS-Preview-0.1b"  # type: ignore[union-attr]
+    assert source.repo_id == "Edge0/Audio8-TTS-Preview-0.1b"  # type: ignore[union-attr]
     assert source.revision == "main"  # type: ignore[union-attr]
 
     instance = AUDIO8_TTS_DEFINITION.create(runtime="pytorch", variant="0.1b-preview")
@@ -116,7 +117,9 @@ def test_audio8_tts_manifest_contains_0_1b_variant() -> None:
     assert source_artifact.required_shares == ("tokenizer-0.1b",)
     assert len(tokenizer_artifact) == 1
     assert tokenizer_artifact[0].artifact_id == "tokenizer-0.1b"
-    assert tokenizer_artifact[0].source.repo_id == "Audio8/Audio8-TTS-Preview-0.1b"  # type: ignore[union-attr]
+    tokenizer_source = tokenizer_artifact[0].source
+    assert tokenizer_source.repo_id == "hugging-mac/audio8-tts-0.1b-coreai"  # type: ignore[union-attr]
+    assert tokenizer_source.strip_prefix == Path("_shared/tokenizer-0.1b")  # type: ignore[union-attr]
 
 
 async def test_audio8_tts_0_1b_status_exposes_pytorch(tmp_path: Path) -> None:
@@ -125,7 +128,7 @@ async def test_audio8_tts_0_1b_status_exposes_pytorch(tmp_path: Path) -> None:
 
     status = await provider.status("0.1b-preview", {"model_home": tmp_path})
 
-    assert {item.runtime for item in status.runtimes} == {"pytorch"}
+    assert {item.runtime for item in status.runtimes} == {"pytorch", "coreai"}
     assert status.revision == "main"
 
 

@@ -618,6 +618,7 @@ def test_default_runtime_registry_includes_mlx_provider() -> None:
     runtimes = create_default_runtime_registry()
 
     assert tuple(backend.name for backend in runtimes.list()) == (
+        "coreai",
         "coreml",
         "mlx",
         "onnx",

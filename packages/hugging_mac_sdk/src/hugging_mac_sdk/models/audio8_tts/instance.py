@@ -17,12 +17,17 @@ from hugging_mac_sdk.schemas.speech_synthesis import (
     SpeechSynthesisTimings,
 )
 
-from .config import Audio8TtsInstanceConfig, Audio8TtsMlxInstanceConfig
+from .config import (
+    Audio8TtsCoreAIInstanceConfig,
+    Audio8TtsInstanceConfig,
+    Audio8TtsMlxInstanceConfig,
+)
 from .utils.types import TtsEngineOutput
 
 
 class Audio8TtsEngine(Protocol):
-    runtime_name: str
+    @property
+    def runtime_name(self) -> str: ...
 
     @property
     def device(self) -> str: ...
@@ -41,7 +46,9 @@ class Audio8TtsInstance(BaseModelInstance):
 
     def __init__(
         self,
-        config: Audio8TtsInstanceConfig | Audio8TtsMlxInstanceConfig,
+        config: Audio8TtsInstanceConfig
+        | Audio8TtsMlxInstanceConfig
+        | Audio8TtsCoreAIInstanceConfig,
         engine: Audio8TtsEngine,
         manifest: ModelManifest,
     ) -> None:

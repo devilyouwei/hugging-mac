@@ -14,6 +14,7 @@ from hugging_mac_sdk.schemas.resources import ResolvedResource
 class ArtifactFormat(StrEnum):
     PYTORCH = "pytorch"
     TORCHSCRIPT = "torchscript"
+    COREAI = "coreai"
     COREML = "coreml"
     ONNX = "onnx"
     SAFETENSORS = "safetensors"

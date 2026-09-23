@@ -137,3 +137,28 @@ status, and the model instance.
 - Framework exceptions are translated at the model lifecycle or inference
   boundary unless the provider raises `UnsupportedRuntimeError` for configuration
   or availability.
+
+### Core AI
+
+`CoreAIProvider` is registered as `coreai` and loads `.aimodel` directories using
+`coreai.authoring.AIModelAsset.executable()` and a named function (default `main`).
+Imports are lazy; availability requires Apple Silicon macOS and `coreai-core`.
+`auto` uses the runtime's defaults. Explicit `cpu` uses the public specialization
+API and requires `USE_OS_COREAI=1`; unavailable specialization raises an error.
+
+Each `CoreAISession` owns a single worker and asyncio runner for loading,
+inference, and cleanup. This bridges Apple's async API to the SDK's synchronous
+`run` contract without nesting the application's event loop. Accepted calls are
+serialized before close. Outputs are copied from NDArray storage before being
+returned. Load errors and cancellation release the executable context.
+
+The optional `coreai` extra pins Apple's `coreai-core` 1.0.0b2 Python bindings.
+These native dependencies are optional and add no load or memory cost to other
+providers. Download size and loaded memory depend on the platform wheel/model;
+no fixed footprint is assumed. Apple framework and binary package terms apply;
+converted model distribution remains subject to the source model's license.
+
+The native loader requires the `.aimodel` extension. For canonical SDK artifact
+paths without this suffix, the session retains a temporary `.aimodel` directory
+of symlinks to the original contents. It releases this view after native cleanup;
+model bytes are neither copied nor renamed.

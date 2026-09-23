@@ -661,3 +661,67 @@ The SDK and Web architecture meet at public capability, schema, catalog,
 resource, and instance APIs. The cross-layer rules are documented in
 [`apps/web/README.md`](../../apps/web/README.md); business behavior must not leak
 back into this package.
+
+## Apple Core AI
+
+Install the optional runtime on Apple Silicon macOS:
+
+```bash
+pip install 'hugging-mac-sdk[coreai]'
+```
+
+Core AI is available through `CoreAIProvider` and the default runtime registry.
+It loads Core AI asset directories and returns NumPy outputs. Model packages
+must declare their own `coreai` runtime, `ArtifactFormat.COREAI` directory
+artifact, and task adapter before it can be selected through `ModelSdk`.
+Adding the provider does not automatically convert existing catalog models.
+
+For PyTorch conversion, use a separate Python 3.12 environment because Apple's
+converter requires PyTorch >=2.8 while existing model extras pin PyTorch 2.7:
+
+```bash
+python3.12 -m venv .venv-coreai
+.venv-coreai/bin/pip install -e './packages/hugging_mac_sdk[coreai]' 'coreai-torch==0.4.2'
+```
+
+From the repository root, the following example converts a PyTorch module and
+runs the resulting model:
+
+```python
+import asyncio
+from pathlib import Path
+import torch
+from hugging_mac_sdk import CoreAIProvider, convert_pytorch_to_coreai
+
+model = torch.nn.Linear(4, 2).eval()
+sample = torch.ones(1, 4)
+path = convert_pytorch_to_coreai(
+    model,
+    Path('linear.aimodel'),
+    example_inputs=(sample,),
+    input_names=['x'],
+    output_names=['y'],
+)
+
+async def main():
+    session = await CoreAIProvider().create_session(path, device='auto', options={})
+    try:
+        result = await asyncio.to_thread(session.run, {'x': sample.numpy()})
+        print(result['y'])
+    finally:
+        await session.close()
+
+asyncio.run(main())
+```
+
+For checkpoint models, reconstruct the PyTorch module and load its weights first.
+The helper also accepts a `torch.export.ExportedProgram`. To use the SDK's
+conversion service with a saved `.pt2` file, register `PyTorchCoreAIConverter()`
+in your `ConverterRegistry` and request `PYTORCH` → `COREAI`. Conversion depends
+on Apple's supported operator set; unsupported models report converter errors.
+Existing outputs are preserved unless `overwrite=True` is supplied.
+
+See Apple's [conversion documentation](https://apple.github.io/coreai-torch/main/)
+and [runtime reference](https://apple.github.io/coreai-torch/main/coreai-core/api/coreai.html)
+for platform requirements and the current beta APIs. CPU specialization requires
+`USE_OS_COREAI=1`; automatic execution uses the installed runtime's defaults.

@@ -79,9 +79,7 @@ class PPDocLayoutV3Converter(ModelConverter):
             with contextlib.suppress(FileNotFoundError):
                 shutil.rmtree(staging)
 
-    def _convert(
-        self, source: Path, output: Path, options: PPDocLayoutV3ConversionOptions
-    ) -> None:
+    def _convert(self, source: Path, output: Path, options: PPDocLayoutV3ConversionOptions) -> None:
         try:
             torch = importlib.import_module("torch")
             coremltools = importlib.import_module("coremltools")
@@ -142,9 +140,7 @@ class PPDocLayoutV3Converter(ModelConverter):
                 value = self.original.value_proj(encoder_hidden_states)
                 if attention_mask is not None:
                     value = value.masked_fill(~attention_mask[..., None], 0.0)
-                value = value.reshape(
-                    batch_size, sequence_length, self.num_heads, head_width
-                )
+                value = value.reshape(batch_size, sequence_length, self.num_heads, head_width)
                 point_count = self.num_levels * self.num_points
                 offsets = self.original.sampling_offsets(hidden_states).reshape(
                     batch_size, num_queries, self.num_heads, point_count, 2
@@ -155,18 +151,15 @@ class PPDocLayoutV3Converter(ModelConverter):
                     ),
                     dim=-1,
                 )
-                centers = reference_points[:, :, :1, :2].expand(
-                    -1, -1, self.num_levels, -1
-                )
-                sizes = reference_points[:, :, :1, 2:].expand(
-                    -1, -1, self.num_levels, -1
-                )
+                centers = reference_points[:, :, :1, :2].expand(-1, -1, self.num_levels, -1)
+                sizes = reference_points[:, :, :1, 2:].expand(-1, -1, self.num_levels, -1)
                 centers = centers.repeat_interleave(self.num_points, dim=2)
                 sizes = sizes.repeat_interleave(self.num_points, dim=2)
-                sampling_grids = 2.0 * (
-                    centers.unsqueeze(2)
-                    + offsets / self.num_points * sizes.unsqueeze(2) * 0.5
-                ) - 1.0
+                sampling_grids = (
+                    2.0
+                    * (centers.unsqueeze(2) + offsets / self.num_points * sizes.unsqueeze(2) * 0.5)
+                    - 1.0
+                )
                 split_sizes = [height * width for height, width in spatial_shapes_list]
                 values = value.split(split_sizes, dim=1)
                 sampled: list[Any] = []
@@ -178,9 +171,7 @@ class PPDocLayoutV3Converter(ModelConverter):
                         .reshape(batch_size * self.num_heads, head_width, height, width)
                     )
                     start = level * self.num_points
-                    level_grid = sampling_grids[
-                        :, :, :, start : start + self.num_points
-                    ]
+                    level_grid = sampling_grids[:, :, :, start : start + self.num_points]
                     level_grid = level_grid.transpose(1, 2).flatten(0, 1)
                     sampled.append(
                         torch.nn.functional.grid_sample(
@@ -217,12 +208,51 @@ class PPDocLayoutV3Converter(ModelConverter):
             (800 // stride, 800 // stride) for stride in model.config.feat_strides
         )
         anchors, valid_mask = model.model.generate_anchors(spatial_shapes)
+        # The upstream float32-max sentinel becomes infinity when Core ML
+        # lowers constants to FP16. Invalid anchors only need a large logit.
+        anchors = torch.where(valid_mask, anchors, torch.full_like(anchors, 10_000.0))
         model.model.register_buffer("anchors", anchors)
         model.model.register_buffer("valid_mask", valid_mask)
         object.__setattr__(model.model.config, "anchor_image_size", [800, 800])
         modeling = importlib.import_module(
             "transformers.models.pp_doclayout_v3.modeling_pp_doclayout_v3"
         )
+
+        def coreml_mask_to_box_coordinate(mask: Any, dtype: Any) -> Any:
+            """Keep the upstream mask-to-box math finite after FP16 lowering."""
+
+            mask = mask.bool()
+            height, width = mask.shape[-2:]
+            y_coords, x_coords = torch.meshgrid(
+                torch.arange(height, device=mask.device),
+                torch.arange(width, device=mask.device),
+                indexing="ij",
+            )
+            x_coords = x_coords.to(dtype)
+            y_coords = y_coords.to(dtype)
+            x_coords_masked = x_coords * mask
+            y_coords_masked = y_coords * mask
+            sentinel = torch.tensor(10_000.0, device=mask.device, dtype=dtype)
+            x_min = torch.where(mask, x_coords_masked, sentinel).flatten(-2).min(-1).values
+            y_min = torch.where(mask, y_coords_masked, sentinel).flatten(-2).min(-1).values
+            x_max = x_coords_masked.flatten(-2).max(-1).values + 1
+            y_max = y_coords_masked.flatten(-2).max(-1).values + 1
+            unnormalized_bbox = torch.stack([x_min, y_min, x_max, y_max], dim=-1)
+            non_empty = torch.any(mask, dim=(-2, -1)).unsqueeze(-1)
+            unnormalized_bbox = unnormalized_bbox * non_empty
+            scale = torch.tensor([width, height, width, height], device=mask.device, dtype=dtype)
+            x_min, y_min, x_max, y_max = (unnormalized_bbox / scale).unbind(-1)
+            return torch.stack(
+                [
+                    (x_min + x_max) / 2,
+                    (y_min + y_max) / 2,
+                    x_max - x_min,
+                    y_max - y_min,
+                ],
+                dim=-1,
+            )
+
+        modeling.mask_to_box_coordinate = coreml_mask_to_box_coordinate
         for projection_index, aifi in zip(
             model.config.encode_proj_layers, model.model.encoder.aifi, strict=True
         ):
@@ -244,18 +274,12 @@ class PPDocLayoutV3Converter(ModelConverter):
                 traced = torch.jit.trace(wrapper, example, strict=False, check_trace=False)
                 traced = torch.jit.freeze(traced)
             precision = (
-                coremltools.precision.FLOAT16
-                if options.half
-                else coremltools.precision.FLOAT32
+                coremltools.precision.FLOAT16 if options.half else coremltools.precision.FLOAT32
             )
             converted = coremltools.convert(
                 traced,
                 convert_to="mlprogram",
-                inputs=[
-                    coremltools.TensorType(
-                        name="pixel_values", shape=(1, 3, 800, 800)
-                    )
-                ],
+                inputs=[coremltools.TensorType(name="pixel_values", shape=(1, 3, 800, 800))],
                 outputs=[
                     coremltools.TensorType(name="logits"),
                     coremltools.TensorType(name="pred_boxes"),

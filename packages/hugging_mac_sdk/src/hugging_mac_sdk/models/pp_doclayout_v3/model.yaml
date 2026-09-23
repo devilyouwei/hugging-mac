@@ -56,6 +56,13 @@ artifacts:
   kind: directory
   path: paddlepaddle/pp-doclayout-v3/base/coreml/coreml-fp16
   required_files: [model.mlpackage/Manifest.json, metadata.json]
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/pp-doclayout-v3-coreml
+    allow_patterns:
+    - model.mlpackage/Manifest.json
+    - model.mlpackage/Data/**
+    - metadata.json
 extensions:
   pp_doclayout_v3:
     input_size: 800
