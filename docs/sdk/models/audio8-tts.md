@@ -11,30 +11,26 @@ cloning on compatible runtimes.
 - Variants: `0.1b-preview` (default), `0.6b-preview`
 - Runtimes: `pytorch` (default), `mlx`, `coreai`
 - Capabilities: `speech-synthesis` through `SpeechSynthesis`
-- Compatibility: both variants use CPU by default with PyTorch; `0.6b-preview` also supports MLX; `0.1b-preview` supports hybrid Core AI
+- Compatibility: both variants use CPU by default with PyTorch; `0.6b-preview` also supports MLX; `0.1b-preview` supports native Core AI
 - Platform: MLX requires Apple Silicon
 - Optional dependency set: `tts`
 
 ## Prepare resources
 
 The Core AI example below uses the 0.1B variant. Choose the same variant
-and runtime for preparation and loading. Preconverted graphs, retained CPU
-weights, and the shared tokenizer are published in
+and runtime for preparation and loading. Preconverted graphs and the shared tokenizer are published in
 [hugging-mac/audio8-tts-0.1b-coreai](https://huggingface.co/hugging-mac/audio8-tts-0.1b-coreai).
 If large-file transfer stalls on your network, set `HF_HUB_DISABLE_XET=1`
 before starting Python to use Hugging Face's standard HTTP download path.
 
 ## Example
 
-Use a separate Python 3.12 environment so the tested PyTorch version
-does not conflict with the application's existing model dependencies. From the
-repository root:
+For inference, PyTorch and Transformers are not needed. From the repository root:
 
 ```bash
 python3.12 -m venv .venv-audio8-coreai
 .venv-audio8-coreai/bin/pip install -e './packages/hugging_mac_sdk[coreai]' \
-  'torch==2.8.0' 'torchaudio==2.8.0' \
-  'transformers==4.57.5' safetensors soundfile
+  tokenizers scipy soundfile
 ```
 
 Download the published files explicitly, then load the same
@@ -65,14 +61,20 @@ asyncio.run(main())
 ```
 
 Core AI execution requires Apple Silicon and compatible Apple runtime support.
-This is a hybrid pipeline: acoustic codebook prediction and waveform decoding
-run in Core AI; text/semantic generation and reference-audio encoding run in
-PyTorch on CPU. It retains the PyTorch dependencies and source weights, so
-conversion increases disk use. It does not promise faster synthesis.
+Slow AR (Falcon-H1), fast acoustic codebook prediction, reference-audio encoding,
+and waveform decoding all run in Core AI. NumPy handles prompt arrays and
+sampling; the Rust tokenizer handles text, and SoundFile/SciPy load and resample
+reference audio. Persistent KV, convolution, and recurrent states stay in native
+sessions and reset between requests. Prompt tokens are ingested sequentially.
+The default `device="auto"` lets the runtime select accelerators; `cpu` is also
+available. Native conversion does not guarantee ANE placement or a speedup over
+the older hybrid build. Loading a current SDK requires downloading or converting
+the native build; existing hybrid files are kept separately.
 The shared tokenizer remains reusable across runtimes. Loading never downloads
 or converts a model. Pass `overwrite=True` to explicitly replace a conversion.
 
-Local conversion remains available: additionally install `coreai-torch==0.4.2`,
+Local conversion uses a separate environment with `coreai-torch==0.4.2`,
+`torch==2.8.0`, `torchaudio==2.8.0`, `transformers==4.57.5`, and `safetensors`;
 download resources with `runtime="pytorch"`, and call
 `sdk.resources.convert(model_id, ArtifactFormat.COREAI, variant="0.1b-preview", options=options)`
 after importing `ArtifactFormat` from `hugging_mac_sdk`. Download and conversion

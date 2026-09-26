@@ -99,25 +99,9 @@ def _create_coreai(options: dict[str, object]) -> Audio8TtsInstance:
     artifact = AUDIO8_TTS_CONFIG.get_artifact(
         COREAI_LAYOUT.target_artifact, variant=config.variant, runtime="coreai"
     )
-    source = _pytorch_artifact(config.variant)
-    path = config.source_path or artifact.resolve(config.model_home)
-    resources = Audio8TtsResourceResolver(
-        _pytorch_source(config.variant),
-        Audio8TtsInstanceConfig(
-            variant=config.variant,
-            model_home=config.model_home,
-            source_path=path / COREAI_LAYOUT.pytorch_directory,
-            tokenizer_path=config.tokenizer_path,
-            hf_token=config.hf_token,
-        ),
-        manifest=AUDIO8_TTS_MANIFEST,
-        artifact=source,
-        tokenizer_artifact=_tokenizer_artifact(artifact),
-        tokenizer_source=_tokenizer_source(artifact),
-    )
     return Audio8TtsInstance(
         config,
-        CoreAIAudio8TtsEngine(config, artifact, resources, COREAI_LAYOUT),
+        CoreAIAudio8TtsEngine(config, artifact, _tokenizer_artifact(artifact), COREAI_LAYOUT),
         AUDIO8_TTS_MANIFEST,
     )
 

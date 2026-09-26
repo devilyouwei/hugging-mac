@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
+import sys
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
@@ -19,12 +21,28 @@ from hugging_mac_sdk.errors import (
 from hugging_mac_sdk.models.audio8_tts import AUDIO8_TTS_DEFINITION, register_audio8_tts
 from hugging_mac_sdk.models.audio8_tts.coreai import _settled_thread
 from hugging_mac_sdk.models.audio8_tts.definition import COREAI_CONVERTER, COREAI_LAYOUT
-from hugging_mac_sdk.models.audio8_tts.utils.types import TtsEngineOutput
+from hugging_mac_sdk.models.audio8_tts.utils.types import CoreAINativeMetadata, TtsEngineOutput
 
 MODEL = AUDIO8_TTS_DEFINITION.manifest.model_id
 VARIANT = "0.1b-preview"
 TARGET = AUDIO8_TTS_DEFINITION.get_artifact("coreai", variant=VARIANT)
 SOURCE = AUDIO8_TTS_DEFINITION.get_artifact("pytorch", variant=VARIANT)
+
+
+def native_metadata():
+    return CoreAINativeMetadata(
+        sample_rate=44100,
+        frame_length=2048,
+        num_codebooks=3,
+        codebook_size=4,
+        semantic_begin_id=100,
+        max_seq_len=128,
+        ras_window_size=4,
+        ras_top_p=0.9,
+        ras_temperature=1.0,
+        slow_states={"keys": (1, 1, 1, 128, 2)},
+        fast_states={"keys": (1, 1, 1, 3, 2)},
+    )
 
 
 def populate(artifact, root: Path) -> Path:
@@ -157,6 +175,8 @@ async def test_failed_coreai_load_closes_partial_sessions(tmp_path, monkeypatch)
     instance = AUDIO8_TTS_DEFINITION.create(
         runtime="coreai", variant=VARIANT, options={"model_home": tmp_path}
     )
+    (tmp_path / COREAI_LAYOUT.config_file).write_text(native_metadata().model_dump_json())
+    monkeypatch.setattr("tokenizers.Tokenizer.from_file", lambda _: object())
     closed = []
 
     class Session:
@@ -201,35 +221,34 @@ async def test_cancelled_native_call_settles_before_releasing_lock():
     assert completed.is_set()
 
 
-def test_fast_cache_resets_between_frames_and_empty_audio(tmp_path):
-    torch = pytest.importorskip("torch")
+async def test_native_request_state_reset_and_empty_audio(tmp_path):
     engine = AUDIO8_TTS_DEFINITION.create(
         runtime="coreai", variant=VARIANT, options={"model_home": tmp_path}
     )._engine
-    seen = []
+    resets = []
+    engine._metadata = native_metadata()
+    engine._tokenizer = SimpleNamespace(encode=lambda *a, **kw: SimpleNamespace(ids=[1]))
 
-    def run(inputs):
-        seen.append(inputs["keys"].copy())
-        return {
-            "logits": np.zeros((1, 4), dtype=np.float32),
-            "new_keys": inputs["keys"] + 1,
-            "new_values": inputs["values"] + 1,
-        }
+    def reset(values):
+        resets.append({name: value.copy() for name, value in values.items()})
 
-    engine._fast = SimpleNamespace(run=run)
-    engine._codec = SimpleNamespace(run=lambda _: pytest.fail("Empty audio must not run the codec"))
-    engine._cpu._torch = torch
-    engine._cpu._model = SimpleNamespace(
-        config=SimpleNamespace(
-            n_fast_layer=2, fast_n_local_heads=1, num_codebooks=3, fast_head_dim=2
-        )
+    engine._slow = SimpleNamespace(
+        reset_state=reset,
+        run=lambda _: {
+            "logits": np.array([[0, 0, 0, 0, 9]], np.float32),
+            "hidden": np.zeros((1, 1, 2), np.float32),
+        },
     )
-    engine._fast_step(torch.zeros(1, 1, 4), 0)
-    engine._fast_step(torch.zeros(1, 1, 4), 1)
-    engine._fast_step(torch.zeros(1, 1, 4), 0)
-    assert [x.max() for x in seen] == [0, 1, 0]
-    waveform, lengths = engine._decode_audio(torch.empty(1, 3, 0, dtype=torch.long))
-    assert waveform.shape == (1, 0) and lengths.tolist() == [0]
+    engine._fast = SimpleNamespace(
+        reset_state=reset, run=lambda _: pytest.fail("EOS must not generate codebooks")
+    )
+    engine._codec = SimpleNamespace(run=lambda _: pytest.fail("Empty audio must not run the codec"))
+    for _ in range(2):
+        result = await engine.infer(SpeechSynthesisRequest(text="test", do_sample=False))
+        assert result.audio == b"" and result.generated_tokens == 0
+    assert len(resets) == 8
+    assert all(not value.any() for state in resets for value in state.values())
+    assert resets[2:4] == [{}, {}]
 
 
 @pytest.mark.smoke
@@ -241,7 +260,7 @@ async def test_managed_coreai_audio8_synthesis():
     sdk = ModelSdk()
     register_audio8_tts(sdk.registry)
     async with await sdk.load(
-        MODEL, runtime="coreai", variant=VARIANT, options={"model_home": root, "device": "cpu"}
+        MODEL, runtime="coreai", variant=VARIANT, options={"model_home": root, "device": "auto"}
     ) as handle:
         result = await handle.require(SpeechSynthesis).synthesize(
             SpeechSynthesisRequest(text="你好, 这是一个测试。", max_new_tokens=48, do_sample=False)
@@ -346,29 +365,31 @@ async def test_managed_coreai_graphs_match_pytorch():
     )
     keys, values = np.zeros(shape, np.float32), np.zeros(shape, np.float32)
     fast = await CoreAIProvider().create_session(
-        path / COREAI_LAYOUT.fast_graph, device="cpu", options={}
+        path / COREAI_LAYOUT.fast_graph, device="auto", options={}
     )
+    fast.reset_state({"keys": keys, "values": values})
     try:
         generator = torch.Generator().manual_seed(17)
         for position in range(config.num_codebooks):
+            token = torch.tensor([position + 3])
             hidden = torch.randn(1, 1, config.fast_dim, generator=generator)
+            if position:
+                hidden = model.fast_embeddings(token)[:, None].detach()
             with torch.inference_mode():
                 expected = model._fast_step(hidden, position).numpy()
             actual = fast.run(
                 {
                     "hidden": hidden.numpy(),
                     "position": np.asarray([position], np.int32),
-                    "keys": keys,
-                    "values": values,
+                    "token": token.numpy().astype(np.int32),
                 }
             )
-            keys, values = actual["new_keys"], actual["new_values"]
             np.testing.assert_allclose(actual["logits"], expected, rtol=1e-3, atol=1e-3)
     finally:
         await fast.close()
     codec = model.load_codec(device="cpu", dtype=torch.float32)
     decoder = await CoreAIProvider().create_session(
-        path / COREAI_LAYOUT.codec_graph, device="cpu", options={}
+        path / COREAI_LAYOUT.codec_graph, device="auto", options={}
     )
     try:
         for frames in (1, 8, 17):
@@ -379,6 +400,20 @@ async def test_managed_coreai_graphs_match_pytorch():
             np.testing.assert_allclose(actual["waveform"], expected, rtol=1e-3, atol=1e-3)
     finally:
         await decoder.close()
+
+    encoder = await CoreAIProvider().create_session(
+        path / COREAI_LAYOUT.encoder_graph, device="auto", options={}
+    )
+    try:
+        generator = torch.Generator().manual_seed(12)
+        for frames in (1, 8, 17):
+            audio = torch.randn(1, 1, config.codec_frame_size * frames, generator=generator) * 0.05
+            with torch.inference_mode():
+                expected = codec.encode(audio)[0].numpy()
+            actual = encoder.run({"audio": audio.numpy()})
+            np.testing.assert_array_equal(actual["codes"], expected)
+    finally:
+        await encoder.close()
 
 
 async def test_cancelled_conversion_does_not_publish(tmp_path, monkeypatch):
@@ -406,3 +441,129 @@ async def test_cancelled_conversion_does_not_publish(tmp_path, monkeypatch):
         await task
     assert (output / TARGET.required_files[0]).read_text() == "data"
     assert not list(output.parent.glob(".audio8-coreai-*"))
+
+
+@pytest.mark.smoke
+async def test_native_slow_prefill_and_decode_match_pytorch():
+    torch = pytest.importorskip("torch")
+    transformers = pytest.importorskip("transformers")
+    pytest.importorskip("coreai")
+    from hugging_mac_sdk.models.audio8_tts.torch import (
+        _install_falcon_h1_cache_compatibility,
+        _restore_falcon_h1_buffers,
+        _restore_rope_buffers,
+    )
+    from hugging_mac_sdk.runtime.coreai import CoreAIProvider
+
+    root = Path(__file__).resolve().parents[2] / "models"
+    path = TARGET.resolve(root)
+    if not path.is_dir() or not SOURCE.resolve(root).is_dir():
+        pytest.skip("Convert the managed Audio8 native artifact first")
+    metadata = CoreAINativeMetadata.model_validate_json(
+        (path / COREAI_LAYOUT.config_file).read_text()
+    )
+    _install_falcon_h1_cache_compatibility(transformers)
+    model = transformers.AutoModel.from_pretrained(
+        SOURCE.resolve(root), local_files_only=True, trust_remote_code=True, dtype=torch.float32
+    ).eval()
+    _restore_rope_buffers(torch, model)
+    _restore_falcon_h1_buffers(transformers, model)
+    session = await CoreAIProvider().create_session(
+        path / COREAI_LAYOUT.slow_graph, device="auto", options={}
+    )
+    try:
+        for _ in range(2):
+            session.reset_state(
+                {name: np.zeros(shape, np.float32) for name, shape in metadata.slow_states.items()}
+            )
+            model._setup_generation_caches(1, 128, torch.float32)
+            ids = torch.zeros(1, model.config.num_codebooks + 1, 8, dtype=torch.long)
+            ids[:, 0] = torch.arange(17, 25)
+            with torch.inference_mode():
+                expected, _ = model._slow_step(
+                    ids, torch.arange(8), torch.arange(8)[None], torch.ones(1, 8, dtype=torch.long)
+                )
+            for position in range(8):
+                actual = session.run(
+                    {
+                        "ids": ids[:, :, position : position + 1].numpy().astype(np.int32),
+                        "position": np.asarray([position], np.int32),
+                    }
+                )
+            np.testing.assert_allclose(actual["logits"], expected.numpy(), rtol=3e-3, atol=1e-3)
+            for position in range(8, 20):
+                ids = torch.zeros(1, model.config.num_codebooks + 1, 1, dtype=torch.long)
+                ids[:, 0] = model.config.semantic_begin_id + position
+                ids[:, 1:, 0] = torch.arange(model.config.num_codebooks) + position
+                pos = torch.tensor([position])
+                with torch.inference_mode():
+                    expected, _ = model._slow_step(
+                        ids, pos, pos[None], torch.ones(1, position + 1, dtype=torch.long)
+                    )
+                actual = session.run(
+                    {"ids": ids.numpy().astype(np.int32), "position": pos.numpy().astype(np.int32)}
+                )
+                np.testing.assert_allclose(actual["logits"], expected.numpy(), rtol=3e-3, atol=1e-3)
+    finally:
+        await session.close()
+
+    import tokenizers
+    from hugging_mac_sdk.models.audio8_tts.utils.coreai_generation import prompt_segments
+    from hugging_mac_sdk.resources.views import merged_directory_view
+
+    tokenizer_artifact = AUDIO8_TTS_DEFINITION.required_shared_artifacts(
+        runtime="coreai", variant=VARIANT
+    )[0]
+    tokenizer_path = tokenizer_artifact.resolve(root)
+    native_tokenizer = tokenizers.Tokenizer.from_file(str(tokenizer_path / "tokenizer.json"))
+    with merged_directory_view(SOURCE.resolve(root), (tokenizer_path,)) as view:
+        processor = transformers.AutoProcessor.from_pretrained(
+            view, local_files_only=True, trust_remote_code=True
+        )
+        for reference_text in (None, "你好, 世界。", "<|speaker:1|>你好"):
+            prefix, suffix = processor._prompt_segments(
+                "你好, 这是一个测试。", reference_text, reference_text is not None
+            )
+            native_prefix, native_suffix = prompt_segments(
+                native_tokenizer, "你好, 这是一个测试。", reference_text
+            )
+            assert prefix.tolist() == native_prefix and suffix.tolist() == native_suffix
+        inputs = processor(text=["你好, 这是一个测试。"], return_tensors="pt")
+        with torch.inference_mode():
+            expected_codes = model.generate(**inputs, max_new_tokens=16, do_sample=False).numpy()
+    engine = AUDIO8_TTS_DEFINITION.create(
+        runtime="coreai", variant=VARIANT, options={"model_home": root}
+    )._engine
+    await engine.load(await engine.resolve())
+    try:
+        decode = engine._codec.run
+        observed = []
+
+        def capture(inputs):
+            observed.append(inputs["codes"].copy())
+            return decode(inputs)
+
+        engine._codec.run = capture
+        await engine.infer(
+            SpeechSynthesisRequest(text="你好, 这是一个测试。", max_new_tokens=16, do_sample=False)
+        )
+        np.testing.assert_array_equal(observed[0], expected_codes)
+    finally:
+        await engine.close()
+
+
+@pytest.mark.smoke
+def test_native_pipeline_without_pytorch_imports(tmp_path):
+    pytest.importorskip("coreai")
+    root = Path(__file__).resolve().parents[2] / "models"
+    if not TARGET.resolve(root).is_dir():
+        pytest.skip("Convert the managed Audio8 native artifact first")
+    worker = Path(__file__).with_name("_audio8_native_worker.py")
+    result = subprocess.run(
+        [sys.executable, str(worker), str(root), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]
+    assert result.stdout.count("torch_imported False") == 3

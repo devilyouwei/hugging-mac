@@ -162,3 +162,10 @@ The native loader requires the `.aimodel` extension. For canonical SDK artifact
 paths without this suffix, the session retains a temporary `.aimodel` directory
 of symlinks to the original contents. It releases this view after native cleanup;
 model bytes are neither copied nor renamed.
+
+Core AI sessions also support persistent mutable graph state. Call
+`session.reset_state({name: numpy_array, ...})` before a new request using the
+state names declared during export. Subsequent `run()` calls reuse native NDArrays
+without copying whole caches back to the host; only named outputs are copied.
+State allocation, inference, reset, and close all execute on the session worker.
+Call `reset_state({})` to release request state without closing the loaded model.

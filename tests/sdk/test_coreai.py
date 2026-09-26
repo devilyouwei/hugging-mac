@@ -40,10 +40,17 @@ def native(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
     state.output = np.array([2.0, 4.0], dtype=np.float32)
 
-    async def infer(inputs: dict[str, Array]) -> dict[str, Array]:
-        assert asyncio.get_running_loop() is state.loop
+    runtime_state = state
+
+    async def infer(
+        inputs: dict[str, Array], state: dict[str, Array] | None = None
+    ) -> dict[str, Array]:
+        assert asyncio.get_running_loop() is runtime_state.loop
         assert inputs["x"].numpy().tolist() == [1.0, 2.0]
-        return {"y": Array(state.output)}
+        if state is not None:
+            state["counter"].value += 1
+            return {"y": state["counter"]}
+        return {"y": Array(runtime_state.output)}
 
     def load_function(name: str) -> object:
         state.function = name
@@ -53,12 +60,12 @@ def native(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
     @asynccontextmanager
     async def executable(options: object):
-        state.loop = asyncio.get_running_loop()
+        opened_loop = state.loop = asyncio.get_running_loop()
         state.options = options
         try:
             yield SimpleNamespace(load_function=load_function)
         finally:
-            assert asyncio.get_running_loop() is state.loop
+            assert asyncio.get_running_loop() is opened_loop
             state.closed += 1
 
     asset = SimpleNamespace(executable=executable)
@@ -264,3 +271,28 @@ async def test_cancelled_load_releases_model_and_view(tmp_path: Path, native, mo
     assert native.closed == 1
     assert sessions[0]._view is None
     assert sessions[0]._runner is None
+
+
+async def test_native_state_persists_resets_and_is_session_local(tmp_path, native):
+    first = await CoreAIProvider().create_session(tmp_path, device="auto", options={})
+    second = await CoreAIProvider().create_session(tmp_path, device="auto", options={})
+    # Each session uses its own event loop; keep this fake's assertion in sync.
+    inputs = {"x": np.array([1.0, 2.0])}
+    try:
+        native.loop = first._runner.get_loop()
+        original = np.zeros(1, np.float32)
+        first.reset_state({"counter": original})
+        assert first.run(inputs)["y"].tolist() == [1]
+        assert first.run(inputs)["y"].tolist() == [2]
+        assert original.tolist() == [0]
+        first.reset_state({"counter": original})
+        assert first.run(inputs)["y"].tolist() == [1]
+        native.loop = second._runner.get_loop()
+        second.reset_state({"counter": original})
+        assert second.run(inputs)["y"].tolist() == [1]
+    finally:
+        await first.close()
+        await second.close()
+    assert first._state == second._state == {}
+    with pytest.raises(RuntimeError, match="closed"):
+        first.reset_state({})

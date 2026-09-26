@@ -39,6 +39,7 @@ class CoreAISession:
         self._context: Any = None
         self._function: Any = None
         self._runtime: Any = None
+        self._state: dict[str, Any] = {}
 
     @property
     def device(self) -> str:
@@ -84,8 +85,23 @@ class CoreAISession:
 
     async def _infer(self, inputs: Mapping[str, Any]) -> dict[str, Any]:
         arrays = {name: self._runtime.NDArray(value) for name, value in inputs.items()}
-        outputs = await self._function(arrays)
+        outputs = (
+            await self._function(arrays, state=self._state)
+            if self._state
+            else await self._function(arrays)
+        )
         return {name: value.numpy().copy() for name, value in outputs.items()}
+
+    def _reset_state(self, values: Mapping[str, Any]) -> None:
+        self._state = {name: self._runtime.NDArray(value.copy()) for name, value in values.items()}
+
+    def reset_state(self, values: Mapping[str, Any]) -> None:
+        """Replace persistent native state between requests on the session worker."""
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("Core AI session is closed")
+            future = self._executor.submit(self._reset_state, dict(values))
+        future.result()
 
     def _run(self, inputs: Mapping[str, Any]) -> dict[str, Any]:
         assert self._runner is not None
@@ -106,6 +122,7 @@ class CoreAISession:
         finally:
             self._context = None
             self._function = None
+            self._state = {}
             self._runtime = None
 
     def _cleanup_view(self) -> None:

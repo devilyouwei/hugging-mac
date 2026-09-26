@@ -1,11 +1,11 @@
-"""Architecture-aware Audio8 fast AR and codec decoder export to Core AI."""
+"""Architecture-aware export of every Audio8 neural stage to Core AI."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import importlib
-import shutil
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
@@ -18,8 +18,9 @@ from hugging_mac_sdk.errors import ResourceNotFoundError, UnsupportedRuntimeErro
 from hugging_mac_sdk.resources.hashing import directory_sha256, directory_size
 from hugging_mac_sdk.schemas.conversion import ArtifactFormat, ConversionRequest, ConversionResult
 
-from .utils.coreai_export import codec_decoder_module, fast_step_module
-from .utils.types import CoreAILayout
+from .utils.coreai_export import codec_decoder_module, codec_encoder_module, native_fast_step_module
+from .utils.coreai_slow import slow_step_module
+from .utils.types import CoreAILayout, CoreAINativeMetadata
 
 
 class Audio8TtsCoreAIConverter(ModelConverter):
@@ -83,18 +84,8 @@ class Audio8TtsCoreAIConverter(ModelConverter):
             staged = Path(temporary) / "artifact"
             staged.mkdir()
             self._build(source, staged)
-            retained = staged / self._layout.pytorch_directory
-            retained.mkdir(exist_ok=True)
-            for name in declaration.required_files:
-                destination = retained / name
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source / name, destination)
             if not artifact_available(target, staged):
                 raise ResourceNotFoundError("Audio8 Core AI conversion produced incomplete files")
-            retained = staged / self._layout.pytorch_directory
-            for name in declaration.required_files:
-                if not (retained / name).is_file():
-                    raise ResourceNotFoundError(f"Missing retained PyTorch file: {name}")
             digest, size = directory_sha256(staged), directory_size(staged)
             if cancelled.is_set():
                 raise RuntimeError("Audio8 Core AI conversion cancelled before publication")
@@ -138,26 +129,51 @@ class Audio8TtsCoreAIConverter(ModelConverter):
         config = model.config
         if config.slow_backbone != "falcon_h1":
             raise UnsupportedRuntimeError("This converter requires the Falcon-H1 Audio8 variant")
-        shape = (
-            config.n_fast_layer,
-            1,
-            config.fast_n_local_heads,
-            config.num_codebooks,
-            config.fast_head_dim,
+        model.requires_grad_(False)
+        slow = slow_step_module(model, config.max_seq_len)
+        fast = native_fast_step_module(model)
+        slow_names = ("keys", "values", "conv", "ssm")
+        fast_names = ("keys", "values")
+        metadata = CoreAINativeMetadata(
+            sample_rate=config.codec_sample_rate,
+            frame_length=config.codec_frame_size,
+            num_codebooks=config.num_codebooks,
+            codebook_size=config.codebook_size,
+            semantic_begin_id=config.semantic_begin_id,
+            max_seq_len=config.max_seq_len,
+            ras_window_size=config.ras_window_size,
+            ras_top_p=config.ras_top_p,
+            ras_temperature=config.ras_temperature,
+            slow_states={name: tuple(getattr(slow, name).shape) for name in slow_names},
+            fast_states={name: tuple(getattr(fast, name).shape) for name in fast_names},
+        )
+        (output / self._layout.config_file).write_text(
+            json.dumps(metadata.model_dump(), indent=2) + "\n"
         )
         convert_pytorch_to_coreai(
-            fast_step_module(model),
+            slow,
+            output / self._layout.slow_graph,
+            example_inputs=(
+                torch.zeros(1, config.num_codebooks + 1, 1, dtype=torch.int32),
+                torch.tensor([0], dtype=torch.int32),
+            ),
+            input_names=["ids", "position"],
+            output_names=["logits", "hidden"],
+            state_names=slow_names,
+        )
+        convert_pytorch_to_coreai(
+            fast,
             output / self._layout.fast_graph,
             example_inputs=(
                 torch.zeros(1, 1, config.fast_dim),
-                torch.tensor([0], dtype=torch.int64),
-                torch.zeros(shape),
-                torch.zeros(shape),
+                torch.tensor([0], dtype=torch.int32),
+                torch.tensor([0], dtype=torch.int32),
             ),
-            input_names=["hidden", "position", "keys", "values"],
-            output_names=["logits", "new_keys", "new_values"],
+            input_names=["hidden", "token", "position"],
+            output_names=["logits"],
+            state_names=fast_names,
         )
-        codec = model.load_codec(device="cpu", dtype=torch.float32)
+        codec = model.load_codec(device="cpu", dtype=torch.float32).requires_grad_(False)
         convert_pytorch_to_coreai(
             codec_decoder_module(codec),
             output / self._layout.codec_graph,
@@ -167,4 +183,17 @@ class Audio8TtsCoreAIConverter(ModelConverter):
             },
             input_names=["codes"],
             output_names=["waveform"],
+        )
+        convert_pytorch_to_coreai(
+            codec_encoder_module(codec),
+            output / self._layout.encoder_graph,
+            example_inputs=(torch.zeros(1, 1, config.codec_frame_size * 8),),
+            dynamic_shapes={
+                "audio": {
+                    2: config.codec_frame_size
+                    * torch.export.Dim("frames", min=1, max=self._layout.codec_max_frames)
+                }
+            },
+            input_names=["audio"],
+            output_names=["codes"],
         )

@@ -73,9 +73,17 @@ def fast_step_module(model: Any) -> Any:
 
 
 def codec_decoder_module(codec: Any) -> Any:
-    """Export only codec decoding, replacing complex-valued RoPE construction."""
+    return _codec_module(codec, encode=False)
+
+
+def codec_encoder_module(codec: Any) -> Any:
+    return _codec_module(codec, encode=True)
+
+
+def _codec_module(codec: Any, *, encode: bool) -> Any:
+    """Export codec stages with real RoPE and integer shape arithmetic."""
     torch = importlib.import_module("torch")
-    original = codec.quantizer.post_module
+    original = codec.quantizer.pre_module if encode else codec.quantizer.post_module
 
     class PostTransformer(torch.nn.Module):  # type: ignore[misc, name-defined]
         def __init__(self) -> None:
@@ -145,4 +153,51 @@ def codec_decoder_module(codec: Any) -> Any:
             )
             return self.decoder(self.upsample(self.post(semantic + residual)))
 
-    return Decoder().eval()
+    class Encoder(torch.nn.Module):  # type: ignore[misc, name-defined]
+        def __init__(self) -> None:
+            super().__init__()
+            self.encoder = exportable(codec.encoder)
+            self.downsample = exportable(codec.quantizer.downsample)
+            self.pre = PostTransformer()
+            self.semantic = codec.quantizer.semantic_quantizer
+            self.residual = codec.quantizer.quantizer
+
+        def forward(self, audio: Any) -> Any:
+            z = self.pre(self.downsample(self.encoder(audio)))
+            semantic, semantic_codes = self.semantic(z)
+            _, residual_codes = self.residual(z - semantic)
+            return torch.cat((semantic_codes, residual_codes), dim=1).to(torch.int32)
+
+    return (Encoder() if encode else Decoder()).eval()
+
+
+def native_fast_step_module(model: Any) -> Any:
+    """Include embeddings and keep fast caches native between codebook steps."""
+    torch = importlib.import_module("torch")
+    config = model.config
+
+    class NativeFast(torch.nn.Module):  # type: ignore[misc, name-defined]
+        def __init__(self) -> None:
+            super().__init__()
+            self.step = fast_step_module(model)
+            self.embedding = model.fast_embeddings
+            shape = (
+                config.n_fast_layer,
+                1,
+                config.fast_n_local_heads,
+                config.num_codebooks,
+                config.fast_head_dim,
+            )
+            self.register_buffer("keys", torch.zeros(shape))
+            self.register_buffer("values", torch.zeros(shape))
+
+        def forward(self, hidden: Any, token: Any, position: Any) -> Any:
+            x = torch.where(position[0] == 0, hidden, self.embedding(token)[:, None])
+            keys = torch.where(position[0] == 0, 0.0, self.keys)
+            values = torch.where(position[0] == 0, 0.0, self.values)
+            logits, k, v = self.step(x, position, keys, values)
+            self.keys.copy_(k)
+            self.values.copy_(v)
+            return logits
+
+    return NativeFast().eval().requires_grad_(False)

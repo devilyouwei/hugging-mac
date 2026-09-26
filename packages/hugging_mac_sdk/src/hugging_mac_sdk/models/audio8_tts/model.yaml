@@ -27,7 +27,7 @@ manifest:
     dtypes: [float32]
     platforms: [darwin]
     architectures: [arm64]
-    required_modules: [coreai, torch, torchaudio, transformers, safetensors, numpy, soundfile]
+    required_modules: [coreai, numpy, tokenizers, scipy, soundfile]
   default_runtime: pytorch
   variants:
   - name: 0.1b-preview
@@ -112,27 +112,28 @@ artifacts:
     - generation_config.json
     - codec.safetensors
     - model.safetensors
-- artifact_id: coreai-hybrid
+- artifact_id: coreai-native
   convert: true
   variant: 0.1b-preview
   runtime: coreai
   format: coreai
   kind: directory
-  path: audio8/audio8-tts-preview/0.1b-preview/coreai/coreai-hybrid
+  path: audio8/audio8-tts-preview/0.1b-preview/coreai/coreai-native
   required_files: [fast.aimodel/metadata.json, fast.aimodel/main.mlirb, fast.aimodel/main.hash,
     codec.aimodel/metadata.json, codec.aimodel/main.mlirb, codec.aimodel/main.hash,
-    pytorch/codec.pth, pytorch/config.json, pytorch/configuration_arktts.py, pytorch/generation_config.json,
-    pytorch/model.safetensors, pytorch/modeling_arktts.py, pytorch/modeling_arktts_codec.py,
-    pytorch/preprocessor_config.json, pytorch/processing_arktts.py, pytorch/processor_config.json]
+    slow.aimodel/metadata.json, slow.aimodel/main.mlirb, slow.aimodel/main.hash,
+    encoder.aimodel/metadata.json, encoder.aimodel/main.mlirb, encoder.aimodel/main.hash, runtime.json]
   required_shares: [tokenizer-0.1b]
   source:
     kind: huggingface
     repo_id: hugging-mac/audio8-tts-0.1b-coreai
     allow_patterns:
-    - 0.1b-preview/coreai/coreai-hybrid/fast.aimodel/**
-    - 0.1b-preview/coreai/coreai-hybrid/codec.aimodel/**
-    - 0.1b-preview/coreai/coreai-hybrid/pytorch/**
-    strip_prefix: 0.1b-preview/coreai/coreai-hybrid
+    - 0.1b-preview/coreai/coreai-native/fast.aimodel/**
+    - 0.1b-preview/coreai/coreai-native/codec.aimodel/**
+    - 0.1b-preview/coreai/coreai-native/slow.aimodel/**
+    - 0.1b-preview/coreai/coreai-native/encoder.aimodel/**
+    - 0.1b-preview/coreai/coreai-native/runtime.json
+    strip_prefix: 0.1b-preview/coreai/coreai-native
 - artifact_id: tokenizer-0.1b
   shared: true
   format: tokenizer
@@ -163,13 +164,15 @@ artifacts:
 extensions:
   audio8_tts_coreai:
     source_artifact: source
-    target_artifact: coreai-hybrid
+    target_artifact: coreai-native
     fast_graph: fast.aimodel
     codec_graph: codec.aimodel
-    pytorch_directory: pytorch
+    slow_graph: slow.aimodel
+    encoder_graph: encoder.aimodel
+    config_file: runtime.json
     codec_max_frames: 2048
     stages:
       fast_ar: coreai
       codec_decode: coreai
-      slow_ar: pytorch-cpu
-      reference_encode: pytorch-cpu
+      slow_ar: coreai
+      reference_encode: coreai
