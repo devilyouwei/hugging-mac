@@ -2,6 +2,7 @@
 
 from hugging_mac_sdk.capabilities.protocols import (
     Chat,
+    DecisionMaking,
     DocumentLayoutAnalysis,
     DocumentParsing,
     FaceDetection,
@@ -22,6 +23,7 @@ from hugging_mac_sdk.capabilities.protocols import (
 
 __all__ = [
     "Chat",
+    "DecisionMaking",
     "DocumentLayoutAnalysis",
     "DocumentParsing",
     "FaceDetection",

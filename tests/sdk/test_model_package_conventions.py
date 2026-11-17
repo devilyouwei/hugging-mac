@@ -100,6 +100,7 @@ def test_model_packs_do_not_import_other_model_packs() -> None:
         + DOCUMENT_LAYOUT_MODEL_PACKAGES
         + VAD_MODEL_PACKAGES
         + SPEECH_ENHANCEMENT_MODEL_PACKAGES
+        + ("d3", "vela")
     )
     for package_name in all_packages:
         package = MODEL_ROOT / package_name
@@ -471,3 +472,24 @@ def test_prebuilt_audio_coreml_models_follow_the_integration_layout() -> None:
 
         assert root_files >= REQUIRED_INTEGRATION_FILES | {"coreml.py", "resources.py"}
         assert not root_files & OLD_ROOT_IMPLEMENTATION_FILES
+
+
+def test_d3_follows_the_integration_layout() -> None:
+    package = MODEL_ROOT / "d3"
+    root_files = {path.name for path in package.iterdir() if path.is_file()}
+    assert root_files >= REQUIRED_INTEGRATION_FILES | {"torch.py", "coreai.py", "converter.py", "resources.py"}
+    assert not root_files & (
+        OLD_ROOT_IMPLEMENTATION_FILES | {"runtime.py", "preprocessing.py", "upstream.py", "demo.py"}
+    )
+    assert (package / "utils" / "__init__.py").is_file()
+    source = (package / "instance.py").read_text()
+    assert "Engine(Protocol)" in source
+    assert "self._engine" in source
+    assert "CoreAIProvider" not in source
+
+
+def test_all_model_packages_have_required_files_and_no_demo_entrypoints() -> None:
+    for manifest in MODEL_ROOT.glob("*/model.yaml"):
+        files = {path.name for path in manifest.parent.iterdir() if path.is_file()}
+        assert files >= REQUIRED_INTEGRATION_FILES, manifest.parent
+        assert not files & {"demo.py", "example.py", "sdk_validation.py"}, manifest.parent

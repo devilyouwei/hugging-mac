@@ -1,0 +1,14 @@
+The Vela decision readout in converter.py adapts the mathematical forward pass in
+vllm-sr/vela3-fast/vela3_encoder.py (Apache-2.0):
+https://huggingface.co/vllm-sr/vela3-fast/blob/fa60e3aa41132c60bf05a84cabfdced39cb6d4f7/vela3_encoder.py
+
+Changes: tensor inputs for marker positions and pooling, fixed-shape export,
+and no upstream batching or task dispatch. The upstream license is reproduced
+in licenses/vllm-sr-Apache-2.0.txt. Model weights are not included in this package.
+
+Vela 3.1 complete conversion, 2026-11-17:
+Original code and checkpoints: vllm-sr/vela3.1-fast, revision
+0ed6ed301fbbf0c312f11a13ad17e3a6f8887262, Apache-2.0.
+The complete upstream schema/decision heads, renderer, routing, LoRA operations
+and decoding are retained. Core AI uses dynamic component graphs and original
+FP32 weights in persistent state; no merging, quantization or retraining.

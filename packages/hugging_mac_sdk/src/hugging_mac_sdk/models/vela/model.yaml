@@ -1,0 +1,96 @@
+manifest:
+  schema_version: '1'
+  model_id: vllm-sr/vela
+  display_name: Vela 3.0
+  description: Vela3-fast decision backbone with PyTorch and dynamic Core AI runtimes.
+  tags: [decision-model, pytorch, coreai, text]
+  family: vela
+  capabilities: [decision-making]
+  source_url: https://huggingface.co/vllm-sr/vela3-fast
+  license: Apache-2.0
+
+  runtimes:
+  - name: pytorch
+    devices: [cpu]
+    dtypes: [float32]
+    platforms: [darwin, linux, win32]
+    architectures: [arm64, x86_64, amd64]
+    required_modules: [torch, transformers, safetensors, numpy]
+  - name: coreai
+    devices: [cpu, auto]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coreai, numpy, tokenizers]
+  default_runtime: pytorch
+  variants:
+  - name: 3-fast
+    display_name: Vela3-fast
+    description: Decision-only backbone; choice and noul over text or JSON state.
+    metadata:
+      response_model: vllm-sr/vela3-fast
+      dynamic_sequence_length: true
+      max_sequence_length: 32768
+  default_variant: 3-fast
+
+artifacts:
+- artifact_id: source
+  variant: 3-fast
+  runtime: pytorch
+  format: safetensors
+  kind: directory
+  path: vllm-sr/vela/3-fast/pytorch/source
+  required_files: [config.json, model.safetensors, configuration_ultrabert.py, modeling_ultrabert.py, ub_d3_common.py, vela3_encoder.py, LICENSE]
+  required_shares: [tokenizer]
+  source:
+    kind: huggingface
+    repo_id: vllm-sr/vela3-fast
+    allow_patterns:
+    - config.json
+    - model.safetensors
+    - configuration_ultrabert.py
+    - modeling_ultrabert.py
+    - ub_d3_common.py
+    - vela3_encoder.py
+    - LICENSE
+- artifact_id: coreai-fp32
+  convert: true
+  variant: 3-fast
+  runtime: coreai
+  format: coreai
+  kind: directory
+  path: vllm-sr/vela/3-fast/coreai/coreai-fp32
+  required_files: [model.aimodel/main.mlirb, model.aimodel/main.hash, model.aimodel/metadata.json, manifest.json, decision.json, LICENSE, NOTICE]
+  required_shares: [tokenizer]
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/vela3-fast-CoreAI
+    allow_patterns:
+    - model.aimodel/**
+    - manifest.json
+    - decision.json
+    - LICENSE
+    - NOTICE
+- artifact_id: tokenizer
+  shared: true
+  format: tokenizer
+  kind: directory
+  path: vllm-sr/vela/_shared/tokenizer
+  required_files: [tokenizer.json, tokenizer_config.json]
+  source:
+    kind: huggingface
+    repo_id: vllm-sr/vela3-fast
+    allow_patterns:
+    - tokenizer.json
+    - tokenizer_config.json
+extensions:
+  decision:
+    question_types: [choice, noul]
+    modalities: [text]
+    noul_criteria: false
+  vela_coreai:
+    source_artifact: source
+    target_artifact: coreai-fp32
+    export_sequence_length: 1024
+    max_sequence_length: 32768
+    decision_asset: model.aimodel

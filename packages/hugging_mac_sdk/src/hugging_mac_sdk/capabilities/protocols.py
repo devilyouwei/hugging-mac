@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from typing import Protocol, TypeVar
 
 from hugging_mac_sdk.schemas.chat import ChatRequest, ChatResponse, ChatStreamEvent
+from hugging_mac_sdk.schemas.decision import DecisionRequest, DecisionResponse, DecisionSupport
 from hugging_mac_sdk.schemas.detection import (
     DetectionRequest,
     DetectionResponse,
@@ -49,6 +50,14 @@ from hugging_mac_sdk.schemas.voice_activity import VoiceActivityRequest, VoiceAc
 
 RequestT = TypeVar("RequestT", contravariant=True)
 ResponseT = TypeVar("ResponseT", covariant=True)
+
+
+class DecisionMaking(Protocol):
+    """Make structured decisions from state, questions, and optional media."""
+
+    def decision_support(self) -> DecisionSupport: ...
+
+    async def decide(self, request: DecisionRequest) -> DecisionResponse: ...
 
 
 class ObjectDetection(Protocol):

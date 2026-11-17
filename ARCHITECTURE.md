@@ -31,6 +31,16 @@ import model instances, engines, or private model configuration.
 - `packages/hugging_mac_sdk` is a standalone Python package. It owns public task
   schemas, capabilities, model definitions, lifecycle, resource operations,
   conversion infrastructure, and runtime providers.
+- `packages/hugging_mac_conversion`, a standalone sibling package of the SDK, owns model authoring and Hub
+  publication. Independent model packages own their variant YAML and graph adapters;
+  shared exporters, storage, validation and Hub services receive model definitions.
+  Model-specific evaluation cases and adapters live beside each converter; shared
+  evaluation services own backend execution, metrics and reports. Project-local originals
+  live under `tmp/originals`, bundles under `tmp/conversions`, and evaluation reports
+  under `tmp/evaluations`; all are Git-ignored and outside Python packages. The uv
+  project owns its source, CLI, tests, lockfile and environment, isolating Apple converter
+  dependencies from the application workspace. It depends on the SDK; the SDK does not
+  import or package the conversion workbench.
 - `apps/web/backend` owns HTTP transport, local platform composition, App
   business services, catalog APIs, error mapping, and local metadata/media
   storage.

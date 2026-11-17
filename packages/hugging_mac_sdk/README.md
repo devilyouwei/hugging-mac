@@ -680,8 +680,8 @@ For PyTorch conversion, use a separate Python 3.12 environment because Apple's
 converter requires PyTorch >=2.8 while existing model extras pin PyTorch 2.7:
 
 ```bash
-python3.12 -m venv .venv-coreai
-.venv-coreai/bin/pip install -e './packages/hugging_mac_sdk[coreai]' 'coreai-torch==0.4.2'
+uv sync --project packages/hugging_mac_conversion --locked
+uv run --project packages/hugging_mac_conversion --locked python
 ```
 
 From the repository root, the following example converts a PyTorch module and
@@ -725,3 +725,37 @@ See Apple's [conversion documentation](https://apple.github.io/coreai-torch/main
 and [runtime reference](https://apple.github.io/coreai-torch/main/coreai-core/api/coreai.html)
 for platform requirements and the current beta APIs. CPU specialization requires
 `USE_OS_COREAI=1`; automatic execution uses the installed runtime's defaults.
+
+## Maintained conversion workbench
+
+Batch authoring and Hugging Face publication live in the sibling
+[`hugging_mac_conversion`](../hugging_mac_conversion/README.md) package. It has
+a uv-managed Apple conversion environment, independent model/variant packages, immutable build
+runs, numeric checks, and an SDK capability verification gate before publication to
+`hugging-mac`. Start with `hugging-mac-convert list`; Vela and D3 recipes are
+experimental until their real conversion and task-parity runs pass.
+
+### D3 PyTorch and Core AI
+
+Register `hugging_mac_sdk.models.d3.register_d3` with `ModelSdk`. Install the
+`d3` extra, download the original source through SDK resources, and select
+`runtime="pytorch"` (default). SDK resource conversion exports both Core AI stages;
+local checkpoints and converted bundles use `source_path` and `artifact_path`. Call `handle.require(DecisionMaking).decide(DecisionRequest(...))`
+for typed text/image/video decisions and runtime metadata. The internal bundle
+validator retains the upstream System One response contract. See the
+[model integration](src/hugging_mac_sdk/models/d3/readme.md) for ownership and limits.
+
+Run `python -m hugging_mac_conversion.models.d3.evaluation.sdk_validation --artifact-path <bundle>`
+for complete-response checks. The current dynamic candidate is **not approved
+for publication**: one confidence comparison fails despite matching choices.
+See the [conversion evaluation](../hugging_mac_conversion/src/hugging_mac_conversion/models/d3/evaluation/coreai-dynamic-2026-11-17.md)
+for results and limits. The existing Hub D3 export is not this dynamic candidate.
+
+## Vela decisions
+
+Register `hugging_mac_sdk.models.vela.register_vela` to use `vllm-sr/vela`,
+variant `3-fast`, with `pytorch` or `coreai`. Both implement `DecisionMaking`
+for choice/noul questions. The Core AI artifact supports direct download and
+SDK conversion from original weights. Install `vela` for PyTorch or
+`vela-coreai` for native inference. See the [usage guide](../../docs/sdk/models/vela.md)
+and [package contract](src/hugging_mac_sdk/models/vela/readme.md).

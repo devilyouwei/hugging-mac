@@ -44,6 +44,8 @@ models/*
 *.gguf
 *.mlmodel
 *.mlpackage/
+*.aimodel/
+*.pt2
 *.onnx
 *.pth
 *.pt

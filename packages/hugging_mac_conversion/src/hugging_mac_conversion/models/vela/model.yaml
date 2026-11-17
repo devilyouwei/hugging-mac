@@ -1,0 +1,64 @@
+name: vela
+default_variant: 3-fast
+sdk_validator: hugging_mac_conversion.models.vela.evaluation.sdk_validation:validate_conversion
+required_capabilities:
+- choice
+- noul
+- router_choice
+- router_set
+- span
+- relation
+- ner
+- span_sets
+- evidence
+- router_task_adapters
+- structured_state
+- multiple_questions
+- variable_sequence_length
+- variable_options
+- system_one_response
+- domain_adapter
+- factcheck_adapter
+- feedback_adapter
+- feedback_df_adapter
+variants:
+  3-fast:
+    source: vllm-sr/vela3-fast
+    target: hugging-mac/vela3-fast
+    probe:
+      packages: [transformers, safetensors]
+      description: Text choice/noul decision backbone and readout
+      sequence_length: 1024
+      dynamic_sequence_length: 32768
+      inputs:
+      - input_ids
+      - attention_mask
+      - option_positions
+      - pool_mask
+      output: logits
+      download_patterns:
+      - '*.json'
+      - '*.py'
+      - '*.safetensors'
+      - LICENSE*
+      - '*.txt'
+      ignore_patterns:
+      - '*_adapter.safetensors'
+      asset_patterns:
+      - '*token*json'
+      - config.json
+      - decision_config.json
+      - LICENSE*
+  3_1-fast:
+    source: vllm-sr/vela3.1-fast
+    target: hugging-mac/vela3.1-fast
+    probe:
+      packages: [transformers, safetensors]
+      description: Dynamic Vela 3.1 decision graph; full conversion includes every upstream adapter
+      sequence_length: 1024
+      dynamic_sequence_length: 32768
+      inputs: [input_ids, attention_mask, option_positions, pool_mask]
+      output: logits
+      download_patterns: ['*']
+      ignore_patterns: []
+      asset_patterns: ['*.json', '*.py', 'LICENSE', 'SHA256SUMS']

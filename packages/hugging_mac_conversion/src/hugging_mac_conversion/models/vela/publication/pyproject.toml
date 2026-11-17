@@ -1,0 +1,16 @@
+[project]
+name = "vela3-fast-coreai-example"
+version = "0.1.0"
+description = "Experimental two-option Vela3-fast Core AI runtime examples"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "coreai-core==1.0.0b3",
+  "numpy==2.3.5",
+  "tokenizers==0.23.3",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = []

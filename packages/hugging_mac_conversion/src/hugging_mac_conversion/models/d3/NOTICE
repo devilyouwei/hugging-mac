@@ -1,0 +1,33 @@
+D3 conversion for hugging-mac, 2026.
+
+D3 text graph and input packing adapted from hugging-mac/d3-edge-CoreAI
+revision 61a6a13a44d8390a5cf72755a6f581238ca88740, Apache-2.0.
+That recipe credits Max Farrell's Core AI conversion at
+ffa8431fe8dd5209f3ec2c8bf59afc829ec96c31.
+Changes: packaged model/variant configuration, shared exporters, project-local
+storage, SDK runtime reuse, and model-owned evaluation integration.
+
+d3-edge Core AI text-only conversion for hugging-mac, 2026.
+New artifact converted locally from vllm-sr/d3-edge revision bee5e872f75b9c5d1405767bf244a6948b95c0af.
+Conversion and host adapter adapted from Max Farrell's Apache-2.0 recipe at ffa8431fe8dd5209f3ec2c8bf59afc829ec96c31.
+Changes: text-only graph and adapter; explicit source verification; bounded admission; full-duplex tests; Swift smoke test.
+No model training or fine-tuning was performed. Original BF16 text weights and FP32 readout retained.
+
+Original recipe NOTICE follows (its source revision describes the earlier recipe artifact):
+
+d3-edge (Decision 3.0)
+Copyright 2026 vLLM Semantic Router Team
+
+Built on Qwen/Qwen3.5-0.8B (Apache-2.0).
+
+Core AI conversion and host adapter by Max Farrell, 2026.
+Converted from vllm-sr/d3-edge at 18d61df78684675463af9ae732872478845c5a79.
+Upstream prompt formatting retained in d3_format.py.
+
+Dynamic conversion work, 2026-11-17:
+Gated DeltaNet recurrence adapted from Hugging Face Transformers 5.17.0,
+transformers/models/qwen3_5/modeling_qwen3_5.py (Apache-2.0).
+Changes: algebraically equivalent mean-based L2 normalization to avoid observed
+Core AI CPU normalization drift; exported dynamic while loop; no weight changes.
+Vision graph adapted from Max Farrell's recipe cited above; fixed 224-pixel
+positions replaced by upstream grid-dependent interpolation/position inputs.

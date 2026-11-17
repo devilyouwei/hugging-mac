@@ -21,6 +21,7 @@ The module contains no loading, downloading, inference, or transport behavior.
 | `model_structure.py` | Runtime-neutral component, tensor, layer, and operator summaries. |
 | `health.py` | Instance health state and optional failure message. |
 | `chat.py` | Chat messages, images, requests, responses, stream events, and timing. |
+| `decision.py` | Typed decision questions/answers, support declarations, per-question errors, media, usage, and timings. |
 | `detection.py` | Image input, detection request, boxes, faces, landmarks, and timing. |
 | `hand.py` | Hand detection request, handedness, boxes, and optional 21-point landmarks. |
 | `pose.py` | Pose keypoints and pose response; reuses `DetectionRequest`. |

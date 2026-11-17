@@ -39,12 +39,15 @@ models/<canonical_model>/
 ├── torch.py              # when PyTorch is implemented
 ├── mlx.py                # when MLX is implemented
 ├── coreml.py             # when Core ML is implemented
+├── coreai.py             # when Core AI is implemented
 ├── onnx.py               # when ONNX Runtime is implemented
 ├── converter.py          # when local conversion is implemented
 └── utils/                # model-private loaders, preprocessing, and types
 ```
 
-Files are added only when the integration uses them.
+Files are added only when the integration uses them. Demo programs and bundle
+acceptance tooling belong in documentation, tests, or the conversion package,
+not in the SDK model package.
 
 | File | Responsibility |
 | --- | --- |

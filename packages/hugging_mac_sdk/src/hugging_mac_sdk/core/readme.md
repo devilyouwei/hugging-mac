@@ -12,6 +12,7 @@ inference algorithm, framework session implementation, or application transport.
 | --- | --- |
 | `facade.py` | `ModelSdk` service composition and reference-counted `ModelHandle`. |
 | `registry.py` | Immutable `ModelDefinition`, semantic artifact lookup, and thread-safe model registration. |
+| `decision.py` | Shared decision capability validation, per-question dispatch, and result mapping. |
 | `config.py` | Parse and validate `model.yaml` as `ModelPackageConfig`. |
 | `runtime_policy.py` | Machine-aware runtime and device selection. |
 | `instance.py` | Instance state machine, capability registration, health, and lifecycle hooks. |

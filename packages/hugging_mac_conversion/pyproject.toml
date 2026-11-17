@@ -1,0 +1,51 @@
+[project]
+name = "hugging-mac-conversion"
+version = "0.1.0"
+description = "Model conversion, evaluation and Hub publication for Hugging Mac"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = "MIT"
+dependencies = [
+  "hugging-mac-sdk",
+  "huggingface-hub>=0.33,<2",
+  "pydantic>=2.11,<3",
+  "pyyaml>=6,<7",
+  "accelerate>=1,<2",
+  "coremltools==9.0",
+  "coreai-torch==0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "coreai-core==1.0.0b3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "numpy>=2,<2.4",
+  "safetensors>=0.5,<1",
+  "torch==2.14.0",
+  "transformers==5.17.0",
+  "torchvision>=0.29.2",
+  "opencv-python-headless>=5.0.0.93",
+]
+
+[project.scripts]
+hugging-mac-convert = "hugging_mac_conversion.__main__:main"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.16,<2",
+  "pytest>=8.4,<9",
+  "ruff>=0.12,<1",
+  "types-pyyaml>=6,<7",
+]
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hugging_mac_conversion"]
+
+[tool.uv.sources]
+hugging-mac-sdk = { path = "../hugging_mac_sdk", editable = true }
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-config --strict-markers -m 'not smoke'"
+markers = ["smoke: tests using real native conversion and runtime frameworks"]
+testpaths = ["tests"]
+pythonpath = ["src"]

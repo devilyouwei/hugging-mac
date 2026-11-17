@@ -1,0 +1,119 @@
+manifest:
+  schema_version: '1'
+  model_id: vllm-sr/d3
+  display_name: Decision 3.0
+  description: Original PyTorch and dynamic Core AI decisions for text, images and video.
+  tags: [decision-model, multimodal, pytorch, coreai]
+  family: d3
+  capabilities: [decision-making]
+  source_url: https://huggingface.co/vllm-sr/d3-edge
+  license: Apache-2.0
+
+  runtimes:
+  - name: pytorch
+    devices: [cpu]
+    dtypes: [bfloat16]
+    platforms: [darwin, linux, win32]
+    architectures: [arm64, x86_64, amd64]
+    required_modules: [torch, torchvision, transformers, safetensors, accelerate, numpy, cv2]
+  - name: coreai
+    devices: [cpu, auto]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coreai, numpy, torch, torchvision, transformers, cv2]
+  default_runtime: pytorch
+  variants:
+  - name: edge
+    display_name: D3-edge
+    metadata:
+      response_model: vllm-sr/d3-edge
+      dynamic_sequence_length: true
+      dynamic_vision_patches: true
+      maximum_answer_codes: 255
+  default_variant: edge
+
+artifacts:
+- artifact_id: source
+  variant: edge
+  runtime: pytorch
+  format: safetensors
+  kind: directory
+  path: vllm-sr/d3/edge/pytorch/source
+  required_files: [config.json, decision_config.json, model.safetensors.index.json, model-00001-of-00001.safetensors, readout.safetensors, d3_fast.py, d3_kernels.py, LICENSE, NOTICE]
+  required_shares: [tokenizer, processor, runtime]
+  source:
+    kind: huggingface
+    repo_id: vllm-sr/d3-edge
+    allow_patterns:
+    - config.json
+    - decision_config.json
+    - model.safetensors.index.json
+    - model-00001-of-00001.safetensors
+    - readout.safetensors
+    - d3_fast.py
+    - d3_kernels.py
+    - LICENSE
+    - NOTICE
+- artifact_id: coreai-fp32
+  convert: true
+  variant: edge
+  runtime: coreai
+  format: coreai
+  kind: directory
+  path: vllm-sr/d3/edge/coreai/coreai-fp32
+  required_files: [decision.aimodel/main.mlirb, decision.aimodel/main.hash, decision.aimodel/metadata.json, vision.aimodel/main.mlirb, vision.aimodel/main.hash, vision.aimodel/metadata.json, config.json, decision_config.json]
+  required_shares: [tokenizer, processor, runtime]
+- artifact_id: tokenizer
+  shared: true
+  format: tokenizer
+  kind: directory
+  path: vllm-sr/d3/_shared/tokenizer
+  required_files: [tokenizer.json, tokenizer_config.json, vocab.json, merges.txt, chat_template.jinja]
+  source:
+    kind: huggingface
+    repo_id: vllm-sr/d3-edge
+    allow_patterns:
+    - tokenizer.json
+    - tokenizer_config.json
+    - vocab.json
+    - merges.txt
+    - chat_template.jinja
+- artifact_id: processor
+  shared: true
+  format: tokenizer
+  kind: directory
+  path: vllm-sr/d3/_shared/processor
+  required_files: [preprocessor_config.json, video_preprocessor_config.json]
+  source:
+    kind: huggingface
+    repo_id: vllm-sr/d3-edge
+    allow_patterns:
+    - preprocessor_config.json
+    - video_preprocessor_config.json
+- artifact_id: runtime
+  shared: true
+  format: pytorch
+  kind: directory
+  path: vllm-sr/d3/_shared/runtime
+  required_files: [d3_runtime.py, d3_format.py]
+  source:
+    kind: huggingface
+    repo_id: vllm-sr/d3-edge
+    allow_patterns:
+    - d3_runtime.py
+    - d3_format.py
+extensions:
+  decision:
+    question_types: [choice, noul, score]
+    modalities: [text, image, video]
+    noul_criteria: true
+    max_choices: 255
+    max_score_levels: 10
+  d3_coreai:
+    source_artifact: source
+    target_artifact: coreai-fp32
+    export_sequence_length: 1024
+    max_sequence_length: 262144
+    decision_asset: decision.aimodel
+    vision_asset: vision.aimodel

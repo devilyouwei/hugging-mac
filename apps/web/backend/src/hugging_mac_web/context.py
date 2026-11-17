@@ -8,6 +8,7 @@ from hugging_mac_sdk import ModelSdk, RuntimePolicy
 from hugging_mac_sdk.converters import ConverterRegistry
 from hugging_mac_sdk.models.audio8_asr import register_audio8_asr
 from hugging_mac_sdk.models.audio8_tts import register_audio8_tts
+from hugging_mac_sdk.models.d3 import register_d3
 from hugging_mac_sdk.models.deepfilternet3 import register_deepfilternet3
 from hugging_mac_sdk.models.gemma_4 import register_gemma_4
 from hugging_mac_sdk.models.glm_ocr import register_glm_ocr
@@ -26,6 +27,7 @@ from hugging_mac_sdk.models.retinaface import register_retinaface
 from hugging_mac_sdk.models.sensevoice import register_sensevoice
 from hugging_mac_sdk.models.silero import register_silero
 from hugging_mac_sdk.models.unlimited_ocr import register_unlimited_ocr
+from hugging_mac_sdk.models.vela import register_vela
 from hugging_mac_sdk.models.yolov8 import register_yolov8
 from hugging_mac_sdk.models.yolov8_pose import register_yolov8_pose
 from hugging_mac_sdk.models.yolov8_seg import register_yolov8_seg
@@ -59,6 +61,7 @@ def create_context(settings: WebSettings) -> PlatformContext:
     converters = ConverterRegistry()
     register_audio8_asr(models.registry, converters)
     register_audio8_tts(models.registry, converters)
+    register_d3(models.registry, converters)
     register_deepfilternet3(models.registry)
     register_gemma_4(models.registry)
     register_glm_ocr(models.registry)
@@ -75,6 +78,7 @@ def create_context(settings: WebSettings) -> PlatformContext:
     register_sensevoice(models.registry, converters)
     register_silero(models.registry)
     register_unlimited_ocr(models.registry)
+    register_vela(models.registry, converters)
     register_yolov8(models.registry, converters)
     register_yolov8_pose(models.registry, converters)
     register_yolov8_seg(models.registry, converters)

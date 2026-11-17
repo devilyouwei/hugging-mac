@@ -1,0 +1,5 @@
+scope: diagnostic
+cases: [cases/decisions.json]
+atol: 0.02
+rtol: 0.02
+require_decision_agreement: true

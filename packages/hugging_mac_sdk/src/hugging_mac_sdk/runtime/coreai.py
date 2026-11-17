@@ -40,6 +40,7 @@ class CoreAISession:
         self._function: Any = None
         self._runtime: Any = None
         self._state: dict[str, Any] = {}
+        self._constant_inputs: dict[str, Any] = {}
 
     @property
     def device(self) -> str:
@@ -84,13 +85,30 @@ class CoreAISession:
         self._context = context
 
     async def _infer(self, inputs: Mapping[str, Any]) -> dict[str, Any]:
-        arrays = {name: self._runtime.NDArray(value) for name, value in inputs.items()}
+        if self._constant_inputs.keys() & inputs.keys():
+            raise ValueError("Inference cannot override cached constant inputs")
+        arrays = self._constant_inputs | {
+            name: self._runtime.NDArray(value) for name, value in inputs.items()
+        }
         outputs = (
             await self._function(arrays, state=self._state)
             if self._state
             else await self._function(arrays)
         )
         return {name: value.numpy().copy() for name, value in outputs.items()}
+
+    def _set_constant_inputs(self, values: Mapping[str, Any]) -> None:
+        self._constant_inputs = {
+            name: self._runtime.NDArray(value.copy()) for name, value in values.items()
+        }
+
+    def set_constant_inputs(self, values: Mapping[str, Any]) -> None:
+        """Cache owned read-only graph inputs, such as external immutable weights."""
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("Core AI session is closed")
+            future = self._executor.submit(self._set_constant_inputs, dict(values))
+        future.result()
 
     def _reset_state(self, values: Mapping[str, Any]) -> None:
         self._state = {name: self._runtime.NDArray(value.copy()) for name, value in values.items()}
@@ -123,6 +141,7 @@ class CoreAISession:
             self._context = None
             self._function = None
             self._state = {}
+            self._constant_inputs = {}
             self._runtime = None
 
     def _cleanup_view(self) -> None:

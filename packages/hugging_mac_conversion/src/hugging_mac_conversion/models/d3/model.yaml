@@ -1,0 +1,42 @@
+name: d3
+default_variant: edge
+sdk_validator: hugging_mac_conversion.models.d3.evaluation.sdk_validation:validate_bundle
+required_capabilities:
+- text
+- images
+- videos
+- choice
+- noul
+- score
+- multiple_questions
+- variable_sequence_length
+- variable_options
+- system_one_response
+variants:
+  edge:
+    source: vllm-sr/d3-edge
+    target: hugging-mac/d3-edge-CoreAI
+    probe:
+      packages: [transformers, safetensors]
+      description: Dynamic multimodal decision graph; original weights promoted to FP32 execution
+      sequence_length: 1024
+      dynamic_sequence_length: 262144
+      inputs:
+      - input_ids
+      - attention_mask
+      - position_ids
+      - visual_embeddings
+      - visual_mask
+      output: logits
+      download_patterns:
+      - '*.json'
+      - '*.py'
+      - '*.safetensors'
+      - LICENSE*
+      - '*.txt'
+      ignore_patterns: []
+      asset_patterns:
+      - '*token*json'
+      - config.json
+      - decision_config.json
+      - LICENSE*

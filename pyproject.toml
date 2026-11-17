@@ -138,6 +138,8 @@ default-groups = ["dev"]
 mlx-audio = { git = "https://github.com/Blaizzy/mlx-audio.git", rev = "223afd602c6d583455bdb9f181b91fc090f4aff9" }
 
 [tool.uv.workspace]
+# Conversion uses a separate uv lock/environment: Core AI needs torch >=2.8.
+exclude = ["packages/hugging_mac_conversion"]
 members = [
   "apps/web/backend",
   "packages/hugging_mac_sdk",

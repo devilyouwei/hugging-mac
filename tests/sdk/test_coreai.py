@@ -296,3 +296,19 @@ async def test_native_state_persists_resets_and_is_session_local(tmp_path, nativ
     assert first._state == second._state == {}
     with pytest.raises(RuntimeError, match="closed"):
         first.reset_state({})
+
+
+async def test_cached_inputs_are_owned_and_cannot_be_overridden(tmp_path: Path, native) -> None:
+    session = await CoreAIProvider().create_session(tmp_path, device="cpu", options={})
+    values = np.array([1.0, 2.0])
+    try:
+        session.set_constant_inputs({"x": values})
+        values[:] = 99
+        assert session.run({})["y"].tolist() == [2.0, 4.0]
+        with pytest.raises(ValueError, match="override"):
+            session.run({"x": values})
+    finally:
+        await session.close()
+    assert not session._constant_inputs
+    with pytest.raises(RuntimeError, match="closed"):
+        session.set_constant_inputs({"x": values})

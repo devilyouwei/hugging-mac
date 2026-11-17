@@ -22,6 +22,8 @@ MODEL_DOC_ROOT = DOC_ROOT / "sdk" / "models"
 MODEL_DOC_NAMES = {
     "audio8_asr": "audio8-asr.md",
     "audio8_tts": "audio8-tts.md",
+    "d3": "d3.md",
+    "vela": "vela.md",
     "deepfilternet3": "deepfilternet3.md",
     "gemma_4": "gemma-4.md",
     "got_ocr2": "got-ocr2.md",

@@ -1,0 +1,128 @@
+[
+  {
+    "id": "coding-en",
+    "capability": "choice",
+    "payload": {
+      "state": "Write a Python function.",
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software",
+          "cooking": "Food"
+        }
+      }
+    },
+    "expected": "coding"
+  },
+  {
+    "id": "cooking-zh",
+    "capability": "choice",
+    "payload": {
+      "state": "如何煮一碗面条？",
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software",
+          "cooking": "Food"
+        }
+      }
+    },
+    "expected": "cooking"
+  },
+  {
+    "id": "noul-positive",
+    "capability": "noul",
+    "payload": {
+      "state": "Python code",
+      "question": {
+        "type": "noul",
+        "instructions": "Is this about software?"
+      }
+    },
+    "expected": "true"
+  },
+  {
+    "id": "noul-negative",
+    "capability": "noul",
+    "payload": {
+      "state": "Boil pasta",
+      "question": {
+        "type": "noul",
+        "instructions": "Is this about software?"
+      }
+    },
+    "expected": "false"
+  },
+  {
+    "id": "score-positive",
+    "capability": "score",
+    "payload": {
+      "state": "Excellent!",
+      "question": {
+        "type": "score",
+        "instructions": "Rate sentiment.",
+        "criteria": [
+          "Negative",
+          "Positive"
+        ]
+      }
+    },
+    "expected": "1"
+  },
+  {
+    "id": "choice-three-zh",
+    "capability": "choice",
+    "payload": {
+      "state": "昨天的足球比赛中，球队打进了三个球。",
+      "question": {
+        "type": "choice",
+        "instructions": "选择内容所属的主题。",
+        "criteria": {
+          "coding": "编程与软件开发",
+          "cooking": "烹饪与菜谱",
+          "sports": "体育比赛"
+        }
+      }
+    },
+    "expected": "sports"
+  },
+  {
+    "id": "score-five-positive",
+    "capability": "score",
+    "payload": {
+      "state": "Absolutely perfect! I am extremely satisfied and would recommend it to everyone.",
+      "question": {
+        "type": "score",
+        "instructions": "Rate the sentiment.",
+        "criteria": [
+          "Very negative",
+          "Negative",
+          "Neutral",
+          "Positive",
+          "Very positive"
+        ]
+      }
+    },
+    "expected": "4"
+  },
+  {
+    "id": "structured-text",
+    "capability": "text",
+    "payload": {
+      "state": {
+        "user": "Please write a Python function to sort numbers."
+      },
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software development",
+          "cooking": "Food recipes"
+        }
+      }
+    },
+    "expected": "coding"
+  }
+]

@@ -1,0 +1,8 @@
+Vela SDK decision integration adapts rendering and readout from
+vllm-sr/vela3-fast (Apache-2.0):
+https://huggingface.co/vllm-sr/vela3-fast/blob/fa60e3aa41132c60bf05a84cabfdced39cb6d4f7/vela3_encoder.py
+https://huggingface.co/vllm-sr/vela3-fast/blob/fa60e3aa41132c60bf05a84cabfdced39cb6d4f7/ub_d3_common.py
+
+Changes: NumPy/tokenizers packing, Core AI export and execution, dynamic sequence
+inputs, and SDK lifecycle and capability adapters. No training or fine-tuning.
+Converted artifacts retain the upstream LICENSE alongside this NOTICE.

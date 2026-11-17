@@ -17,6 +17,7 @@ schemas. The module contains no lifecycle, resource, runtime, or transport logic
 
 | Capability | Method contract |
 | --- | --- |
+| `DecisionMaking` | `decision_support() -> DecisionSupport`; `decide(DecisionRequest) -> DecisionResponse` |
 | `ObjectDetection` | `detect(DetectionRequest) -> DetectionResponse` |
 | `FaceDetection` | `detect_faces(DetectionRequest) -> FaceDetectionResponse` |
 | `HandDetection` | `detect_hands(HandDetectionRequest) -> HandDetectionResponse` |
@@ -82,3 +83,27 @@ capability module defines only the callable contract.
 - HTTP, WebSocket, and SSE mapping belongs to the application layer.
 - A capability listed by a model manifest must be registered by every runtime
   instance that advertises that model definition.
+
+## Shared decision contract
+
+D3 and Vela implement the same `DecisionMaking` protocol. Query
+`decision_support()` for supported question types, media, choice/score limits,
+and custom noul descriptions; these facts come from `model.yaml` extensions.
+`choice` selects one label from any supported number of classes. `noul` returns
+the probability of the affirmative outcome. `score` returns the expected
+zero-based index of ordered levels. Models need not implement all three types.
+
+Requests accept typed `ChoiceQuestion`, `NoulQuestion`, and `ScoreQuestion` values
+or equivalent dictionaries. Choice label lists normalize to description mappings.
+Answers are `ChoiceAnswer`, `NoulAnswer`, `ScoreAnswer`, or `DecisionError`,
+discriminated by `type`; access fields as attributes (for example `.choice` or
+`.noul`). Use `model_dump(mode="json", exclude_none=True)` for JSON-compatible
+output. Confidence is optional and is not synthesized when a backend omits it.
+
+Malformed raw question items and unsupported model features produce per-question
+errors, preserving valid siblings and input ordering. Invalid request envelopes or
+explicitly constructed invalid typed questions raise schema validation errors.
+The shared dispatcher calls the backend once per accepted question, aggregates
+actual token usage and timings, and validates native results. Backend input
+`ValueError`s become per-question `invalid_question` errors; unexpected runtime
+failures raise `InferenceError`, and cancellation propagates unchanged.

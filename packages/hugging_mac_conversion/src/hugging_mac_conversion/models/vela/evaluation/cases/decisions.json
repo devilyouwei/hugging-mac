@@ -1,0 +1,193 @@
+[
+  {
+    "id": "coding-en",
+    "capability": "choice",
+    "payload": {
+      "state": "Write a Python function.",
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software",
+          "cooking": "Food"
+        }
+      }
+    },
+    "expected": "coding"
+  },
+  {
+    "id": "cooking-zh",
+    "capability": "choice",
+    "payload": {
+      "state": "如何煮一碗面条？",
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software",
+          "cooking": "Food"
+        }
+      }
+    },
+    "expected": "cooking"
+  },
+  {
+    "id": "noul-positive",
+    "capability": "noul",
+    "payload": {
+      "state": "Python code",
+      "question": {
+        "type": "noul",
+        "instructions": "Is this about software?"
+      }
+    },
+    "expected": "yes"
+  },
+  {
+    "id": "noul-negative",
+    "capability": "noul",
+    "payload": {
+      "state": "Boil pasta",
+      "question": {
+        "type": "noul",
+        "instructions": "Is this about software?"
+      }
+    },
+    "expected": "no"
+  },
+  {
+    "id": "coding-zh",
+    "capability": "choice",
+    "payload": {
+      "state": "请写一个Python函数，对数字列表进行排序。",
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software",
+          "cooking": "Food"
+        }
+      }
+    },
+    "expected": "coding"
+  },
+  {
+    "id": "cooking-en",
+    "capability": "choice",
+    "payload": {
+      "state": "How do I bake chocolate cookies?",
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software",
+          "cooking": "Food"
+        }
+      }
+    },
+    "expected": "cooking"
+  },
+  {
+    "id": "three-options",
+    "capability": "variable_options",
+    "payload": {
+      "state": "Write a Python function.",
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software",
+          "cooking": "Food",
+          "sports": "Athletics"
+        }
+      }
+    },
+    "expected": "coding"
+  },
+  {
+    "id": "one-option",
+    "capability": "variable_options",
+    "payload": {
+      "state": "Write a Python function.",
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software"
+        }
+      }
+    },
+    "expected": "coding"
+  },
+  {
+    "id": "structured-json",
+    "capability": "structured_state",
+    "payload": {
+      "state": {
+        "request": "Write Python code",
+        "language": "Python"
+      },
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software",
+          "cooking": "Food",
+          "sports": "Athletics"
+        }
+      }
+    },
+    "expected": "coding"
+  },
+  {
+    "id": "exact-129-tokens",
+    "capability": "variable_sequence_length",
+    "payload": {
+      "state": " code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code",
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software",
+          "cooking": "Food",
+          "sports": "Athletics"
+        }
+      }
+    },
+    "expected": "coding"
+  },
+  {
+    "id": "exact-1024-tokens",
+    "capability": "variable_sequence_length",
+    "payload": {
+      "state": " code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code",
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software",
+          "cooking": "Food",
+          "sports": "Athletics"
+        }
+      }
+    },
+    "expected": "coding"
+  },
+  {
+    "id": "exact-2048-tokens",
+    "capability": "variable_sequence_length",
+    "payload": {
+      "state": " code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code code",
+      "question": {
+        "type": "choice",
+        "instructions": "What is the topic?",
+        "criteria": {
+          "coding": "Software",
+          "cooking": "Food",
+          "sports": "Athletics"
+        }
+      }
+    },
+    "expected": "coding"
+  }
+]
