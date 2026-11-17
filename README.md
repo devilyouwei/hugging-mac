@@ -8,42 +8,103 @@
   <strong>Unleash the power of your Mac. Run AI models and build AI applications locally.</strong>
 </p>
 
-Hugging Mac is built to make full use of your Mac’s powerful computing resources—including its CPU, GPU, and Apple Neural Engine. It provides a unified local platform for running computer vision, speech and audio, large language, and multimodal models on Apple Silicon.
+Hugging Mac is built to make full use of your Mac’s powerful computing resources—including its CPU, GPU, and Apple Neural Engine. It provides a unified local platform for running computer vision, speech and audio, large language, and multimodal models on Apple Silicon. It also includes tools to convert models for Apple runtimes, validate their outputs, and publish converted artifacts to Hugging Face.
 
 Use the capabilities of these models to create useful, creative, and playful **_applications_**, **_games_**, **_agents_**, **_services_**, and entirely new local AI experiences. Your Mac keeps your data private and does all the work.
 
 ## Models
 
-Hugging Mac currently integrates 17 model families across vision, speech,
-language, and multimodal intelligence. Each integration exposes a consistent
+Hugging Mac currently provides 23 model integrations across vision, speech,
+language, document processing, and decision making. Each integration exposes a consistent
 local lifecycle while retaining the runtime choices that make sense for that
 model and Apple Silicon.
 
 | Model                                            | Capability                             | Supported runtimes                 |
 | ------------------------------------------------ | -------------------------------------- | ---------------------------------- |
 | **Audio8-ASR 0.1B**                              | Speech transcription                   | PyTorch MPS, Core ML               |
-| **Audio8 TTS Preview**                           | Speech synthesis                       | PyTorch, MLX                       |
+| **Audio8 TTS Preview**                           | Speech synthesis                       | PyTorch, MLX, Core AI               |
+| **Decision 3.0 (D3)**                            | Multimodal decision making             | PyTorch, Core AI (experimental)     |
 | **DeepFilterNet3**                               | Speech enhancement                     | Core ML                            |
 | **Gemma 4**                                      | Chat                                   | MLX                                |
+| **GLM-OCR**                                      | Document parsing                       | MLX                                |
+| **GOT-OCR2.0**                                   | Document parsing                       | MLX                                |
 | **Kokoro 82M v1.0**                              | Speech synthesis                       | PyTorch MPS, Core ML               |
 | **MediaPipe Hand Detection**                     | Hand detection and tracking            | ONNX Runtime, Core ML              |
 | **MOSS-TTS-Nano 100M**                          | Speech synthesis                       | MLX                                |
 | **Nemotron 3.5 ASR Streaming Multilingual 0.6B** | Streaming speech transcription         | Core ML                            |
+| **PP-DocLayoutV3**                              | Document layout analysis               | PyTorch MPS, Core ML               |
 | **Qwen3.5**                                      | Chat and vision-language generation    | MLX                                |
 | **Qwen3-ASR**                                    | Speech transcription                   | Core ML                            |
 | **Qwen3-TTS**                                    | Speech synthesis                       | MLX, Core ML                       |
 | **RetinaFace MobileNet0.25**                     | Face detection                         | PyTorch MPS, Core ML               |
 | **SenseVoiceSmall**                              | Speech transcription and understanding | PyTorch MPS, Core ML               |
 | **Silero VAD**                                   | Voice activity detection               | Core ML, ONNX Runtime              |
+| **Unlimited-OCR**                                | Document parsing                       | MLX                                |
+| **Vela3-fast**                                   | Decision making (choice/noul)           | PyTorch, Core AI                    |
 | **Ultralytics YOLOv8**                           | Object detection                       | PyTorch MPS, Core ML, ONNX Runtime |
 | **Ultralytics YOLOv8 Pose**                      | Pose estimation                        | PyTorch MPS, Core ML, ONNX Runtime |
 | **Ultralytics YOLOv8 Seg**                       | Instance segmentation                  | PyTorch MPS, Core ML, ONNX Runtime |
 
 Visit the [Hugging Mac organization on Hugging Face](https://huggingface.co/hugging-mac)
 to find converted weights and Apple-oriented model artifacts. Model contributions
-are welcome—even if you only help convert an existing model to Core ML, add an
+are welcome—even if you only help convert an existing model to Core ML or Core AI, add an
 MLX variant, benchmark a runtime, reduce memory use, or improve performance on
 Apple architectures.
+
+## Model conversion and Hugging Face publishing
+
+The Model SDK supports local conversion for model integrations that declare a
+conversion target. Prepare the original resources, call
+`sdk.resources.convert(model_id, target_format)`, then load the converted model
+through the same capability API. Available formats and conversion options depend
+on the model; see the [SDK model guides](docs/sdk/models/README.md).
+
+For model authors, the separate **Conversion Workbench** provides source snapshot
+downloads, Core ML / Core AI graph conversion, comparisons against original model
+outputs, SDK capability validation, and Hugging Face publishing. It currently
+contains D3 and Vela recipes, including a full Vela3.1-fast Core AI bundle workflow.
+
+Run the workbench in its own environment from the repository root. It has a
+separate lockfile because its export toolchain requires newer PyTorch versions
+than the application workspace:
+
+```bash
+uv sync --project packages/hugging_mac_conversion --locked
+uv run --project packages/hugging_mac_conversion --locked hugging-mac-convert list
+uv run --project packages/hugging_mac_conversion --locked hugging-mac-convert fetch vela --variant 3-fast
+uv run --project packages/hugging_mac_conversion --locked hugging-mac-convert probe vela --variant 3-fast --runtime coreai
+```
+
+`probe` tests an internal computation graph; its output is a diagnostic artifact,
+not a complete publishable model. Follow the model-specific build and evaluation
+steps in the [Vela conversion guide](packages/hugging_mac_conversion/src/hugging_mac_conversion/models/vela/readme.md)
+or [D3 conversion guide](packages/hugging_mac_conversion/src/hugging_mac_conversion/models/d3/readme.md).
+Original snapshots, converted bundles, and evaluation reports are stored under
+Git-ignored `tmp/originals`, `tmp/conversions`, and `tmp/evaluations`.
+
+For a complete bundle that passes the model's validation requirements, inspect
+the upload plan before publishing:
+
+```bash
+# Authenticate with an account that can write to the configured target repository.
+uv run --project packages/hugging_mac_conversion --locked hf auth login
+
+# Replace this with the complete build directory produced by the model recipe.
+RUN_DIR="tmp/conversions/<model>/<variant>/<runtime>/<run>"
+uv run --project packages/hugging_mac_conversion --locked hugging-mac-convert verify-sdk "$RUN_DIR"
+uv run --project packages/hugging_mac_conversion --locked hugging-mac-convert push "$RUN_DIR"
+uv run --project packages/hugging_mac_conversion --locked hugging-mac-convert push "$RUN_DIR" --execute
+```
+
+`push` defaults to a dry run. `--execute` uploads to the selected variant's
+configured Hugging Face repository, under its runtime directory. Authentication
+can also use `HF_TOKEN`. Publication checks artifact integrity, model capability
+coverage, and SDK validation; actual uploads rerun SDK validation. Incomplete,
+failed, or diagnostic-only bundles cannot be published through this workflow.
+
+See the [Conversion Workbench documentation](packages/hugging_mac_conversion/README.md)
+for setup, evaluation, and publishing details, and the
+[Hugging Mac organization](https://huggingface.co/hugging-mac) for published artifacts.
 
 ## Applications
 
@@ -91,9 +152,9 @@ levels, and scripts. Let us build playful games for the AI era together.
 ```mermaid
 flowchart TB
     Experience["Interfaces and Applications<br/>Web Studio · CLI · Apps · Games · Services · Agents"]
-    Capability["Capability API<br/>Detect · Segment · Transcribe · Synthesize · Chat · ..."]
+    Capability["Capability API<br/>Detect · Segment · Transcribe · Synthesize · Chat · Decide · ..."]
     Models["Model Layer<br/>Independent model packages · instances · resources"]
-    Runtime["Runtime and EP<br/>Core ML · MLX · PyTorch MPS · ONNX Runtime<br/>CPU · GPU · ANE"]
+    Runtime["Runtime and EP<br/>Core ML · Core AI · MLX · PyTorch · ONNX Runtime<br/>CPU · GPU · ANE"]
 
     Experience -->|compose capabilities| Capability
     Capability -->|stable contracts| Models
@@ -175,7 +236,8 @@ hugging-mac/
 │       ├── backend/              # FastAPI platform and app APIs
 │       └── frontend/             # Vue platform and app pages
 ├── packages/
-│   └── hugging_mac_sdk/          # Standalone model SDK
+│   ├── hugging_mac_sdk/          # Standalone model SDK
+│   └── hugging_mac_conversion/   # Isolated conversion, evaluation, and Hub publishing
 ├── configs/                      # Versioned configuration
 ├── data/                         # Local datasets, ignored by default
 ├── artifacts/                    # Generated outputs, ignored by default
