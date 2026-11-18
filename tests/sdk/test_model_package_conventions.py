@@ -91,17 +91,7 @@ def test_model_instances_compose_runtime_engines() -> None:
 
 
 def test_model_packs_do_not_import_other_model_packs() -> None:
-    all_packages = (
-        MODEL_PACKAGES
-        + ASR_MODEL_PACKAGES
-        + TTS_MODEL_PACKAGES
-        + LLM_MODEL_PACKAGES
-        + OCR_MODEL_PACKAGES
-        + DOCUMENT_LAYOUT_MODEL_PACKAGES
-        + VAD_MODEL_PACKAGES
-        + SPEECH_ENHANCEMENT_MODEL_PACKAGES
-        + ("d3", "vela")
-    )
+    all_packages = tuple(path.parent.name for path in MODEL_ROOT.glob("*/model.yaml"))
     for package_name in all_packages:
         package = MODEL_ROOT / package_name
         other_packages = set(all_packages) - {package_name}
@@ -173,9 +163,7 @@ def test_model_yaml_uses_unpinned_required_file_manifests() -> None:
             index for index, line in enumerate(lines) if line.startswith("  license:")
         )
         default_runtime_line = next(
-            index
-            for index, line in enumerate(lines)
-            if line.startswith("  default_runtime:")
+            index for index, line in enumerate(lines) if line.startswith("  default_runtime:")
         )
         artifacts_line = lines.index("artifacts:")
 
@@ -189,18 +177,18 @@ def test_model_yaml_uses_unpinned_required_file_manifests() -> None:
         assert lines[license_line + 2].startswith("  runtimes:"), (
             f"{yaml_path}: exactly one blank line must follow license"
         )
-        assert manifest_keys.index("runtimes") + 1 == manifest_keys.index(
-            "default_runtime"
-        ), f"{yaml_path}: default_runtime must immediately follow runtimes"
-        assert manifest_keys.index("default_runtime") + 1 == manifest_keys.index(
-            "variants"
-        ), f"{yaml_path}: variants must immediately follow default_runtime"
+        assert manifest_keys.index("runtimes") + 1 == manifest_keys.index("default_runtime"), (
+            f"{yaml_path}: default_runtime must immediately follow runtimes"
+        )
+        assert manifest_keys.index("default_runtime") + 1 == manifest_keys.index("variants"), (
+            f"{yaml_path}: variants must immediately follow default_runtime"
+        )
         assert lines[default_runtime_line + 1].startswith("  variants:"), (
             f"{yaml_path}: variants must have no blank line after default_runtime"
         )
-        assert manifest_keys.index("variants") + 1 == manifest_keys.index(
-            "default_variant"
-        ), f"{yaml_path}: default_variant must immediately follow variants"
+        assert manifest_keys.index("variants") + 1 == manifest_keys.index("default_variant"), (
+            f"{yaml_path}: default_variant must immediately follow variants"
+        )
         assert "\n\nartifacts:\n" in text, (
             f"{yaml_path}: manifest and artifacts must be separated by a blank line"
         )
@@ -216,7 +204,7 @@ def test_model_yaml_uses_unpinned_required_file_manifests() -> None:
                 "name",
                 "devices",
                 "dtypes",
-                *(('quantizations',) if "quantizations" in runtime else ()),
+                *(("quantizations",) if "quantizations" in runtime else ()),
                 "platforms",
                 "architectures",
                 "required_modules",
@@ -477,7 +465,12 @@ def test_prebuilt_audio_coreml_models_follow_the_integration_layout() -> None:
 def test_d3_follows_the_integration_layout() -> None:
     package = MODEL_ROOT / "d3"
     root_files = {path.name for path in package.iterdir() if path.is_file()}
-    assert root_files >= REQUIRED_INTEGRATION_FILES | {"torch.py", "coreai.py", "converter.py", "resources.py"}
+    assert root_files >= REQUIRED_INTEGRATION_FILES | {
+        "torch.py",
+        "coreai.py",
+        "converter.py",
+        "resources.py",
+    }
     assert not root_files & (
         OLD_ROOT_IMPLEMENTATION_FILES | {"runtime.py", "preprocessing.py", "upstream.py", "demo.py"}
     )

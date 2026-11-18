@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
@@ -37,6 +36,10 @@ class VelaCoreAIConverter(ModelConverter):
         return (
             request.model_id == self._package.manifest.model_id
             and request.variant in {v.name for v in self._package.manifest.variants}
+            and any(
+                a.variant == request.variant and a.runtime == "coreai" and a.convert
+                for a in self._package.artifacts
+            )
             and request.source_format is ArtifactFormat.SAFETENSORS
             and request.target_format is ArtifactFormat.COREAI
             and request.source.path.is_dir()
@@ -86,11 +89,6 @@ class VelaCoreAIConverter(ModelConverter):
             staged = Path(temporary) / "artifact"
             staged.mkdir()
             self._build(source, staged)
-            for license_name in ("NOTICE", "LICENSE"):
-                if (source / license_name).is_file():
-                    shutil.copyfile(source / license_name, staged / license_name)
-            if not (staged / "NOTICE").exists():
-                shutil.copyfile(Path(__file__).with_name("NOTICE"), staged / "NOTICE")
             if not artifact_available(target, staged):
                 raise ResourceNotFoundError("Vela conversion produced incomplete native assets")
             digest, size = directory_sha256(staged), directory_size(staged)

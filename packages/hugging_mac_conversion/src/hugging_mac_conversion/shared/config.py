@@ -36,7 +36,7 @@ class VariantConfig(FrozenConfig):
 class ModelConfig(FrozenConfig):
     name: Name
     default_variant: Name
-    sdk_validator: str = Field(pattern=r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*:[A-Za-z_]\w*$")
+    bundle_validator: str = Field(pattern=r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*:[A-Za-z_]\w*$")
     required_capabilities: tuple[str, ...] = Field(min_length=1)
     variants: dict[Name, VariantConfig]
 

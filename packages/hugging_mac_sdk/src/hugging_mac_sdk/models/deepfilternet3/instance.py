@@ -15,9 +15,9 @@ from hugging_mac_sdk.schemas.speech_enhancement import (
     SpeechEnhancementTimings,
 )
 
-from .audio import PreparedEnhancementAudio, encode_wav, prepare_audio
 from .config import DeepFilterNet3InstanceConfig
-from .dsp import EnhancementOutput
+from .utils.audio import PreparedEnhancementAudio, encode_wav, prepare_audio
+from .utils.dsp import EnhancementOutput
 
 
 class DeepFilterNet3Engine(Protocol):

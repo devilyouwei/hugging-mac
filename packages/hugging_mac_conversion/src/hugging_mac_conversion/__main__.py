@@ -16,7 +16,7 @@ from .shared.artifacts import (
 from .shared.evaluation.engine import evaluate
 from .shared.hub import download_source, resolve_revision
 from .shared.pipeline import build_probe, publish
-from .shared.validation import verify_sdk
+from .shared.validation import verify_bundle
 
 
 def main() -> None:
@@ -56,7 +56,9 @@ def main() -> None:
     evaluation.add_argument("--source-root", type=Path)
     evaluation.add_argument("--coreai-device", choices=["auto", "cpu"], default="auto")
     evaluation.add_argument("--output", type=Path, help="Defaults to <repository>/tmp/evaluations")
-    verify = commands.add_parser("verify-sdk", help="Run the owning model's SDK task-parity demo")
+    verify = commands.add_parser(
+        "verify-bundle", help="Run the owning model's native task-parity checks"
+    )
     verify.add_argument("run", type=Path)
     push = commands.add_parser("push", help="Inspect or publish a complete validated bundle")
     push.add_argument("run", type=Path)
@@ -110,8 +112,8 @@ def main() -> None:
                     "Legacy build report; rebuild with the current model configuration"
                 )
             definition = get_model(report["model"])
-            if args.command == "verify-sdk":
-                verify_sdk(definition, args.run, report)
+            if args.command == "verify-bundle":
+                verify_bundle(definition, args.run, report)
             else:
                 print(publish(definition, args.run, report, dry_run=not args.execute))
     except ValueError as error:

@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from hugging_mac_sdk.converters.coreai import convert_pytorch_to_coreai
-from hugging_mac_sdk.models.vela.utils.full_upstream import load_full_upstream
+
+from hugging_mac_conversion.models.vela.utils.full_upstream import load_full_upstream
+from hugging_mac_conversion.shared.coreai_export import convert_pytorch_to_coreai
 
 INPUTS = ("input_ids", "attention_mask", "q_index", "opt_index", "unit_index", "ent_index")
 OUTPUTS = ("logits", "span_logits")

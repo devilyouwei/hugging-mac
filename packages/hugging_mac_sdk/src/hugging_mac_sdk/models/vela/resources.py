@@ -159,8 +159,8 @@ class VelaResourceProvider:
     ) -> ModelResourceStatus:
         artifacts = tuple(
             item
-            for runtime in self._package.manifest.runtimes
-            for item in self._resolver(variant, runtime.name, options).status().artifacts
+            for artifact in self._package.get_artifacts(variant=variant)
+            for item in self._resolver(variant, str(artifact.runtime), options).status().artifacts
         )
         shares = self._package.get_artifacts(variant=variant, include_shared=True)
         config = VelaInstanceConfig.model_validate(dict(options or {}) | {"variant": variant})
@@ -216,8 +216,10 @@ class VelaResourceProvider:
     ) -> ModelResourceStatus:
         if target_format is not ArtifactFormat.COREAI:
             raise UnsupportedRuntimeError(f"Vela cannot convert to {target_format}")
-        source = self._package.get_artifact(shared=False, variant=variant, runtime="pytorch")
         target = self._package.get_artifact(shared=False, variant=variant, runtime="coreai")
+        if not target.convert:
+            raise UnsupportedRuntimeError("This Vela variant uses a prebuilt Core AI artifact")
+        source = self._package.get_artifact(shared=False, variant=variant, runtime="pytorch")
         resolver = self._resolver(variant, "pytorch", options)
         path = await resolver.resolve()
         assert source.source is not None
@@ -246,7 +248,7 @@ class VelaResourceProvider:
     ) -> ModelResourceStatus:
         if runtime is not None and runtime not in {r.name for r in self._package.manifest.runtimes}:
             raise UnsupportedRuntimeError(f"Vela does not support runtime {runtime}")
-        for entry in self._package.manifest.runtimes:
-            if runtime is None or entry.name == runtime:
-                await self._resolver(variant, entry.name, options).delete()
+        for artifact in self._package.get_artifacts(variant=variant):
+            if runtime is None or artifact.runtime == runtime:
+                await self._resolver(variant, str(artifact.runtime), options).delete()
         return await self.status(variant, options)

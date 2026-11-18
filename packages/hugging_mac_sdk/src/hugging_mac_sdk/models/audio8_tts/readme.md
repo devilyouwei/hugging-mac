@@ -20,7 +20,7 @@ Falcon-H1 cache constructor to the Transformers 5 lazy `DynamicCache`; this is
 kept local because the MLX dependency set requires Transformers 5. `mlx.py` owns
 MLX model loading, reference conditioning, and Apple GPU generation.
 
-`resources.py` and `mlx_resources.py` resolve the injected runtime artifact and
+`resources.py` and `utils/mlx_resources.py` resolve the injected runtime artifact and
 required reusable tokenizer files. Neither resolver chooses a model variant from
 hard-coded strings.
 

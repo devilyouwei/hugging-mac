@@ -12,16 +12,17 @@ from typing import Any, cast
 
 import numpy as np
 import torch
-from hugging_mac_sdk.models.vela.full import VelaFullCoreAI, decision_host
-from hugging_mac_sdk.models.vela.utils.full_host import adapter_files, make_host
-from hugging_mac_sdk.models.vela.utils.full_upstream import load_full_upstream
-from hugging_mac_sdk.models.vela.utils.validation import compare
+
+from hugging_mac_conversion.models.vela.evaluation.comparison import compare
+from hugging_mac_conversion.models.vela.utils.full_host import adapter_files, make_host
+from hugging_mac_conversion.models.vela.utils.full_upstream import load_full_upstream
+from hugging_mac_conversion.models.vela.utils.inference import VelaFullCoreAI, decision_host
 
 from ....registry import get_model
 from ....shared.artifacts import inventory, write_report
 from ....shared.hub import local_source
 from ....shared.validation import check_tensors, validate_bundle, validate_capability_coverage
-from ..components import sample_inputs
+from ..utils.components import sample_inputs
 from .full_cases import cases
 
 
@@ -186,17 +187,17 @@ def evaluate(source: Path, bundle: Path, output: Path, reference: Path | None = 
     }
     manifest["capability_coverage"] = coverage
     (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2))
-    sdk_validation = {
+    bundle_validation = {
         "passed": True,
         "samples": len(checks),
         "capability_coverage": coverage,
         "components_exercised": sorted(exercised),
     }
-    (bundle / "sdk_validation.json").write_text(json.dumps(sdk_validation, indent=2))
+    (bundle / "bundle_validation.json").write_text(json.dumps(bundle_validation, indent=2))
     build.update(
         status="validated",
-        sdk_integrated=True,
-        sdk_validation=sdk_validation,
+        bundle_verified=True,
+        bundle_validation=bundle_validation,
         capability_coverage=coverage,
         files=inventory(bundle),
     )

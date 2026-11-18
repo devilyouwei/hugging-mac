@@ -35,5 +35,5 @@ class ModelDefinition:
             "variant": variant,
             "settings": self.config.variant(variant).model_dump(mode="json"),
             "required_capabilities": list(self.config.required_capabilities),
-            "sdk_validator": self.config.sdk_validator,
+            "bundle_validator": self.config.bundle_validator,
         }

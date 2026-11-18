@@ -7,7 +7,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
-from hugging_mac_conversion.models.vela.components import (
+from hugging_mac_conversion.models.vela.evaluation.comparison import compare
+from hugging_mac_conversion.models.vela.utils.components import (
     INPUTS,
     OUTPUTS,
     ComponentGraph,
@@ -16,7 +17,6 @@ from hugging_mac_conversion.models.vela.components import (
     sample_inputs,
 )
 from hugging_mac_conversion.registry import get_model
-from hugging_mac_sdk.models.vela.utils.validation import compare
 
 
 def test_full_variant_does_not_filter_adapters() -> None:
@@ -60,8 +60,8 @@ def heads(net, hidden, qi, oi, ui, ei):
 
 @pytest.mark.smoke
 def test_immutable_weights_and_all_dynamic_axes(tmp_path: Path) -> None:
-    from hugging_mac_sdk.converters.coreai import convert_pytorch_to_coreai
-    from hugging_mac_sdk.runtime.coreai import CoreAIProvider
+    from hugging_mac_conversion.shared.coreai_export import convert_pytorch_to_coreai
+    from hugging_mac_conversion.shared.coreai_runtime import CoreAIProvider
 
     graph = ComponentGraph(Net().eval(), heads).eval()
     sample = sample_inputs()

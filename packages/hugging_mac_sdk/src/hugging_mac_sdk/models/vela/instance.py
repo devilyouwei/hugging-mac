@@ -7,12 +7,16 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from hugging_mac_sdk.capabilities import DecisionMaking
+from hugging_mac_sdk.capabilities import DecisionMaking, StructuredPrediction
 from hugging_mac_sdk.core.decision import execute_decisions
 from hugging_mac_sdk.core.instance import BaseModelInstance, ModelState
 from hugging_mac_sdk.errors import InferenceError
 from hugging_mac_sdk.schemas.decision import DecisionRequest, DecisionResponse, DecisionSupport
 from hugging_mac_sdk.schemas.manifest import ModelManifest
+from hugging_mac_sdk.schemas.structured_prediction import (
+    StructuredPredictionRequest,
+    StructuredPredictionResponse,
+)
 
 from .config import VelaInstanceConfig
 from .utils.preprocess import prepare_request
@@ -33,6 +37,7 @@ class VelaEngine(Protocol):
         images: Sequence[Any] | None = None,
         videos: Sequence[Any] | None = None,
     ) -> dict[str, Any]: ...
+    async def predict_structure(self, request: StructuredPredictionRequest) -> Any: ...
     async def close(self) -> None: ...
 
 
@@ -56,6 +61,7 @@ class VelaInstance(BaseModelInstance):
         self._manifest_model_id = manifest.model_id
         self._engine = engine
         self._inference_lock = asyncio.Lock()
+        self.register_capability(StructuredPrediction, cast(StructuredPrediction, self))  # type: ignore[type-abstract]
         self.register_capability(DecisionMaking, cast(DecisionMaking, self))  # type: ignore[type-abstract]
 
     async def _resolve(self) -> None:
@@ -95,3 +101,17 @@ class VelaInstance(BaseModelInstance):
                 raise
             except Exception as error:
                 raise InferenceError("Vela inference failed", cause=error) from error
+
+    async def predict_structure(
+        self, request: StructuredPredictionRequest
+    ) -> StructuredPredictionResponse:
+        async with self._inference_lock:
+            if self.state is not ModelState.READY:
+                raise InferenceError("Load the Vela instance before inference")
+            try:
+                result = await self._engine.predict_structure(request)
+                return StructuredPredictionResponse(result=result)
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                raise InferenceError("Vela structured prediction failed", cause=error) from error

@@ -80,7 +80,7 @@ def stage(build: Path, evaluation: Path, source: Path, output: Path) -> None:
         "source_revision": revision,
         "experimental": True,
         "complete_upstream_model": False,
-        "sdk_integrated": False,
+        "bundle_verified": False,
         "artifact_scope": "decision-only",
         "format": "Core AI .aimodel",
         "function": "main",

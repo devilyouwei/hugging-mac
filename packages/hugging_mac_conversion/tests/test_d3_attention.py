@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
-from hugging_mac_sdk.models.d3.utils.coreai_attention import recurrent_delta
+from hugging_mac_conversion.models.d3.utils.coreai_attention import recurrent_delta
 from transformers.models.qwen3_5.modeling_qwen3_5 import torch_chunk_gated_delta_rule
 
 
@@ -23,7 +23,7 @@ def test_native_dynamic_recurrence(tmp_path: Path) -> None:
     import asyncio
 
     from hugging_mac_conversion.shared.coreai import predict
-    from hugging_mac_sdk.converters.coreai import convert_pytorch_to_coreai
+    from hugging_mac_conversion.shared.coreai_export import convert_pytorch_to_coreai
 
     class Graph(torch.nn.Module):
         def forward(self, q, k, v, g, beta):

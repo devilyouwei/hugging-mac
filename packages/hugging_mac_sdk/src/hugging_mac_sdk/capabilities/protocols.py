@@ -42,6 +42,10 @@ from hugging_mac_sdk.schemas.streaming_transcription import (
     StreamingTranscriptionResponse,
     StreamingTranscriptionSession,
 )
+from hugging_mac_sdk.schemas.structured_prediction import (
+    StructuredPredictionRequest,
+    StructuredPredictionResponse,
+)
 from hugging_mac_sdk.schemas.transcription import (
     TranscriptionRequest,
     TranscriptionResponse,
@@ -184,3 +188,11 @@ class ImageTextSimilarity(Protocol[RequestT, ResponseT]):
     """Calculate image/text similarity scores."""
 
     async def similarity(self, request: RequestT) -> ResponseT: ...
+
+
+class StructuredPrediction(Protocol):
+    """Preserve model-native JSON task inputs and outputs without projecting fields."""
+
+    async def predict_structure(
+        self, request: StructuredPredictionRequest
+    ) -> StructuredPredictionResponse: ...

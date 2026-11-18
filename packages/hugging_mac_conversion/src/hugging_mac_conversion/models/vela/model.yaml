@@ -1,6 +1,6 @@
 name: vela
 default_variant: 3-fast
-sdk_validator: hugging_mac_conversion.models.vela.evaluation.sdk_validation:validate_conversion
+bundle_validator: hugging_mac_conversion.models.vela.evaluation.bundle_validation:validate_conversion
 required_capabilities:
 - choice
 - noul

@@ -26,15 +26,13 @@ retains the upstream BF16 backbone / FP32 readout policy.
 - `utils/adapter.py`, `utils/preprocess.py`, and `utils/upstream.py` contain private
   host processing and isolated loading of the bundle's upstream Python code.
 - `utils/coreai_export.py`, `utils/coreai_attention.py`, and `utils/coreai_vision.py`
-  own export graphs. The conversion workbench reuses these implementations.
+  own export graphs. The conversion package owns independent copies and does not import SDK internals.
 - `utils/execution.py` drains blocking work before propagating cancellation.
 - `utils/types.py` validates the immutable native asset layout.
 - `resources.py` validates local bundles, reports status, and deletes only the
   canonical managed artifact. External `artifact_path` bundles cannot be deleted.
-- The conversion package owns bundle validation in `evaluation/sdk_validation.py`
-  and release evaluation. SDK `NOTICE` and `LICENSE.upstream` retain attribution
-  for the relocated architecture code. Application
-  examples live in the public SDK documentation.
+- The conversion package owns native bundle evaluation independently. Public SDK
+  acceptance is in `tests/sdk/d3_bundle_validation.py`; application examples live in docs.
 
 ## Capability flow
 
@@ -90,7 +88,7 @@ uses the YAML-declared upstream source.
 
 Call `sdk.resources.convert("vllm-sr/d3", ArtifactFormat.COREAI, ...)` for SDK
 conversion. `register_d3(models, converters)` also registers the same converter
-with `ConverterRegistry`. Conversion requires the isolated conversion environment
+with `ConverterRegistry`. SDK conversion requires its own authoring dependencies
 with compatible Torch, Transformers, and `coreai-torch`, as with Audio8-TTS.
 It exports dynamic decision and vision graphs and copies only variant-owned
 configuration files. Shared files are not copied into the converted artifact.
@@ -110,7 +108,7 @@ policy, not a claimed hardware placement.
 
 The current conversion evaluation still has a confidence-parity failure. Offline
 contract tests do not establish native numerical parity or publication readiness.
-Run `python -m hugging_mac_conversion.models.d3.evaluation.sdk_validation --artifact-path <bundle>`
+Run `python tests/sdk/d3_bundle_validation.py --artifact-path <bundle>`
 for the explicit native bundle check. See the conversion package's D3 evaluation
 report for evidence and limits.
 

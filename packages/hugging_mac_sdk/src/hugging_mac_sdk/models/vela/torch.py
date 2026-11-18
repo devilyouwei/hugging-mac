@@ -6,6 +6,8 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
+from hugging_mac_sdk.schemas.structured_prediction import StructuredPredictionRequest
+
 from .config import VelaInstanceConfig
 from .resources import VelaResourceResolver
 from .utils.execution import run_blocking
@@ -46,6 +48,19 @@ class TorchVelaEngine:
             "answers": answers,
             "usage": {"input_tokens": tokens, "output_tokens": 0},
         }
+
+    async def predict_structure(self, request: StructuredPredictionRequest) -> Any:
+        if request.method == "predict":
+            if self._model is None:
+                raise RuntimeError("Vela PyTorch engine is not loaded")
+            answers, tokens = await run_blocking(
+                self._model.predict, request.state, request.questions
+            )
+            return [answers, tokens]
+        result = await self.infer(state=request.state, questions=request.questions)
+        if request.model is not None:
+            result["model"] = request.model
+        return result
 
     async def close(self) -> None:
         self._model = None

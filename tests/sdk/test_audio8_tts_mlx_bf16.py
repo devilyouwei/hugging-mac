@@ -15,7 +15,7 @@ from hugging_mac_sdk.models.audio8_tts import (
 )
 from hugging_mac_sdk.models.audio8_tts.config import Audio8TtsMlxInstanceConfig
 from hugging_mac_sdk.models.audio8_tts.instance import Audio8TtsInstance
-from hugging_mac_sdk.models.audio8_tts.mlx_resources import Audio8TtsMlxResourceResolver
+from hugging_mac_sdk.models.audio8_tts.utils.mlx_resources import Audio8TtsMlxResourceResolver
 from hugging_mac_sdk.models.audio8_tts.utils.types import TtsEngineOutput
 from hugging_mac_sdk.models.audio8_tts.utils.voices import VoiceStore
 from hugging_mac_sdk.schemas.resources import HuggingFaceSource

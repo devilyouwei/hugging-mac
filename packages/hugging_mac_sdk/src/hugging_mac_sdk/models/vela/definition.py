@@ -22,6 +22,16 @@ COREAI_LAYOUT = CoreAILayout.model_validate(VELA_CONFIG.extensions["vela_coreai"
 VELA_CONVERTER = VelaCoreAIConverter(VELA_CONFIG, COREAI_LAYOUT)
 
 
+def _decision_support(variant: str) -> DecisionSupport:
+    variants = VELA_CONFIG.extensions.get("decision_variants", {})
+    if not isinstance(variants, dict):
+        raise ValueError("decision_variants must be a mapping")
+    overrides = variants.get(variant, {})
+    if not isinstance(overrides, dict):
+        raise ValueError("Variant decision support must be a mapping")
+    return DecisionSupport.model_validate(DECISION_SUPPORT.model_dump() | overrides)
+
+
 def _create_coreai(options: dict[str, object]) -> VelaInstance:
     config = VelaInstanceConfig.model_validate(options | {"runtime": "coreai"})
     variant = VELA_MANIFEST.get_variant(config.variant)
@@ -38,9 +48,15 @@ def _create_coreai(options: dict[str, object]) -> VelaInstance:
     )
     return VelaInstance(
         config,
-        CoreAIVelaEngine(config, resources, COREAI_LAYOUT, model_name=model_name),
+        CoreAIVelaEngine(
+            config,
+            resources,
+            COREAI_LAYOUT,
+            model_name=model_name,
+            full_model=variant.metadata.get("full_model") is True,
+        ),
         VELA_MANIFEST,
-        DECISION_SUPPORT,
+        _decision_support(config.variant),
     )
 
 
@@ -60,7 +76,7 @@ def _create_pytorch(options: dict[str, object]) -> VelaInstance:
         config,
         TorchVelaEngine(config, resources, model_name=model_name),
         VELA_MANIFEST,
-        DECISION_SUPPORT,
+        _decision_support(config.variant),
     )
 
 

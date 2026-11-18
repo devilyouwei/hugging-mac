@@ -94,9 +94,6 @@ class D3CoreAIConverter(ModelConverter):
                 }:
                     (staged / name).parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(source / name, staged / name)
-            for license_name in ("NOTICE", "LICENSE"):
-                if (source / license_name).is_file():
-                    shutil.copyfile(source / license_name, staged / license_name)
             if not artifact_available(target, staged):
                 raise ResourceNotFoundError("D3 conversion produced incomplete native assets")
             digest, size = directory_sha256(staged), directory_size(staged)

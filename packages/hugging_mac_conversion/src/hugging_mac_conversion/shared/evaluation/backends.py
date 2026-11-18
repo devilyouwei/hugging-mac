@@ -23,7 +23,7 @@ async def open_backend(
 
         yield predict
     elif runtime == "coreai":
-        from hugging_mac_sdk.runtime.coreai import CoreAIProvider
+        from hugging_mac_conversion.shared.coreai_runtime import CoreAIProvider
 
         session = await CoreAIProvider().create_session(artifact, device=coreai_device, options={})
         try:

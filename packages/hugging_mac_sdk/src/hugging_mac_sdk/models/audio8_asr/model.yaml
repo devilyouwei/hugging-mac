@@ -1,7 +1,7 @@
 manifest:
   schema_version: '1'
   model_id: audio8/audio8-asr
-  display_name: Audio8-ASR 0.1B
+  display_name: Audio8-ASR
   description: 面向中英等七种语言、最长 30 秒短音频的轻量自回归语音识别模型。
   tags: [audio, asr, speech-recognition, qwen]
   family: audio8-asr

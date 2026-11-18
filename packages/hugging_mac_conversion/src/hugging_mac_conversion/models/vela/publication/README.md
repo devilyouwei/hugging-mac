@@ -51,6 +51,7 @@ USE_OS_COREAI=1 uv run --locked python example.py
 import asyncio
 from vela_coreai import VelaCoreAI
 
+
 async def main():
     # Point to the downloaded repository; the adapter explicitly uses CPU mode.
     async with VelaCoreAI.open(".") as model:
@@ -69,6 +70,7 @@ async def main():
             {"type": "noul", "instructions": "Is this about software?"},
         )
         print(yes_no)  # {"type": "noul", "noul": p_yes}
+
 
 asyncio.run(main())
 ```

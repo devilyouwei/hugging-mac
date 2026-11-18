@@ -1,4 +1,4 @@
-"""Numeric checks and complete SDK/task acceptance before publication."""
+"""Numeric checks and complete Native/task acceptance before publication."""
 
 from __future__ import annotations
 
@@ -43,25 +43,27 @@ def validate_bundle(definition: ModelDefinition, run: Path, report: dict[str, An
     if report.get("artifact_scope") != "full":
         raise ValueError("Diagnostic exports are not complete SDK models")
     if report.get("status") != "validated":
-        raise ValueError("Publication requires validated artifacts and SDK capability task parity")
+        raise ValueError(
+            "Publication requires validated artifacts and Native capability task parity"
+        )
     if report.get("runtime") not in {"coreml", "coreai"}:
         raise ValueError("Invalid release runtime")
     if report.get("files") != inventory(run):
         raise ValueError("Bundle changed since validation")
 
 
-def verify_sdk(definition: ModelDefinition, run: Path, report: dict[str, Any]) -> None:
+def verify_bundle(definition: ModelDefinition, run: Path, report: dict[str, Any]) -> None:
     validate_bundle(definition, run, report)
-    module_name, function_name = definition.config.sdk_validator.split(":")
+    module_name, function_name = definition.config.bundle_validator.split(":")
     result = getattr(importlib.import_module(module_name), function_name)(run)
     if not isinstance(result, dict) or result.get("passed") is not True:
-        raise ValueError("SDK validation task parity did not pass")
+        raise ValueError("Bundle validation task parity did not pass")
     samples = result.get("samples")
     if type(samples) is not int or samples < 2:
-        raise ValueError("SDK validation must validate at least two task examples")
+        raise ValueError("Bundle validation must validate at least two task examples")
     if report.get("files") != inventory(run):
-        raise ValueError("SDK validation modified the bundle")
+        raise ValueError("Bundle validation modified the bundle")
     report["capability_coverage"] = result.get("capability_coverage", {})
     validate_capability_coverage(definition, report)
-    report.update(sdk_integrated=True, sdk_validation=result)
+    report.update(bundle_verified=True, bundle_validation=result)
     write_report(run, report)

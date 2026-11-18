@@ -1,5 +1,5 @@
 import pytest
-from hugging_mac_sdk.models.d3.utils.coreai_export import inputs_for_tokens
+from hugging_mac_conversion.models.d3.utils.coreai_export import inputs_for_tokens
 
 
 def test_d3_packing_keeps_real_positions_and_padding_separate():

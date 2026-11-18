@@ -13,7 +13,8 @@ from time import perf_counter
 from typing import Any
 
 import numpy as np
-from hugging_mac_sdk.models.d3.utils.adapter import create_runtime
+
+from hugging_mac_conversion.models.d3.utils.adapter import create_runtime
 
 from ....shared.config import load_config
 from ....shared.imports import source_modules
@@ -99,9 +100,9 @@ def run_cases(runtime: Any, cases: list[dict[str, Any]]) -> list[dict[str, Any]]
 async def evaluate(
     source: Path, decision: Path, vision: Path, output: Path, reference_report: Path | None = None
 ) -> None:
-    from hugging_mac_sdk.runtime.coreai import CoreAIProvider
+    from hugging_mac_conversion.shared.coreai_runtime import CoreAIProvider
 
-    from .sdk_validation import assert_response_close
+    from .bundle_validation import assert_response_close
 
     output.mkdir(parents=True, exist_ok=False)
     with source_modules(source):

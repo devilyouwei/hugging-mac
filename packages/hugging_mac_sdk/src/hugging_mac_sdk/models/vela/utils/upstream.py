@@ -12,7 +12,10 @@ _LOCK = RLock()
 
 def load_upstream(root: Path) -> ModuleType:
     root = root.resolve()
-    files = ("ub_d3_common", "vela3_encoder")
+    files = (("render31",) if (root / "render31.py").is_file() else ()) + (
+        "ub_d3_common",
+        "vela3_encoder",
+    )
     digest = hashlib.sha256(str(root).encode())
     for name in files:
         digest.update((root / f"{name}.py").read_bytes())
@@ -35,6 +38,8 @@ def load_upstream(root: Path) -> ModuleType:
                 source = path.read_text().replace(
                     "from ub_d3_common import to_row", "from .ub_d3_common import to_row"
                 )
+                source = source.replace("from render31 import", "from .render31 import")
+                source = source.replace("import render31 as _R31", "from . import render31 as _R31")
                 exec(compile(source, str(path), "exec"), module.__dict__)
             return module
         except BaseException:

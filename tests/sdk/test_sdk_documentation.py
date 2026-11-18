@@ -24,6 +24,7 @@ MODEL_DOC_NAMES = {
     "audio8_tts": "audio8-tts.md",
     "d3": "d3.md",
     "vela": "vela.md",
+    "laya": "laya.md",
     "deepfilternet3": "deepfilternet3.md",
     "gemma_4": "gemma-4.md",
     "got_ocr2": "got-ocr2.md",

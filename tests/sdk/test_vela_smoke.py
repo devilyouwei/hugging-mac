@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 from hugging_mac_sdk import ModelSdk, ReusePolicy
 from hugging_mac_sdk.capabilities import DecisionMaking
-from hugging_mac_sdk.models.vela import VELA_DEFINITION, register_vela
+from hugging_mac_sdk.models.vela import register_vela
+from hugging_mac_sdk.models.vela.definition import VELA_CONFIG
 from hugging_mac_sdk.schemas.decision import DecisionRequest
 
 
@@ -16,7 +17,8 @@ async def test_managed_runtime_parity(tmp_path):
     bundle = os.environ.get("VELA_COREAI_PATH")
     if not source or not bundle:
         pytest.skip("Set VELA_SOURCE_PATH and VELA_COREAI_PATH to real local artifacts")
-    for artifact in VELA_DEFINITION.artifacts:
+    variant = os.environ.get("VELA_VARIANT", "3-fast")
+    for artifact in VELA_CONFIG.get_artifacts(variant=variant, include_shared=True):
         original = Path(bundle if artifact.runtime == "coreai" else source)
         root = artifact.resolve(tmp_path)
         for name in artifact.required_files:
@@ -28,6 +30,7 @@ async def test_managed_runtime_parity(tmp_path):
     for runtime in ("pytorch", "coreai"):
         async with await sdk.acquire(
             "vllm-sr/vela",
+            variant=variant,
             runtime=runtime,
             device="cpu",
             reuse=ReusePolicy.DEDICATED,

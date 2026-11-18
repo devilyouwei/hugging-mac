@@ -10,7 +10,8 @@ from __future__ import annotations
 from typing import Any
 
 import torch
-from hugging_mac_sdk.models.d3.utils.coreai_vision import prepare_vision
+
+from hugging_mac_conversion.models.d3.utils.coreai_vision import prepare_vision
 
 
 def main() -> None:
@@ -21,10 +22,11 @@ def main() -> None:
     import json
     from pathlib import Path
 
-    from hugging_mac_sdk.converters.coreai import convert_pytorch_to_coreai
     from safetensors import safe_open
     from transformers import AutoConfig
     from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5VisionModel
+
+    from hugging_mac_conversion.shared.coreai_export import convert_pytorch_to_coreai
 
     from ...shared.artifacts import inventory
     from ...shared.coreai import predict

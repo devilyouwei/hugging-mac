@@ -133,7 +133,13 @@ class DecisionSupport(DecisionSchema):
     noul_criteria: bool = False
 
 
+class DecisionAction(DecisionSchema):
+    act_probability: Probability
+
+
 class ChoiceAnswer(DecisionSchema):
+    action: DecisionAction | None = None
+    answer_confidence: Probability | None = None
     type: Literal["choice"] = "choice"
     choice: str
     probabilities: dict[str, Probability] = Field(min_length=1)
@@ -149,11 +155,16 @@ class ChoiceAnswer(DecisionSchema):
 
 
 class NoulAnswer(DecisionSchema):
+    confidence: Probability | None = None
+    action: DecisionAction | None = None
+    answer_confidence: Probability | None = None
     type: Literal["noul"] = "noul"
     noul: Probability
 
 
 class ScoreAnswer(DecisionSchema):
+    action: DecisionAction | None = None
+    answer_confidence: Probability | None = None
     type: Literal["score"] = "score"
     score: float = Field(ge=0, allow_inf_nan=False)
     probabilities: dict[str, Probability] = Field(min_length=2)

@@ -19,9 +19,9 @@ from .converter import Audio8TtsCoreAIConverter
 from .coreai import CoreAIAudio8TtsEngine
 from .instance import Audio8TtsInstance
 from .mlx import MlxAudio8TtsEngine
-from .mlx_resources import Audio8TtsMlxResourceResolver
 from .resources import Audio8TtsCombinedResourceProvider, Audio8TtsResourceResolver
 from .torch import TorchAudio8TtsEngine
+from .utils.mlx_resources import Audio8TtsMlxResourceResolver
 from .utils.types import CoreAILayout
 
 AUDIO8_TTS_CONFIG = load_model_config(Path(__file__).with_name("model.yaml"))

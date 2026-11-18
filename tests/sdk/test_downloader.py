@@ -342,3 +342,35 @@ def test_huggingface_strip_prefix_rejects_files_and_unscoped_patterns() -> None:
             allow_patterns=("README.md",),
             strip_prefix="bundle",
         )
+
+
+@pytest.mark.parametrize("snapshot", [False, True])
+@pytest.mark.parametrize("process_endpoint", [None, "https://process.example/"])
+async def test_huggingface_endpoint_from_dotenv_after_import(
+    tmp_path, monkeypatch, snapshot, process_endpoint
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("HF_ENDPOINT", raising=False)
+    (tmp_path / ".env").write_text("HF_ENDPOINT=https://dotenv.example/\n")
+    if process_endpoint:
+        monkeypatch.setenv("HF_ENDPOINT", process_endpoint)
+    expected = (process_endpoint or "https://dotenv.example").rstrip("/")
+
+    def download(**kwargs):
+        assert kwargs["endpoint"] == expected
+        if snapshot:
+            root = Path(kwargs["local_dir"])
+            root.mkdir()
+            (root / "weights.bin").write_bytes(b"weights")
+            return str(root)
+        cached = tmp_path / "cached.bin"
+        cached.write_bytes(b"weights")
+        return str(cached)
+
+    monkeypatch.setattr(
+        downloader_module, "snapshot_download" if snapshot else "hf_hub_download", download
+    )
+    source = HuggingFaceSource(
+        repo_id="org/model", **({} if snapshot else {"filename": "weights.bin"})
+    )
+    await ResourceDownloader().download(source, tmp_path / "output")

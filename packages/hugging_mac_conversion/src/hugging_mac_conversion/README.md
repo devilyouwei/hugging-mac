@@ -1,6 +1,6 @@
 # Model Conversion Workbench
 
-模型作者工具，与 `hugging_mac_sdk` 平级。SDK 的加载与推理不依赖此包；工作区复用 SDK
+模型作者工具，与 `hugging_mac_sdk` 平级。两个包互不导入、没有依赖关系；转换包独立维护
 已有的 Core AI authoring/runtime，负责显式转换、验证、制品整理和 Hub 发布。
 
 ## 目录与依赖方向
@@ -132,14 +132,14 @@ tmp/conversions/<model>/<variant>/<runtime>/<run>/
 不同变体分别使用自身发布目标，同一目标下的 `coreml/`、`coreai/` 分开上传。
 
 ```bash
-uv run --project packages/hugging_mac_conversion --locked hugging-mac-convert verify-sdk tmp/conversions/<model>/<variant>/<runtime>/<run>
+uv run --project packages/hugging_mac_conversion --locked hugging-mac-convert verify-bundle tmp/conversions/<model>/<variant>/<runtime>/<run>
 uv run --project packages/hugging_mac_conversion --locked hugging-mac-convert push tmp/conversions/<model>/<variant>/<runtime>/<run>
 # 真正上传时在上一条命令后添加 --execute；默认只显示计划。
 ```
 
 身份来自 `hf auth login` 或 `HF_TOKEN`，不写入配置。发布前检查文件摘要、选中变体配置、
-全部上游能力及 SDK capability 验收，并在实际上传前重新运行 SDK 验收。转换包中的验收回调通过模型配置
-的 `sdk_validator` 注入，遵循 SDK 的 [模型包标准](../../../hugging_mac_sdk/src/hugging_mac_sdk/models/readme.md)。
+全部上游能力及原生制品验收，并在实际上传前重新运行原生验收。转换包中的验收回调通过模型配置
+的 `bundle_validator` 注入。SDK 公共能力验收独立放在主工作区的 `tests/sdk/`。
 回调返回 `passed`、至少两个任务样例的 `samples`，以及逐项带 `status` / `evidence` 的
 `capability_coverage`。
 

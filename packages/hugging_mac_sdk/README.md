@@ -754,8 +754,24 @@ for results and limits. The existing Hub D3 export is not this dynamic candidate
 ## Vela decisions
 
 Register `hugging_mac_sdk.models.vela.register_vela` to use `vllm-sr/vela`,
-variant `3-fast`, with `pytorch` or `coreai`. Both implement `DecisionMaking`
-for choice/noul questions. The Core AI artifact supports direct download and
-SDK conversion from original weights. Install `vela` for PyTorch or
+variants `3-fast` (default) and `3_1-fast`, with `pytorch` or `coreai`. Both implement `DecisionMaking`
+for choice/noul questions. Both Core AI variants support direct download;
+SDK conversion from original weights is available for `3-fast`. The `3_1-fast`
+download selects only the decision graph and main FP32 checkpoint (about 1.52 GB),
+without task adapters. Install `vela` for PyTorch or
 `vela-coreai` for native inference. See the [usage guide](../../docs/sdk/models/vela.md)
 and [package contract](src/hugging_mac_sdk/models/vela/readme.md).
+
+## Laya multilingual decisions
+
+Register `hugging_mac_sdk.models.laya.register_laya` for `convaiinnovations/laya`.
+The original `multilingual` variant uses PyTorch; `multilingual-legacy-s256` and
+`multilingual-legacy-s512` use third-party fixed-window Core AI exports of an older
+checkpoint. Both support `DecisionMaking` with choice, score, noul and retained
+act probabilities. Install `laya` or `laya-coreai` extras as appropriate.
+See the [usage guide](../../docs/sdk/models/laya.md) for limits and downloads.
+
+Hugging Face downloads accept `HF_ENDPOINT` from the process environment or
+`.env` in the current working directory. Process environment takes precedence.
+For example: `HF_ENDPOINT=https://hf-mirror.com`. The endpoint is read for each
+download, including after imports. Direct HTTP URLs are unaffected.

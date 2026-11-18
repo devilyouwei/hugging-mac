@@ -31,7 +31,7 @@ def release_report(definition, run):
         "variant": variant,
         "config": definition.snapshot(variant),
         "status": "validated",
-        "sdk_integrated": True,
+        "bundle_verified": True,
         "files": inventory(run),
         "runtime": "coreml",
         "artifact_scope": "full",
@@ -184,8 +184,11 @@ def test_build_failure_is_recorded_without_publishing(tmp_path, monkeypatch):
 )
 def test_unverified_models_cannot_be_published(tmp_path, status, integrated):
     definition = get_model("d3")
-    report = release_report(definition, tmp_path) | {"status": status, "sdk_integrated": integrated}
-    with pytest.raises(ValueError, match="SDK capability"):
+    report = release_report(definition, tmp_path) | {
+        "status": status,
+        "bundle_verified": integrated,
+    }
+    with pytest.raises(ValueError, match="Native capability"):
         pipeline.publish(definition, tmp_path, report, dry_run=False)
 
 

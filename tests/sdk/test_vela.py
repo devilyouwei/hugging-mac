@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from hugging_mac_sdk import ModelSdk, ModelState, ReusePolicy
-from hugging_mac_sdk.capabilities import DecisionMaking
+from hugging_mac_sdk.capabilities import DecisionMaking, StructuredPrediction
 from hugging_mac_sdk.errors import InferenceError, ResourceIntegrityError, ResourceNotFoundError
 from hugging_mac_sdk.models.vela import VELA_DEFINITION, VELA_MANIFEST, register_vela
 from hugging_mac_sdk.models.vela.config import VelaInstanceConfig
@@ -76,11 +76,14 @@ def test_manifest_runtime_and_capability_coverage() -> None:
     )
     for variant in VELA_MANIFEST.variants:
         for runtime, factory in VELA_DEFINITION.runtime_factories.items():
-            assert VELA_CONFIG.get_artifacts(variant=variant.name, runtime=runtime)
+            if not VELA_CONFIG.get_artifacts(variant=variant.name, runtime=runtime):
+                with pytest.raises(ResourceNotFoundError):
+                    factory({"variant": variant.name})
+                continue
             instance = factory({"variant": variant.name})
             assert instance.state is ModelState.CREATED
-            assert set(instance.capabilities) == {DecisionMaking}
-            assert VELA_MANIFEST.capabilities == {"decision-making"}
+            assert set(instance.capabilities) == {DecisionMaking, StructuredPrediction}
+            assert VELA_MANIFEST.capabilities == {"decision-making", "structured-prediction"}
     with pytest.raises(ResourceNotFoundError):
         VELA_DEFINITION.runtime_factories["coreai"]({"variant": "unknown"})
 
@@ -212,7 +215,7 @@ async def test_failed_native_load_releases_view(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         "hugging_mac_sdk.models.vela.utils.packing.DecisionPacker",
-        lambda root: SimpleNamespace(manifest={"function": "main"}),
+        lambda root: SimpleNamespace(manifest={"function": "main"}, component_manifest=None),
     )
     monkeypatch.setattr(
         "hugging_mac_sdk.models.vela.coreai.CoreAIProvider.create_session",
@@ -302,6 +305,8 @@ async def test_coreai_invalid_logits_rejected():
     import numpy as np
 
     engine = CoreAIVelaEngine.__new__(CoreAIVelaEngine)
+    engine._native = None
+    engine._full = None
     engine._model_name = "vllm-sr/vela3-fast"
     engine._packer = SimpleNamespace(
         manifest={"output": "logits"},
@@ -310,3 +315,146 @@ async def test_coreai_invalid_logits_rejected():
     engine._session = SimpleNamespace(run=lambda arrays: {"logits": np.array([[np.nan, 1]])})
     with pytest.raises(FloatingPointError):
         await engine.infer(state="", questions={"q": {"type": "choice"}})
+
+
+def test_31_download_selects_only_decision_resources() -> None:
+    from fnmatch import fnmatch
+
+    artifact = VELA_CONFIG.get_artifact("coreai-fp32", variant="3_1-fast", runtime="coreai")
+    source = artifact.source
+    assert source.repo_id == "hugging-mac/vela3.1-fast"
+    assert source.strip_prefix == Path("coreai")
+    assert any(fnmatch("coreai/weights/model.safetensors", p) for p in source.allow_patterns)
+    assert not any(
+        fnmatch("coreai/weights/span_adapter.safetensors", p) for p in source.allow_patterns
+    )
+    assert not any(
+        fnmatch("coreai/graphs/router/model.aimodel/main.mlirb", p) for p in source.allow_patterns
+    )
+    assert artifact.required_shares == ("tokenizer-3_1",)
+    assert not artifact.convert
+    instance = VELA_DEFINITION.runtime_factories["coreai"]({"variant": "3_1-fast"})
+    assert instance.decision_support().noul_criteria
+    assert not VELA_DEFINITION.runtime_factories["coreai"]({}).decision_support().noul_criteria
+
+
+def test_31_noul_descriptions_are_preserved() -> None:
+    from types import SimpleNamespace
+
+    from hugging_mac_sdk.models.vela.utils.packing import DecisionPacker
+
+    encoded = []
+    packer = DecisionPacker.__new__(DecisionPacker)
+    packer.noul_criteria = True
+    packer.tokenizer = SimpleNamespace(
+        encode=lambda text, **kwargs: encoded.append(text) or SimpleNamespace(ids=[7])
+    )
+    packer.config = {
+        "bos_token_id": 0,
+        "eos_token_id": 0,
+        "pad_token_id": 0,
+        "marker_ids": {"[Q]": 1, "[O]": 2, "[SEP_SCHEMA]": 3, "[SEG_user]": 4},
+    }
+    packer.manifest = {"sequence_length": 32768, "dynamic_sequence_length": True}
+    _, labels = packer.pack(
+        "Request",
+        {
+            "type": "noul",
+            "instructions": None,
+            "criteria": {"true": "Urgent", "false": "Not urgent"},
+        },
+    )
+    assert labels == ["no", "yes"]
+    assert "no: Not urgent" in encoded and "yes: Urgent" in encoded
+    assert "null" not in encoded
+
+
+async def test_complete_interface_uses_public_capability_and_drains_cancellation(
+    monkeypatch, tmp_path
+):
+    import asyncio
+    from threading import Event
+
+    from hugging_mac_sdk.schemas.structured_prediction import StructuredPredictionRequest
+
+    entered = asyncio.Event()
+    release = Event()
+    loop = asyncio.get_running_loop()
+    closed = []
+    expected = {
+        "answers": {"pii": {"spans": [{"start": 1, "end": 6, "score": 0.95}]}},
+        "usage": {"input_tokens": 7},
+        "extra": {"unchanged": True},
+    }
+
+    class FullHost:
+        def system_one(self, state, questions, model=None):
+            loop.call_soon_threadsafe(entered.set)
+            assert release.wait(5)
+            return expected
+
+        def predict(self, state, questions):
+            return [expected["answers"], 7]
+
+        def close(self):
+            closed.append(True)
+
+    async def load(engine, artifact):
+        engine._full = FullHost()
+
+    monkeypatch.setattr(CoreAIVelaEngine, "resolve", AsyncMock(return_value=tmp_path))
+    monkeypatch.setattr(CoreAIVelaEngine, "load", load)
+    sdk = ModelSdk()
+    register_vela(sdk.registry)
+    handle = await sdk.acquire(
+        "vllm-sr/vela", variant="3_1-fast-full", runtime="coreai", reuse=ReusePolicy.DEDICATED
+    )
+    capability = handle.require(StructuredPrediction)
+    request = StructuredPredictionRequest(
+        state={"text": "Alice"}, questions={"pii": {"type": "span"}}
+    )
+    pending = asyncio.create_task(capability.predict_structure(request))
+    await entered.wait()
+    pending.cancel()
+    unload = asyncio.create_task(handle.close())
+    await asyncio.sleep(0)
+    assert not pending.done() and not closed
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+    await unload
+    assert closed == [True]
+    with pytest.raises(InferenceError):
+        await capability.predict_structure(request)
+
+    async with await sdk.acquire(
+        "vllm-sr/vela", variant="3_1-fast-full", runtime="coreai", reuse=ReusePolicy.DEDICATED
+    ) as handle:
+        capability = handle.require(StructuredPrediction)
+        assert (await capability.predict_structure(request)).result == expected
+        assert (
+            await capability.predict_structure(request.model_copy(update={"method": "predict"}))
+        ).result == [expected["answers"], 7]
+
+
+async def test_full_variant_resource_inventory_and_delete(tmp_path):
+    from hugging_mac_sdk.errors import UnsupportedRuntimeError
+    from hugging_mac_sdk.schemas.conversion import ArtifactFormat
+
+    provider = VELA_DEFINITION.resource_provider
+    options = {"model_home": tmp_path, "runtime": "coreai"}
+    variant = "3_1-fast-full"
+    declared = VELA_CONFIG.get_artifacts(variant=variant, include_shared=True)
+    for artifact in declared:
+        for filename in artifact.required_files:
+            path = artifact.resolve(tmp_path) / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fixture")
+    status = await provider.status(variant, options)
+    assert all(a.available for a in status.artifacts)
+    assert {a.runtime for a in status.artifacts if not a.shared} == {"coreai"}
+    with pytest.raises(UnsupportedRuntimeError, match="prebuilt"):
+        await provider.convert(variant, ArtifactFormat.COREAI, options)
+    for _ in range(2):
+        status = await provider.delete(variant, options)
+        assert all(a.available == a.shared for a in status.artifacts)

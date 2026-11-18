@@ -6,9 +6,11 @@ readme = "README.md"
 requires-python = ">=3.12,<3.14"
 license = "MIT"
 dependencies = [
-  "hugging-mac-sdk",
   "huggingface-hub>=0.33,<2",
   "pydantic>=2.11,<3",
+  "python-dotenv>=1,<2",
+  "pillow>=11,<13",
+  "tokenizers>=0.22,<1",
   "pyyaml>=6,<7",
   "accelerate>=1,<2",
   "coremltools==9.0",
@@ -39,9 +41,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hugging_mac_conversion"]
-
-[tool.uv.sources]
-hugging-mac-sdk = { path = "../hugging_mac_sdk", editable = true }
 
 [tool.pytest.ini_options]
 minversion = "8.0"

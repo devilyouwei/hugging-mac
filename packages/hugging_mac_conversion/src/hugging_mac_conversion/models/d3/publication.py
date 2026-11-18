@@ -11,13 +11,14 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from hugging_mac_sdk.models.d3.utils.adapter import create_runtime
 from PIL import Image
+
+from hugging_mac_conversion.models.d3.utils.adapter import create_runtime
 
 from ...shared.config import load_config
 from ...shared.hub import source_inventory
+from .evaluation.bundle_validation import assert_response_close
 from .evaluation.native import fingerprint, suite
-from .evaluation.sdk_validation import assert_response_close
 
 
 def copy_asset(source: Path, target: Path) -> None:
@@ -34,7 +35,6 @@ def assemble(
     vision: Path,
     evaluation: Path,
     text_evaluation: Path,
-    sdk_wheel: Path,
     output: Path,
 ) -> None:
     source_report = json.loads((source / ".source.json").read_text())
@@ -90,7 +90,6 @@ def assemble(
     for name in names:
         shutil.copyfile(source / name, output / name)
     shutil.copyfile(Path(__file__).with_name("NOTICE"), output / "NOTICE")
-    shutil.copyfile(sdk_wheel, output / sdk_wheel.name)
     fixtures = output / "fixtures"
     fixtures.mkdir()
 
@@ -198,14 +197,6 @@ def assemble(
         "scope": "Smoke parity, not a quality benchmark or maximum-context stress test",
     }
     (output / "evaluation.json").write_text(json.dumps(public, indent=2) + "\n")
-    (output / ".python-version").write_text("3.12\n")
-    (output / "pyproject.toml").write_text(
-        '[project]\nname = "d3-edge-coreai-example"\nversion = "0.1.0"\n'
-        'requires-python = ">=3.12,<3.14"\n'
-        'dependencies = ["hugging-mac-sdk[d3]"]\n\n[tool.uv]\npackage = false\n\n'
-        "[tool.uv.workspace]\nmembers = []\n\n[tool.uv.sources]\n"
-        f'hugging-mac-sdk = {{path = "{sdk_wheel.name}"}}\n'
-    )
     print(output, flush=True)
 
 
@@ -217,7 +208,6 @@ def main() -> None:
         "vision",
         "evaluation",
         "text-evaluation",
-        "sdk-wheel",
         "output",
     ):
         parser.add_argument("--" + name, type=Path, required=True)
@@ -228,7 +218,6 @@ def main() -> None:
         args.vision,
         args.evaluation,
         args.text_evaluation,
-        args.sdk_wheel,
         args.output,
     )
 

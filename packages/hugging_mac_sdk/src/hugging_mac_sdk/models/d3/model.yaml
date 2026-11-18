@@ -40,7 +40,7 @@ artifacts:
   format: safetensors
   kind: directory
   path: vllm-sr/d3/edge/pytorch/source
-  required_files: [config.json, decision_config.json, model.safetensors.index.json, model-00001-of-00001.safetensors, readout.safetensors, d3_fast.py, d3_kernels.py, LICENSE, NOTICE]
+  required_files: [config.json, decision_config.json, model.safetensors.index.json, model-00001-of-00001.safetensors, readout.safetensors, d3_fast.py, d3_kernels.py]
   required_shares: [tokenizer, processor, runtime]
   source:
     kind: huggingface
@@ -53,8 +53,6 @@ artifacts:
     - readout.safetensors
     - d3_fast.py
     - d3_kernels.py
-    - LICENSE
-    - NOTICE
 - artifact_id: coreai-fp32
   convert: true
   variant: edge

@@ -9,9 +9,9 @@ import soundfile as sf
 from hugging_mac_sdk import ModelSdk
 from hugging_mac_sdk.capabilities import SpeechEnhancement, SpeechTranscription
 from hugging_mac_sdk.models.deepfilternet3 import DEEPFILTERNET3_DEFINITION, DEEPFILTERNET3_MANIFEST
-from hugging_mac_sdk.models.deepfilternet3.audio import PreparedEnhancementAudio
+from hugging_mac_sdk.models.deepfilternet3.utils.audio import PreparedEnhancementAudio
 from hugging_mac_sdk.models.deepfilternet3.config import DeepFilterNet3InstanceConfig
-from hugging_mac_sdk.models.deepfilternet3.dsp import (
+from hugging_mac_sdk.models.deepfilternet3.utils.dsp import (
     DF_BINS,
     DF_ORDER,
     ERB_BANDS,

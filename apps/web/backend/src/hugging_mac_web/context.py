@@ -14,6 +14,7 @@ from hugging_mac_sdk.models.gemma_4 import register_gemma_4
 from hugging_mac_sdk.models.glm_ocr import register_glm_ocr
 from hugging_mac_sdk.models.got_ocr2 import register_got_ocr2
 from hugging_mac_sdk.models.kokoro import register_kokoro
+from hugging_mac_sdk.models.laya import register_laya
 from hugging_mac_sdk.models.mediapipe_hand_detection import register_mediapipe_hand_detection
 from hugging_mac_sdk.models.moss_tts_nano import register_moss_tts_nano
 from hugging_mac_sdk.models.nemotron_3_5_asr import register_nemotron_3_5_asr
@@ -67,6 +68,7 @@ def create_context(settings: WebSettings) -> PlatformContext:
     register_glm_ocr(models.registry)
     register_got_ocr2(models.registry)
     register_kokoro(models.registry)
+    register_laya(models.registry)
     register_mediapipe_hand_detection(models.registry, converters)
     register_moss_tts_nano(models.registry)
     register_nemotron_3_5_asr(models.registry)

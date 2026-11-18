@@ -27,6 +27,7 @@ from hugging_mac_sdk.resources.hashing import (
     directory_size,
     file_sha256,
 )
+from hugging_mac_sdk.resources.huggingface import download_endpoint
 from hugging_mac_sdk.schemas.resources import (
     CompositeSource,
     HuggingFaceSource,
@@ -276,6 +277,7 @@ class ResourceDownloader:
             cached_path = await asyncio.to_thread(
                 partial(
                     hf_hub_download,
+                    endpoint=download_endpoint(),
                     repo_id=source.repo_id,
                     filename=source.filename,
                     revision=source.revision,
@@ -320,6 +322,7 @@ class ResourceDownloader:
             await asyncio.to_thread(
                 partial(
                     snapshot_download,
+                    endpoint=download_endpoint(),
                     repo_id=source.repo_id,
                     revision=source.revision,
                     local_dir=staging,

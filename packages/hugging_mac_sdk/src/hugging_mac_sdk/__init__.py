@@ -75,6 +75,7 @@ from hugging_mac_sdk.schemas.conversion import (
 from hugging_mac_sdk.schemas.decision import (
     ChoiceAnswer,
     ChoiceQuestion,
+    DecisionAction,
     DecisionError,
     DecisionRequest,
     DecisionResponse,
@@ -197,6 +198,7 @@ __all__ = [
     "CoreAISession",
     "CoreMLProvider",
     "CoreMLSession",
+    "DecisionAction",
     "DecisionError",
     "DecisionRequest",
     "DecisionResponse",
@@ -301,6 +303,9 @@ __all__ = [
     "StreamingTranscriptionRequest",
     "StreamingTranscriptionResponse",
     "StreamingTranscriptionSession",
+    "StructuredPrediction",
+    "StructuredPredictionRequest",
+    "StructuredPredictionResponse",
     "TensorStructure",
     "TorchProvider",
     "TorchSession",
@@ -320,3 +325,9 @@ __all__ = [
     "create_default_runtime_registry",
     "load_model_config",
 ]
+
+from hugging_mac_sdk.capabilities import StructuredPrediction
+from hugging_mac_sdk.schemas.structured_prediction import (
+    StructuredPredictionRequest,
+    StructuredPredictionResponse,
+)

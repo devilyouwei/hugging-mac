@@ -12,25 +12,45 @@ Batch, sequence, question, option, word-unit and label dimensions are dynamic. O
 
 ## Python SDK
 
-From the Hugging Mac repository, use its locked conversion environment (which includes the local SDK):
+Install the current SDK with the `vela` and `coreai` extras in its own environment.
+The independent conversion environment does not install or import the SDK.
+
+```python
+import asyncio
+from pathlib import Path
+from hugging_mac_sdk import ModelSdk, StructuredPredictionRequest
+from hugging_mac_sdk.capabilities import StructuredPrediction
+from hugging_mac_sdk.models.vela import register_vela
+
+
+async def main():
+    sdk = ModelSdk()
+    register_vela(sdk.registry)
+    async with await sdk.acquire(
+        "vllm-sr/vela",
+        variant="3_1-fast-full",
+        runtime="coreai",
+        options={"artifact_path": Path("/path/to/bundle")},
+    ) as handle:
+        response = await handle.require(StructuredPrediction).predict_structure(
+            StructuredPredictionRequest(
+                state="Contact Alice at alice@example.com.",
+                questions={"pii": {"type": "span", "criteria": {"EMAIL_ADDRESS": "email"}}},
+            )
+        )
+        print(response.result)
+
+
+asyncio.run(main())
+```
+
+Use `method="predict"` for the original predict result. `options={"entity_route": "span"}`
+selects the original relation routing policy. SDK calls are asynchronous and serialized
+per instance. CPU is the validation target; GPU/ANE and iOS execution are unverified.
+
+For independent native bundle validation, run:
 
 ```sh
 USE_OS_COREAI=1 uv run --project packages/hugging_mac_conversion --locked \
-  python -m hugging_mac_conversion.models.vela.evaluation.sdk_validation --artifact-path /path/to/bundle --check
+  python -m hugging_mac_conversion.models.vela.evaluation.bundle_validation --artifact-path /path/to/bundle --check
 ```
-
-```python
-from hugging_mac_sdk.models.vela.full import VelaFullCoreAI
-
-with VelaFullCoreAI('/path/to/bundle', device='cpu') as model:
-    result = model.system_one(
-        'Contact Alice at alice@example.com.',
-        {'pii': {'type': 'span',
-                 'criteria': {'EMAIL_ADDRESS': 'an e-mail address'}}},
-    )
-    print(result)
-```
-
-`entity_route='span'` retains the upstream relation-pipeline option. The API is synchronous; async applications should call it from a worker thread. CPU is the validation target. Core AI GPU/ANE, Swift preprocessing and iOS execution are not claimed as tested.
-
-Install the SDK’s `vela` and `coreai` extras for this full loader. Use the current source SDK or a wheel built from it; this new loader is not assumed to exist in an older published wheel. No `requirements.txt` is needed: dependencies and locking belong to the project's `uv` packages. `weights/` and all graph directories are required; do not download only the decision graph.

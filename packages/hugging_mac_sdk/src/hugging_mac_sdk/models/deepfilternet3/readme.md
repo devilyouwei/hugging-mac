@@ -5,12 +5,12 @@ model-private DSP pipeline. Declarative facts are owned by `model.yaml`.
 
 ## Processing pipeline
 
-1. `audio.py` decodes, downmixes, and resamples input audio.
-2. `dsp.py` performs STFT and creates normalized ERB/spectral features.
+1. `utils/audio.py` decodes, downmixes, and resamples input audio.
+2. `utils/dsp.py` performs STFT and creates normalized ERB/spectral features.
 3. `coreml.py` runs the compiled model through the Core ML provider.
-4. `dsp.py` applies the ERB mask and deep-filter coefficients and reconstructs
+4. `utils/dsp.py` applies the ERB mask and deep-filter coefficients and reconstructs
    the waveform.
-5. `audio.py` compensates delay, preserves duration, resamples when requested,
+5. `utils/audio.py` compensates delay, preserves duration, resamples when requested,
    and encodes the public WAV response.
 
 `instance.py` owns lifecycle and serialization. `resources.py` validates and

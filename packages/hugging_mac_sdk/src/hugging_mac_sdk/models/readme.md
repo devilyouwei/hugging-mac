@@ -429,3 +429,17 @@ Each integration covers the applicable contracts:
 
 Real managed artifacts are used in explicit smoke/integration coverage before a
 runtime is treated as usable. Default unit and contract tests remain offline.
+
+## Package independence
+
+The SDK and conversion package own independent implementations and dependencies.
+Neither package imports the other, including its public runtime helpers. Model-private
+`utils/` modules may only be imported within that model package; focused unit tests
+may exercise internals. Conversion duplicates the implementation it needs in its own
+model-private utilities. SDK integration tests live under `tests/sdk/` and use public
+capabilities for end-to-end verification. Conversion reports native bundle parity,
+never SDK integration success.
+
+Keep model package roots limited to the layout above. Attribution files are not
+stored in SDK model directories or included in runtime required-file inventories.
+Upstream license identifiers remain descriptive manifest metadata.

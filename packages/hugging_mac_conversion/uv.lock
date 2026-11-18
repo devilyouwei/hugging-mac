@@ -317,13 +317,15 @@ dependencies = [
     { name = "coreai-core", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "coreai-torch", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "coremltools" },
-    { name = "hugging-mac-sdk" },
     { name = "huggingface-hub" },
     { name = "numpy" },
     { name = "opencv-python-headless" },
+    { name = "pillow" },
     { name = "pydantic" },
+    { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "safetensors" },
+    { name = "tokenizers" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "transformers" },
@@ -343,13 +345,15 @@ requires-dist = [
     { name = "coreai-core", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = "==1.0.0b3" },
     { name = "coreai-torch", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = "==0.4.3" },
     { name = "coremltools", specifier = "==9.0" },
-    { name = "hugging-mac-sdk", editable = "../hugging_mac_sdk" },
     { name = "huggingface-hub", specifier = ">=0.33,<2" },
     { name = "numpy", specifier = ">=2,<2.4" },
     { name = "opencv-python-headless", specifier = ">=5.0.0.93" },
+    { name = "pillow", specifier = ">=11,<13" },
     { name = "pydantic", specifier = ">=2.11,<3" },
+    { name = "python-dotenv", specifier = ">=1,<2" },
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "safetensors", specifier = ">=0.5,<1" },
+    { name = "tokenizers", specifier = ">=0.22,<1" },
     { name = "torch", specifier = "==2.14.0" },
     { name = "torchvision", specifier = ">=0.29.2" },
     { name = "transformers", specifier = "==5.17.0" },
@@ -362,90 +366,6 @@ dev = [
     { name = "ruff", specifier = ">=0.12,<1" },
     { name = "types-pyyaml", specifier = ">=6,<7" },
 ]
-
-[[package]]
-name = "hugging-mac-sdk"
-version = "0.1.0"
-source = { editable = "../hugging_mac_sdk" }
-dependencies = [
-    { name = "httpx" },
-    { name = "huggingface-hub" },
-    { name = "pillow" },
-    { name = "platformdirs" },
-    { name = "psutil" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "tqdm" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "accelerate", marker = "extra == 'd3'", specifier = ">=1,<2" },
-    { name = "coreai-core", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'coreai'", specifier = "==1.0.0b3" },
-    { name = "coreai-core", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'd3'", specifier = "==1.0.0b3" },
-    { name = "coreai-core", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'vela-coreai'", specifier = "==1.0.0b3" },
-    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'asr'", specifier = ">=8,<10" },
-    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'layout'", specifier = ">=8,<10" },
-    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'tts'", specifier = ">=8,<10" },
-    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'vad'", specifier = ">=8,<10" },
-    { name = "coremltools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'yolo'", specifier = ">=8,<10" },
-    { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "huggingface-hub", specifier = ">=0.33,<2" },
-    { name = "kokoro", marker = "extra == 'tts'", specifier = "==0.9.4" },
-    { name = "misaki", extras = ["en", "ja", "zh"], marker = "extra == 'tts'", specifier = ">=0.9.4,<1" },
-    { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'tts'", git = "https://github.com/Blaizzy/mlx-audio.git?rev=223afd602c6d583455bdb9f181b91fc090f4aff9" },
-    { name = "mlx-vlm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'llm'", specifier = ">=0.6.14,<0.7" },
-    { name = "mlx-vlm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'ocr'", specifier = ">=0.6.14,<0.7" },
-    { name = "numpy", marker = "extra == 'asr'", specifier = ">=2,<2.4" },
-    { name = "numpy", marker = "extra == 'd3'", specifier = ">=2,<2.4" },
-    { name = "numpy", marker = "extra == 'layout'", specifier = ">=2,<2.4" },
-    { name = "numpy", marker = "extra == 'tts'", specifier = ">=2,<2.4" },
-    { name = "numpy", marker = "extra == 'vad'", specifier = ">=2,<2.4" },
-    { name = "numpy", marker = "extra == 'vela'", specifier = ">=2,<2.4" },
-    { name = "numpy", marker = "extra == 'vela-coreai'", specifier = ">=2,<2.4" },
-    { name = "numpy", marker = "extra == 'yolo'", specifier = ">=2,<2.4" },
-    { name = "onnx", marker = "extra == 'yolo'", specifier = ">=1.18,<2" },
-    { name = "onnxruntime", marker = "extra == 'vad'", specifier = ">=1.22,<2" },
-    { name = "onnxruntime", marker = "extra == 'yolo'", specifier = ">=1.22,<2" },
-    { name = "opencv-python", marker = "extra == 'layout'", specifier = ">=4.11,<5" },
-    { name = "opencv-python", marker = "extra == 'yolo'", specifier = ">=4.11,<5" },
-    { name = "opencv-python-headless", marker = "extra == 'd3'", specifier = ">=4.11,<6" },
-    { name = "pillow", specifier = ">=11,<13" },
-    { name = "platformdirs", specifier = ">=4.3,<5" },
-    { name = "psutil", specifier = ">=7,<8" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-    { name = "pyyaml", specifier = ">=6,<7" },
-    { name = "safetensors", marker = "extra == 'asr'", specifier = ">=0.5,<1" },
-    { name = "safetensors", marker = "extra == 'd3'", specifier = ">=0.5,<1" },
-    { name = "safetensors", marker = "extra == 'layout'", specifier = ">=0.5,<1" },
-    { name = "safetensors", marker = "extra == 'tts'", specifier = ">=0.5,<1" },
-    { name = "safetensors", marker = "extra == 'vela'", specifier = ">=0.5,<1" },
-    { name = "scipy", marker = "extra == 'asr'", specifier = ">=1.15,<2" },
-    { name = "scipy", marker = "extra == 'tts'", specifier = ">=1.15,<2" },
-    { name = "scipy", marker = "extra == 'vad'", specifier = ">=1.15,<2" },
-    { name = "sentencepiece", marker = "extra == 'asr'", specifier = ">=0.2,<1" },
-    { name = "soundfile", marker = "extra == 'asr'", specifier = ">=0.13,<1" },
-    { name = "soundfile", marker = "extra == 'tts'", specifier = ">=0.13,<1" },
-    { name = "soundfile", marker = "extra == 'vad'", specifier = ">=0.13,<1" },
-    { name = "tiktoken", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'ocr'", specifier = ">=0.9,<1" },
-    { name = "tokenizers", marker = "extra == 'vela-coreai'", specifier = ">=0.22,<1" },
-    { name = "torch", marker = "extra == 'asr'", specifier = "==2.7.0" },
-    { name = "torch", marker = "extra == 'd3'", specifier = ">=2.7,<3" },
-    { name = "torch", marker = "extra == 'layout'", specifier = "==2.7.0" },
-    { name = "torch", marker = "extra == 'tts'", specifier = "==2.7.0" },
-    { name = "torch", marker = "extra == 'vela'", specifier = ">=2.7,<3" },
-    { name = "torch", marker = "extra == 'yolo'", specifier = "==2.7.0" },
-    { name = "torchaudio", marker = "extra == 'asr'", specifier = "==2.7.0" },
-    { name = "torchaudio", marker = "extra == 'tts'", specifier = "==2.7.0" },
-    { name = "torchvision", marker = "extra == 'd3'", specifier = ">=0.22,<1" },
-    { name = "tqdm", specifier = ">=4.42,<5" },
-    { name = "transformers", marker = "extra == 'asr'", specifier = ">=4.57.3,<6" },
-    { name = "transformers", marker = "extra == 'd3'", specifier = "==5.17.0" },
-    { name = "transformers", marker = "extra == 'layout'", specifier = ">=5.0,<6" },
-    { name = "transformers", marker = "extra == 'tts'", specifier = ">=4.57.3,<6" },
-    { name = "transformers", marker = "extra == 'vela'", specifier = "==5.17.0" },
-]
-provides-extras = ["coreai", "d3", "vela", "vela-coreai", "llm", "ocr", "layout", "asr", "vad", "yolo", "tts"]
 
 [[package]]
 name = "huggingface-hub"
@@ -929,15 +849,6 @@ wheels = [
 ]
 
 [[package]]
-name = "platformdirs"
-version = "4.14.5"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d7/9a/8475be631fb33ca1466915e70fd594c42a4e84b512db650eaa14f90fe75d/platformdirs-4.14.5.tar.gz", hash = "sha256:32e9921db7385aa8169bee4fe9501923e5715ba9fb7ea3b9c69b0d8e0639f7a1", size = 71464, upload-time = "2026-11-04T16:54:50.358Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7c/ae/ecbbbfd0e4343a6a521d49b3c8656fb4643dee2a4f6eaf941cf3280391a8/platformdirs-4.14.5-py3-none-any.whl", hash = "sha256:8e778c6fa421516f4d3369449f8df3b0e1b72c0e0005fe88e3ec772d0a14e750", size = 35402, upload-time = "2026-11-04T16:54:48.875Z" },
-]
-
-[[package]]
 name = "pluggy"
 version = "1.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1081,6 +992,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a3/5c/00a0e072241553e1a7496d638deababa67c5058571567b92a7eaa258397c/pytest-8.4.2.tar.gz", hash = "sha256:86c0d0b93306b961d58d62a4db4879f27fe25513d4b969df351abdddb3c30e01", size = 1519618, upload-time = "2025-09-04T14:34:22.711Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a8/a4/20da314d277121d6534b3a980b29035dcd51e6744bd79075a6ce8fa4eb8d/pytest-8.4.2-py3-none-any.whl", hash = "sha256:872f880de3fc3a5bdc88a11b39c9710c3497a547cfa9320bc3c5e62fbf272e79", size = 365750, upload-time = "2025-09-04T14:34:20.226Z" },
+]
+
+[[package]]
+name = "python-dotenv"
+version = "1.2.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/74/26/2fbeedb218a787a5eea551c7532cac4e009f83d689dd2faa0d0353473f86/python_dotenv-1.2.4.tar.gz", hash = "sha256:f0d53e69935a851c0dcc78f3ab7aaccd8cabef0b92382b576b824212902873c0", size = 60824, upload-time = "2026-10-01T05:36:10Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/60/d1/38f3a3405989a89ac18390803e70c6ad7c7760da4f9b83cbeca0c44a0c72/python_dotenv-1.2.4-py3-none-any.whl", hash = "sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc", size = 23266, upload-time = "2026-10-01T05:36:08.633Z" },
 ]
 
 [[package]]

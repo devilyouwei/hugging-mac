@@ -9,10 +9,10 @@ from pathlib import Path
 from hugging_mac_sdk.runtime.base import RuntimeSession
 from hugging_mac_sdk.runtime.coreml import CoreMLProvider
 
-from .audio import PreparedEnhancementAudio
 from .config import DeepFilterNet3InstanceConfig
-from .dsp import DeepFilterNet3Dsp, EnhancementOutput
 from .resources import DeepFilterNet3ResourceResolver
+from .utils.audio import PreparedEnhancementAudio
+from .utils.dsp import DeepFilterNet3Dsp, EnhancementOutput
 
 
 class CoreMlDeepFilterNet3Engine:

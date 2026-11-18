@@ -1,7 +1,7 @@
 """D3 text graph with explicit noncausal attention and position inputs.
 
 Adapted from hugging-mac/d3-edge-CoreAI's Apache-2.0 conversion recipe;
-see NOTICE. Full multimodal task coverage remains required for release.
+Full multimodal task coverage remains required for release.
 """
 
 from __future__ import annotations

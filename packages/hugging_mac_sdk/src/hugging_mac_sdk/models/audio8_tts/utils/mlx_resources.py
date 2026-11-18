@@ -24,7 +24,7 @@ from hugging_mac_sdk.schemas.resources import (
     ResolvedResource,
 )
 
-from .config import Audio8TtsMlxInstanceConfig
+from ..config import Audio8TtsMlxInstanceConfig
 
 
 class Audio8TtsMlxResourceResolver:

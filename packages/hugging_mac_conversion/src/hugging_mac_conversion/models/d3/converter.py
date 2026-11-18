@@ -1,4 +1,4 @@
-"""Compose SDK-owned D3 export graphs for conversion workbench evaluation."""
+"""Compose conversion-owned D3 export graphs for conversion workbench evaluation."""
 
 from pathlib import Path
 
@@ -7,7 +7,7 @@ from ...shared.contracts import PreparedGraph
 
 
 def prepare(config: VariantConfig, root: Path) -> PreparedGraph:
-    from hugging_mac_sdk.models.d3.utils.coreai_export import prepare_decision
+    from hugging_mac_conversion.models.d3.utils.coreai_export import prepare_decision
 
     if config.probe.dynamic_sequence_length is None:
         raise ValueError("D3 requires a dynamic sequence bound")

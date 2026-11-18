@@ -1,6 +1,6 @@
 name: d3
 default_variant: edge
-sdk_validator: hugging_mac_conversion.models.d3.evaluation.sdk_validation:validate_bundle
+bundle_validator: hugging_mac_conversion.models.d3.evaluation.bundle_validation:validate_bundle
 required_capabilities:
 - text
 - images

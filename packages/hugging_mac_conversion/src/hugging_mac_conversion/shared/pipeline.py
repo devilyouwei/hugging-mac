@@ -11,7 +11,7 @@ from typing import Any
 from . import coreai, coreml, hub
 from .artifacts import create_run, default_source_root, inventory, source_directory, write_report
 from .contracts import ModelDefinition, Runtime
-from .validation import check_tensors, validate_bundle, validate_capability_coverage, verify_sdk
+from .validation import check_tensors, validate_bundle, validate_capability_coverage, verify_bundle
 
 
 def build_probe(
@@ -36,7 +36,7 @@ def build_probe(
         "runtime": runtime,
         "requested_revision": revision,
         "status": "building",
-        "sdk_integrated": False,
+        "bundle_verified": False,
         "artifact_scope": "diagnostic",
         "coreai_device": coreai_device if runtime == "coreai" else None,
         "coreai_optimize": False if runtime == "coreai" else None,
@@ -113,11 +113,11 @@ def publish(
     dry_run: bool = True,
 ) -> str:
     validate_bundle(definition, run, report)
-    if not report.get("sdk_integrated"):
-        raise ValueError("Publication requires SDK capability task parity")
+    if not report.get("bundle_verified"):
+        raise ValueError("Publication requires Native capability task parity")
     validate_capability_coverage(definition, report)
     config = definition.config.variant(report["variant"])
     if dry_run:
         return f"Would upload {run} to {config.target}/{report['runtime']}"
-    verify_sdk(definition, run, report)
+    verify_bundle(definition, run, report)
     return hub.upload(config, run, report["runtime"], report["source_revision"])

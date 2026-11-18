@@ -1,6 +1,6 @@
 # D3 conversion
 
-The model owns its variant configuration (`model.yaml`), decision export composition (`converter.py`), vision evaluation (`vision.py`), evaluation, and publication assembly (`publication.py`). Apple exporters and artifact management remain in the shared conversion library. The SDK owns inference, original host preprocessing, and lifecycle under `hugging_mac_sdk.models.d3`; conversion imports these helpers, not the reverse. SDK `converter.py` and private
+The model owns its variant configuration (`model.yaml`), decision export composition (`converter.py`), vision evaluation (`vision.py`), evaluation, and publication assembly (`publication.py`). Apple exporters and artifact management remain in the shared conversion library. The SDK owns inference, original host preprocessing, and lifecycle under `hugging_mac_sdk.models.d3`; conversion owns independent copies and imports no SDK code. SDK `converter.py` and private
 `utils/coreai_*.py` own the architecture exports; this package owns evaluation
 and publication.
 

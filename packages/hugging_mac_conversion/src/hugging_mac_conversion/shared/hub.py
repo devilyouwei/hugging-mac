@@ -8,12 +8,17 @@ import shutil
 from pathlib import Path
 
 from .config import VariantConfig
+from .huggingface import download_endpoint
 
 
 def resolve_revision(config: VariantConfig, revision: str) -> str:
     from huggingface_hub import HfApi
 
-    resolved = HfApi().model_info(config.source, revision=revision, timeout=30).sha
+    resolved = (
+        HfApi(endpoint=download_endpoint())
+        .model_info(config.source, revision=revision, timeout=30)
+        .sha
+    )
     if not resolved:
         raise ValueError("Hub did not resolve an immutable source commit")
     return resolved
@@ -31,6 +36,7 @@ def download_source(
     destination.mkdir(parents=True, exist_ok=True)
     snapshot_download(
         config.source,
+        endpoint=download_endpoint(),
         revision=revision,
         local_dir=destination,
         allow_patterns=list(config.probe.download_patterns) if probe else None,

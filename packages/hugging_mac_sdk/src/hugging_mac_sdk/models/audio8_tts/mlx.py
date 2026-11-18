@@ -17,7 +17,7 @@ from hugging_mac_sdk.schemas.speech_synthesis import SpeechSynthesisRequest
 from hugging_mac_sdk.schemas.transcription import AudioInput
 
 from .config import Audio8TtsMlxInstanceConfig
-from .mlx_resources import Audio8TtsMlxResourceResolver
+from .utils.mlx_resources import Audio8TtsMlxResourceResolver
 from .utils.types import TtsEngineOutput
 from .utils.voices import VoiceStore
 

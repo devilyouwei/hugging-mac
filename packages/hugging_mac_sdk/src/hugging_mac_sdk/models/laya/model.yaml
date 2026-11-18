@@ -1,0 +1,130 @@
+manifest:
+  schema_version: '1'
+  model_id: convaiinnovations/laya
+  display_name: Laya Multilingual
+  description: Multilingual typed decisions; original PyTorch and older fixed-window Core AI exports.
+  tags: [decision-model, multilingual, pytorch, coreai]
+  family: laya
+  capabilities: [decision-making]
+  source_url: https://huggingface.co/convaiinnovations/laya-multilingual
+  license: Apache-2.0
+
+  runtimes:
+  - name: pytorch
+    devices: [cpu]
+    dtypes: [float32]
+    platforms: [darwin, linux, win32]
+    architectures: [arm64, x86_64, amd64]
+    required_modules: [laya, torch, transformers]
+  - name: coreai
+    devices: [cpu]
+    dtypes: [float32]
+    platforms: [darwin]
+    architectures: [arm64]
+    required_modules: [coreai, numpy, tokenizers]
+  default_runtime: coreai
+  variants:
+  - name: multilingual
+    display_name: Laya Multilingual Original
+    description: Independent multilingual checkpoint; up to 8192 tokens.
+    metadata:
+      response_model: convaiinnovations/laya-multilingual
+      max_sequence_length: 8192
+  - name: multilingual-legacy-s256
+    display_name: Laya Multilingual Legacy (256 tokens)
+    description: Older laya/multilingual checkpoint, fixed batch 1 and 256 tokens; not the current original checkpoint.
+    metadata:
+      response_model: convaiinnovations/laya/multilingual
+      max_sequence_length: 256
+      dynamic_sequence_length: false
+      source_checkpoint: convaiinnovations/laya/multilingual@1c5edc17a7acd8701df6fc341c0d179f1c62c982
+  - name: multilingual-legacy-s512
+    display_name: Laya Multilingual Legacy (512 tokens)
+    description: Older laya/multilingual checkpoint, fixed batch 1 and 512 tokens; not the current original checkpoint.
+    metadata:
+      response_model: convaiinnovations/laya/multilingual
+      max_sequence_length: 512
+      dynamic_sequence_length: false
+      source_checkpoint: convaiinnovations/laya/multilingual@1c5edc17a7acd8701df6fc341c0d179f1c62c982
+  default_variant: multilingual-legacy-s512
+
+artifacts:
+- artifact_id: source
+  variant: multilingual
+  runtime: pytorch
+  format: safetensors
+  kind: directory
+  path: convaiinnovations/laya/multilingual/pytorch/source
+  required_files: [config.json, rl_agent_config.json, encoder/config.json, model.safetensors]
+  required_shares: [tokenizer-original]
+  source:
+    kind: huggingface
+    repo_id: convaiinnovations/laya-multilingual
+    allow_patterns:
+    - config.json
+    - rl_agent_config.json
+    - encoder/config.json
+    - model.safetensors
+- artifact_id: coreai-wfp16
+  variant: multilingual-legacy-s256
+  runtime: coreai
+  format: coreai
+  kind: directory
+  path: convaiinnovations/laya/multilingual-legacy-s256/coreai/coreai-wfp16
+  required_files: [laya_ml_wfp16_s256.aimodel/main.mlirb, laya_ml_wfp16_s256.aimodel/main.hash, laya_ml_wfp16_s256.aimodel/metadata.json, metadata.json]
+  required_shares: [tokenizer-coreai]
+  source:
+    kind: huggingface
+    repo_id: mlboydaisuke/Laya-Multilingual-CoreAI
+    allow_patterns:
+    - macos/wfp16-s256/laya_ml_wfp16_s256.aimodel/**
+    - macos/wfp16-s256/metadata.json
+    strip_prefix: macos/wfp16-s256
+- artifact_id: coreai-wfp16
+  variant: multilingual-legacy-s512
+  runtime: coreai
+  format: coreai
+  kind: directory
+  path: convaiinnovations/laya/multilingual-legacy-s512/coreai/coreai-wfp16
+  required_files: [laya_ml_wfp16_s512.aimodel/main.mlirb, laya_ml_wfp16_s512.aimodel/main.hash, laya_ml_wfp16_s512.aimodel/metadata.json, metadata.json]
+  required_shares: [tokenizer-coreai]
+  source:
+    kind: huggingface
+    repo_id: mlboydaisuke/Laya-Multilingual-CoreAI
+    allow_patterns:
+    - macos/wfp16-s512/laya_ml_wfp16_s512.aimodel/**
+    - macos/wfp16-s512/metadata.json
+    strip_prefix: macos/wfp16-s512
+- artifact_id: tokenizer-original
+  shared: true
+  format: tokenizer
+  kind: directory
+  path: convaiinnovations/laya/_shared/tokenizer-original
+  required_files: [tokenizer/tokenizer.json, tokenizer/tokenizer_config.json]
+  source:
+    kind: huggingface
+    repo_id: convaiinnovations/laya-multilingual
+    allow_patterns:
+    - tokenizer/tokenizer.json
+    - tokenizer/tokenizer_config.json
+- artifact_id: tokenizer-coreai
+  shared: true
+  format: tokenizer
+  kind: directory
+  path: convaiinnovations/laya/_shared/tokenizer-coreai
+  required_files: [tokenizer/tokenizer.json, tokenizer/tokenizer_config.json]
+  source:
+    kind: huggingface
+    repo_id: mlboydaisuke/Laya-Multilingual-CoreAI
+    allow_patterns:
+    - macos/wfp16-s512/tokenizer/tokenizer.json
+    - macos/wfp16-s512/tokenizer/tokenizer_config.json
+    strip_prefix: macos/wfp16-s512
+extensions:
+  decision:
+    question_types: [choice, score, noul]
+    modalities: [text]
+    noul_criteria: true
+  laya_coreai:
+    weight_precision: float16
+    compute_precision: float32

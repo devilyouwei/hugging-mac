@@ -23,7 +23,8 @@ files, load a handle, require a capability, and submit a typed request.
 | Model | Capability | Guide |
 |---|---|---|
 | Decision 3.0 | Decision making (experimental) | [Decision 3.0](d3.md) |
-| Vela 3.0 | Decision making (choice/noul) | [Vela 3.0](vela.md) |
+| Laya Multilingual | Decision making (choice/score/noul and act) | [Laya](laya.md) |
+| Vela 3.0 / 3.1 | Decision making (choice/noul) | [Vela](vela.md) |
 | Gemma 4 | Chat | [Gemma 4](gemma-4.md) |
 | Qwen3.5 | Chat and image understanding | [Qwen3.5](qwen3.5.md) |
 

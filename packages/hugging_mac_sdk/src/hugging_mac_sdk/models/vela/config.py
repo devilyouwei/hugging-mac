@@ -11,6 +11,7 @@ class VelaInstanceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     model_home: Path = Field(default_factory=lambda: user_cache_path("hugging-mac") / "models")
+    entity_route: str | None = None
     artifact_path: Path | None = None
     source_path: Path | None = None
     hf_token: str | None = Field(default=None, repr=False, exclude=True)

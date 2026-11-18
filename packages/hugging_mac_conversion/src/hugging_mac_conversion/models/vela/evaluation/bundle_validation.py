@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from hugging_mac_sdk.models.vela.full import VelaFullCoreAI
-from hugging_mac_sdk.models.vela.utils.validation import compare
+from hugging_mac_conversion.models.vela.evaluation.comparison import compare
+from hugging_mac_conversion.models.vela.utils.inference import VelaFullCoreAI
 
 
 def validate_conversion(root: Path) -> dict[str, Any]:
@@ -34,7 +34,7 @@ def validate_conversion(root: Path) -> dict[str, Any]:
         "capability_coverage": {
             name: {
                 "status": "passed" if passed else "incomplete",
-                "evidence": "SDK full-response cases and all original component routes",
+                "evidence": "Native full-response cases and all original component routes",
             }
             for name in manifest["capability_coverage"]
         },

@@ -6,7 +6,7 @@ import importlib
 from pathlib import Path
 from time import perf_counter
 
-from hugging_mac_sdk.models.d3.utils.coreai_export import inputs_for_tokens
+from hugging_mac_conversion.models.d3.utils.coreai_export import inputs_for_tokens
 
 from ....shared.config import VariantConfig
 from ....shared.evaluation.contracts import EvaluationCase, EvaluationDefinition, EvaluationSample

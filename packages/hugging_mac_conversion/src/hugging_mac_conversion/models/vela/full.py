@@ -12,12 +12,12 @@ import struct
 from pathlib import Path
 from typing import Any
 
-from hugging_mac_sdk.models.vela.utils.full_host import adapter_files
+from hugging_mac_conversion.models.vela.utils.full_host import adapter_files
 
 from ...registry import get_model
 from ...shared.artifacts import create_run, default_output_root, inventory, write_report
 from ...shared.hub import local_source
-from .components import architecture_digest, export_component, graph_kind
+from .utils.components import architecture_digest, export_component, graph_kind
 
 
 def read_header(path: Path) -> dict[str, Any]:
@@ -72,7 +72,7 @@ def assemble(source: Path, output: Path, variant: str) -> Path:
         "status": "building",
         "source_revision": provenance["revision"],
         "source_path": str(source.resolve()),
-        "sdk_integrated": False,
+        "bundle_verified": False,
     }
     write_report(output, report)
     try:

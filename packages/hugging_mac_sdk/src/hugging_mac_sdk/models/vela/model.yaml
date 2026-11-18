@@ -1,11 +1,11 @@
 manifest:
   schema_version: '1'
   model_id: vllm-sr/vela
-  display_name: Vela 3.0
-  description: Vela3-fast decision backbone with PyTorch and dynamic Core AI runtimes.
+  display_name: Vela
+  description: Vela 3.0 and 3.1 decision backbones with PyTorch and dynamic Core AI runtimes.
   tags: [decision-model, pytorch, coreai, text]
   family: vela
-  capabilities: [decision-making]
+  capabilities: [decision-making, structured-prediction]
   source_url: https://huggingface.co/vllm-sr/vela3-fast
   license: Apache-2.0
 
@@ -21,7 +21,7 @@ manifest:
     dtypes: [float32]
     platforms: [darwin]
     architectures: [arm64]
-    required_modules: [coreai, numpy, tokenizers]
+    required_modules: [coreai, numpy, tokenizers, safetensors]
   default_runtime: pytorch
   variants:
   - name: 3-fast
@@ -31,6 +31,21 @@ manifest:
       response_model: vllm-sr/vela3-fast
       dynamic_sequence_length: true
       max_sequence_length: 32768
+  - name: 3_1-fast
+    display_name: Vela3.1-fast Decision
+    description: Decision-only backbone; choice and noul without task adapters.
+    metadata:
+      response_model: vllm-sr/vela3.1-fast
+      dynamic_sequence_length: true
+      max_sequence_length: 32768
+  - name: 3_1-fast-full
+    display_name: Vela3.1-fast Full
+    description: Complete original structured task routing with all task adapters.
+    metadata:
+      response_model: vllm-sr/vela3.1-fast
+      dynamic_sequence_length: true
+      max_sequence_length: 32768
+      full_model: true
   default_variant: 3-fast
 
 artifacts:
@@ -40,7 +55,7 @@ artifacts:
   format: safetensors
   kind: directory
   path: vllm-sr/vela/3-fast/pytorch/source
-  required_files: [config.json, model.safetensors, configuration_ultrabert.py, modeling_ultrabert.py, ub_d3_common.py, vela3_encoder.py, LICENSE]
+  required_files: [config.json, model.safetensors, configuration_ultrabert.py, modeling_ultrabert.py, ub_d3_common.py, vela3_encoder.py]
   required_shares: [tokenizer]
   source:
     kind: huggingface
@@ -52,7 +67,6 @@ artifacts:
     - modeling_ultrabert.py
     - ub_d3_common.py
     - vela3_encoder.py
-    - LICENSE
 - artifact_id: coreai-fp32
   convert: true
   variant: 3-fast
@@ -60,7 +74,7 @@ artifacts:
   format: coreai
   kind: directory
   path: vllm-sr/vela/3-fast/coreai/coreai-fp32
-  required_files: [model.aimodel/main.mlirb, model.aimodel/main.hash, model.aimodel/metadata.json, manifest.json, decision.json, LICENSE, NOTICE]
+  required_files: [model.aimodel/main.mlirb, model.aimodel/main.hash, model.aimodel/metadata.json, manifest.json, decision.json]
   required_shares: [tokenizer]
   source:
     kind: huggingface
@@ -69,8 +83,6 @@ artifacts:
     - model.aimodel/**
     - manifest.json
     - decision.json
-    - LICENSE
-    - NOTICE
 - artifact_id: tokenizer
   shared: true
   format: tokenizer
@@ -83,11 +95,118 @@ artifacts:
     allow_patterns:
     - tokenizer.json
     - tokenizer_config.json
+- artifact_id: source
+  variant: 3_1-fast
+  runtime: pytorch
+  format: safetensors
+  kind: directory
+  path: vllm-sr/vela/3_1-fast/pytorch/source
+  required_files: [config.json, model.safetensors, configuration_ultrabert.py, modeling_ultrabert.py, ub_d3_common.py, render31.py, vela3_encoder.py]
+  required_shares: [tokenizer-3_1]
+  source:
+    kind: huggingface
+    repo_id: vllm-sr/vela3.1-fast
+    allow_patterns:
+    - config.json
+    - model.safetensors
+    - configuration_ultrabert.py
+    - modeling_ultrabert.py
+    - ub_d3_common.py
+    - render31.py
+    - vela3_encoder.py
+- artifact_id: coreai-fp32
+  variant: 3_1-fast
+  runtime: coreai
+  format: coreai
+  kind: directory
+  path: vllm-sr/vela/3_1-fast/coreai/coreai-fp32
+  required_files: [graphs/decision/model.aimodel/main.mlirb, graphs/decision/model.aimodel/main.hash, graphs/decision/model.aimodel/metadata.json, weights/model.safetensors, manifest.json, config.json]
+  required_shares: [tokenizer-3_1]
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/vela3.1-fast
+    allow_patterns:
+    - coreai/graphs/decision/**
+    - coreai/weights/model.safetensors
+    - coreai/manifest.json
+    - coreai/config.json
+    strip_prefix: coreai
+- artifact_id: tokenizer-3_1
+  shared: true
+  format: tokenizer
+  kind: directory
+  path: vllm-sr/vela/_shared/tokenizer-3_1
+  required_files: [tokenizer.json, tokenizer_config.json]
+  source:
+    kind: huggingface
+    repo_id: vllm-sr/vela3.1-fast
+    allow_patterns:
+    - tokenizer.json
+    - tokenizer_config.json
+- artifact_id: coreai-fp32
+  variant: 3_1-fast-full
+  runtime: coreai
+  format: coreai
+  kind: directory
+  path: vllm-sr/vela/3_1-fast-full/coreai/coreai-fp32
+  required_files: [EV_THRESHOLDS.json, config.json, configuration_ultrabert.py, graphs/decision/graph.json, graphs/decision/model.aimodel/main.hash, graphs/decision/model.aimodel/main.mlirb, graphs/decision/model.aimodel/metadata.json, graphs/router-r128-a256-all/graph.json, graphs/router-r128-a256-all/model.aimodel/main.hash, graphs/router-r128-a256-all/model.aimodel/main.mlirb, graphs/router-r128-a256-all/model.aimodel/metadata.json, graphs/router-r256-a512-all/graph.json, graphs/router-r256-a512-all/model.aimodel/main.hash, graphs/router-r256-a512-all/model.aimodel/main.mlirb, graphs/router-r256-a512-all/model.aimodel/metadata.json, graphs/span-r128-a256-all/graph.json, graphs/span-r128-a256-all/model.aimodel/main.hash, graphs/span-r128-a256-all/model.aimodel/main.mlirb, graphs/span-r128-a256-all/model.aimodel/metadata.json, graphs/span-r256-a512-all/graph.json, graphs/span-r256-a512-all/model.aimodel/main.hash, graphs/span-r256-a512-all/model.aimodel/main.mlirb, graphs/span-r256-a512-all/model.aimodel/metadata.json, manifest.json, modeling_ultrabert.py, render31.py, router_questions.json, ub_d3_common.py, vela3_config.json, vela3_encoder.py, vela3_schema.py, weights/domain_adapter.safetensors, weights/evidence_adapter.safetensors, weights/factcheck_adapter.safetensors, weights/feedback_df_adapter.safetensors, weights/model.safetensors, weights/ner_adapter.safetensors, weights/relation_adapter.safetensors, weights/router_adapter.safetensors, weights/span_adapter.safetensors, weights/span_sets_adapter.safetensors]
+  required_shares: [tokenizer-3_1]
+  source:
+    kind: huggingface
+    repo_id: hugging-mac/vela3.1-fast
+    allow_patterns:
+    - coreai/EV_THRESHOLDS.json
+    - coreai/config.json
+    - coreai/configuration_ultrabert.py
+    - coreai/graphs/decision/graph.json
+    - coreai/graphs/decision/model.aimodel/main.hash
+    - coreai/graphs/decision/model.aimodel/main.mlirb
+    - coreai/graphs/decision/model.aimodel/metadata.json
+    - coreai/graphs/router-r128-a256-all/graph.json
+    - coreai/graphs/router-r128-a256-all/model.aimodel/main.hash
+    - coreai/graphs/router-r128-a256-all/model.aimodel/main.mlirb
+    - coreai/graphs/router-r128-a256-all/model.aimodel/metadata.json
+    - coreai/graphs/router-r256-a512-all/graph.json
+    - coreai/graphs/router-r256-a512-all/model.aimodel/main.hash
+    - coreai/graphs/router-r256-a512-all/model.aimodel/main.mlirb
+    - coreai/graphs/router-r256-a512-all/model.aimodel/metadata.json
+    - coreai/graphs/span-r128-a256-all/graph.json
+    - coreai/graphs/span-r128-a256-all/model.aimodel/main.hash
+    - coreai/graphs/span-r128-a256-all/model.aimodel/main.mlirb
+    - coreai/graphs/span-r128-a256-all/model.aimodel/metadata.json
+    - coreai/graphs/span-r256-a512-all/graph.json
+    - coreai/graphs/span-r256-a512-all/model.aimodel/main.hash
+    - coreai/graphs/span-r256-a512-all/model.aimodel/main.mlirb
+    - coreai/graphs/span-r256-a512-all/model.aimodel/metadata.json
+    - coreai/manifest.json
+    - coreai/modeling_ultrabert.py
+    - coreai/render31.py
+    - coreai/router_questions.json
+    - coreai/ub_d3_common.py
+    - coreai/vela3_config.json
+    - coreai/vela3_encoder.py
+    - coreai/vela3_schema.py
+    - coreai/weights/domain_adapter.safetensors
+    - coreai/weights/evidence_adapter.safetensors
+    - coreai/weights/factcheck_adapter.safetensors
+    - coreai/weights/feedback_df_adapter.safetensors
+    - coreai/weights/model.safetensors
+    - coreai/weights/ner_adapter.safetensors
+    - coreai/weights/relation_adapter.safetensors
+    - coreai/weights/router_adapter.safetensors
+    - coreai/weights/span_adapter.safetensors
+    - coreai/weights/span_sets_adapter.safetensors
+    strip_prefix: coreai
 extensions:
   decision:
     question_types: [choice, noul]
     modalities: [text]
     noul_criteria: false
+  decision_variants:
+    3_1-fast:
+      noul_criteria: true
+    3_1-fast-full:
+      noul_criteria: true
   vela_coreai:
     source_artifact: source
     target_artifact: coreai-fp32

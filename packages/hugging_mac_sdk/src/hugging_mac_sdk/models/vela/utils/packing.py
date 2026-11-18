@@ -1,4 +1,4 @@
-"""NumPy/tokenizers decision rendering adapted from Apache-2.0 upstream; see NOTICE."""
+"""NumPy/tokenizers decision rendering adapted from Apache-2.0 upstream."""
 
 from __future__ import annotations
 
@@ -11,9 +11,28 @@ from tokenizers import Tokenizer  # type: ignore[import-untyped]
 
 
 class DecisionPacker:
+    noul_criteria = False
+
     def __init__(self, root: Path) -> None:
         self.manifest = json.loads((root / "manifest.json").read_text())
-        self.config = json.loads((root / "decision.json").read_text())
+        self.component_manifest = None
+        if self.manifest.get("format") == "vela-full-coreai/1":
+            self.component_manifest = self.manifest
+            self.noul_criteria = True
+            config = json.loads((root / "config.json").read_text())
+            self.config = {
+                key: config[key] for key in ("bos_token_id", "eos_token_id", "pad_token_id")
+            }
+            self.config["marker_ids"] = config["decision"]["marker_ids"]
+            self.manifest = {
+                "artifact_scope": "decision-only",
+                "dynamic_sequence_length": True,
+                "sequence_length": self.component_manifest["sequence_length"]["decision"],
+                "function": "main",
+                "output": "logits",
+            }
+        else:
+            self.config = json.loads((root / "decision.json").read_text())
         self.tokenizer = Tokenizer.from_file(str(root / "tokenizer.json"))
         self.tokenizer.no_truncation()
         self.tokenizer.no_padding()
@@ -22,6 +41,8 @@ class DecisionPacker:
 
     @staticmethod
     def _text(value: Any) -> str:
+        if value is None:
+            return ""
         return (
             value
             if isinstance(value, str)
@@ -34,7 +55,10 @@ class DecisionPacker:
         kind = question.get("type")
         options: dict[str, Any]
         if kind == "noul":
-            options = {"no": "", "yes": ""}
+            criteria = (question.get("criteria") or {}) if self.noul_criteria else {}
+            if not isinstance(criteria, dict):
+                raise ValueError("noul criteria must be a true/false mapping")
+            options = {"no": criteria.get("false", ""), "yes": criteria.get("true", "")}
         elif kind == "choice":
             criteria = question.get("criteria")
             if isinstance(criteria, (list, tuple)):

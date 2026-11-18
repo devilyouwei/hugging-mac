@@ -13,7 +13,9 @@ from uuid import uuid4
 def project_root(start: Path | None = None) -> Path:
     current = (start or Path.cwd()).resolve()
     for root in (current, *current.parents):
-        if (root / "pyproject.toml").is_file() and (root / "packages/hugging_mac_sdk").is_dir():
+        if (root / "pyproject.toml").is_file() and (
+            root / "packages/hugging_mac_conversion"
+        ).is_dir():
             return root
     raise ValueError("Run inside the repository or supply an explicit storage root")
 
