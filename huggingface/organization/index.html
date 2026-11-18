@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Run AI models and build local applications on Apple Silicon with Hugging Mac.">
+  <title>Run AI on your Mac · Hugging Mac</title>
+  <style>
+    * { box-sizing:border-box; }
+    body { margin:0; }
+    .profile { color:inherit; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:clamp(1.5rem,4vw,2.5rem) clamp(.875rem,2.5vw,1.5rem) clamp(2rem,4vw,3rem); }
+    header { text-align:center; max-width:53rem; margin:0 auto clamp(1.5rem,3vw,2.25rem); }
+    .eyebrow { color:#287bbc; font-size:clamp(.75rem,.7rem + .2vw,.875rem); font-weight:500; line-height:1.5; letter-spacing:normal; }
+    h1 { color:inherit; font-size:clamp(1.75rem,1.25rem + 2vw,2.5rem); font-weight:600; letter-spacing:normal; line-height:1.25; margin:.75rem 0 1rem; overflow-wrap:anywhere; }
+    header p { color:inherit; opacity:.7; font-size:clamp(.875rem,.825rem + .2vw,1rem); line-height:1.65; max-width:46rem; margin:0 auto; }
+    a { color:inherit; text-underline-offset:4px; }
+    main { max-width:74rem; margin:0 auto; }
+    /* Fit the available container, including the narrower organization column.
+       A 45% minimum caps the collection at two columns; 18rem keeps cards readable. */
+    .demos { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,max(18rem,45%)),1fr)); gap:clamp(1rem,2.5vw,1.5rem); border:0; }
+    .demo-card { min-width:0; background:#111722; color:#f5f7fb; border:0; border-radius:clamp(.75rem,1.5vw,1rem); overflow:hidden; box-shadow:none; scroll-margin-top:24px; }
+    video { aspect-ratio:16/9; background:#000; display:block; object-fit:contain; width:100%; }
+    .copy { padding:clamp(1rem,2vw,1.5rem); overflow-wrap:anywhere; }
+    .copy span { color:#51adff; font-size:clamp(.75rem,.7rem + .2vw,.875rem); font-weight:500; line-height:1.5; letter-spacing:normal; }
+    .copy h2 { color:#f5f7fb; font-size:clamp(1.125rem,1rem + .5vw,1.375rem); font-weight:600; letter-spacing:normal; line-height:1.35; margin:8px 0 10px; }
+    .copy p { color:#9ba6b8; font-size:clamp(.875rem,.825rem + .2vw,1rem); line-height:1.5; margin:0; }
+    :focus-visible { outline:2px solid #51adff; outline-offset:5px; }
+  </style>
+</head>
+<body>
+  <div class="profile">
+  <header>
+    <div class="eyebrow">Hugging Mac · Apple Silicon</div>
+    <h1>Run AI models on your Mac</h1>
+    <p>Run optimized models across CPU, GPU, and the Apple Neural Engine—then combine their capabilities to create applications, games, agents, and services. <a href="https://github.com/devilyouwei/hugging-mac">Contribute on GitHub →</a></p>
+  </header>
+
+  <main>
+    <section class="demos" aria-label="Demos">
+      <article class="demo-card" id="chat">
+        <video controls playsinline preload="none" poster="https://hugging-mac-readme.static.hf.space/posters/chat.png">
+          <source src="https://hugging-mac-readme.static.hf.space/videos/chat.mp4" type="video/mp4">
+        </video>
+        <div class="copy"><span>ASR · Vision · LLM · TTS</span><h2>Chat</h2><p>Talk naturally with a private, multimodal assistant running locally.</p></div>
+      </article>
+
+      <article class="demo-card" id="pose-follow">
+        <video controls playsinline preload="none" poster="https://hugging-mac-readme.static.hf.space/posters/pose-follow.png">
+          <source src="https://hugging-mac-readme.static.hf.space/videos/pose-follow.mp4" type="video/mp4">
+        </video>
+        <div class="copy"><span>YOLOv8 Pose</span><h2>Pose Follow</h2><p>Match body poses and gestures in real time.</p></div>
+      </article>
+
+      <article class="demo-card" id="fruit-slice">
+        <video controls playsinline preload="none" poster="https://hugging-mac-readme.static.hf.space/posters/fruit-slice.png">
+          <source src="https://hugging-mac-readme.static.hf.space/videos/fruit-slice.mp4" type="video/mp4">
+        </video>
+        <div class="copy"><span>YOLOv8 Pose</span><h2>Fruit Slice</h2><p>Turn your arms into blades and build combos.</p></div>
+      </article>
+
+      <article class="demo-card" id="palm-thunder">
+        <video controls playsinline preload="none" poster="https://hugging-mac-readme.static.hf.space/posters/palm-thunder.png">
+          <source src="https://hugging-mac-readme.static.hf.space/videos/palm-thunder.mp4" type="video/mp4">
+        </video>
+        <div class="copy"><span>MediaPipe Hand</span><h2>Palm Thunder</h2><p>Fly, fire, and trigger bombs with your hands.</p></div>
+      </article>
+    </section>
+  </main>
+  </div>
+</body>
+</html>

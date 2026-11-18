@@ -53,6 +53,10 @@ Apple architectures.
 
 ## Model conversion and Hugging Face publishing
 
+The Hugging Face organization card and demo page are maintained in
+[`huggingface/`](huggingface/README.md), which includes the source files and
+synchronization instructions.
+
 The Model SDK supports local conversion for model integrations that declare a
 conversion target. Prepare the original resources, call
 `sdk.resources.convert(model_id, target_format)`, then load the converted model

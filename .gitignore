@@ -50,6 +50,9 @@ models/*
 *.pth
 *.pt
 huggingface/
+# Track the project-owned Hugging Face organization profile.
+!/huggingface/
+!/huggingface/**
 .cache/
 
 # Datasets and generated artifacts
