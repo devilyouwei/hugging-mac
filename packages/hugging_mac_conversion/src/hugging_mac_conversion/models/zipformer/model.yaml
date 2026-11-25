@@ -1,0 +1,27 @@
+name: zipformer
+default_variant: chunk-8
+variants:
+  chunk-8:
+    source: MigoXV/icefall-kws-zipformer-zh-en-3M-2025-12-20
+    target: hugging-mac/zipformer-kws-zh-en-3m-coreml
+    upstream_checkpoint_revision: 541d04e28be57efc6fdf46a341da09e043a37b52
+    upstream_checkpoint_sha256: 62188d073aaf7ec33f85a2c1e1f2a75751658743daeb203f17241ec3bf4ff6eb
+    license: apache-2.0
+    revision: 0e33d140e0543a03bddf77dbbaad84ef6f4b3ef1
+    archive: https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
+    archive_sha256: 68447f4fbc67e70eee3a93961f36e81e98f47aef73ce7e7ca00885c6cd3616a6
+    graph_suffix: epoch-13-avg-2-chunk-8-left-64.onnx
+    encoder_chunk_size: 8
+    features_per_chunk: 16
+    features_with_lookahead: 29
+    source_files:
+      alignment.json: 47c4ede86ee9966d8137414937446b1196d000fd67f3d008dcda0fa00d35bc50
+      config.json: c6e5634c68ab9ef115b3ec2ce5acbdcf655bb6cd7e26cc80bf8d8ff4909037c9
+      configuration_kws_zipformer.py: dd92a836724f18512657d8f1ac5b2de546c9fe6834c278b22667148c81770c2a
+      decoder.py: a9aeeeef278f4e5357d4e49253d24f5f1c60df88cfcb623ccbd01481dc1503ce
+      joiner.py: 1d21984dc95d05adbc9a2bf0be14b8567b36b58536c8bac2d864b02d24f934fc
+      model.py: 7424d50b930b16cf3213566ae6fd4a50101f6614afc0605cf103ada324c8d740
+      model.safetensors: 3cf361e82d9655ded223ad6a11f916a3479dc484276de6a571b59bbbad63f1f8
+      scaling.py: 6356af346bdb69d0864b77870bc53cb1152c84e65ca7c4053f1adccb0c54cf38
+      subsampling.py: ac5df7cb952368ffb8abdbc07a2878ca5ed0c1b005191d526be8c011a823202f
+      zipformer.py: 3d071f5b6046807f344a7aaae1e0641c6f65a628bf2e6c077d17f2d416d6e9a9

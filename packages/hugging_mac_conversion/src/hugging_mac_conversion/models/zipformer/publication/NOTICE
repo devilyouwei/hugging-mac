@@ -1,0 +1,18 @@
+Zipformer bilingual keyword-spotting Core ML conversion
+
+The original Icefall checkpoint was made available under the Apache License 2.0:
+https://www.modelscope.cn/models/pkufool/icefall-kws-zipformer-zh-en-3M-2025-12-20
+
+The Hugging Face Transformers port supplies the PyTorch architecture and
+safetensors used to compile these Core ML graphs:
+https://huggingface.co/MigoXV/icefall-kws-zipformer-zh-en-3M-2025-12-20
+
+The vocabulary, graph reference, and smoke-test clips are from the Sherpa-ONNX
+keyword-spotting release. The clips and the upstream Python files stay outside
+the distributed bundle.
+https://github.com/k2-fsa/sherpa-onnx/releases/tag/kws-models
+
+Hugging Mac converted the streaming encoder, decoder, and joiner to native
+Core ML ML Programs. The standalone host implements context-biased transducer
+beam search for these fixed graphs. Source revisions and hashes are recorded
+in manifest.json.

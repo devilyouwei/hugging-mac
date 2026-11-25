@@ -151,6 +151,12 @@ uv run --project packages/hugging_mac_conversion --locked hugging-mac-convert pu
 旧 `artifacts/conversions` 制品已保留并迁移到新的模型/变体目录。旧报告缺少版本化配置
 合同，不能直接发布；重新构建后使用新报告。源码下的旧隔离环境与 requirements 已移除。
 
+## 多图模型发布
+
+Zipformer 的流式 encoder、decoder 和 joiner 作为一组发布。它使用工作台的
+Core ML 导出和制品目录，并在模型目录内验收完整的流式命中链路。命令见
+[Zipformer 转换说明](models/zipformer/readme.md)。
+
 ## 验证
 
 ```bash
